@@ -13,5 +13,7 @@ winsdk>=1.0.0b10 ; sys_platform == "win32"
 sentence-transformers>=3.0.0
 pystray>=0.19.5
 Pillow>=10.0
+flask>=3.0
+zeroconf>=0.130
 pytest>=8.0
 pytest-mock>=3.12
