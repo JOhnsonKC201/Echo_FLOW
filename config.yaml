@@ -1,0 +1,140 @@
+# Echo Flow — local config
+
+hotkey:
+  # Push-to-talk: hold this combo to record. Release to transcribe.
+  # Options: "ctrl+space", "alt+space", "f9", "ctrl+alt+w"
+  combo: "ctrl+shift"
+  mode: "hold"   # "hold" (push-to-talk, safer) or "toggle" (tap, auto-stop on silence)
+  # Re-paste the most recent dictation into the focused window.
+  # Set to "" or remove to disable.
+  paste_last_combo: "ctrl+shift+win"
+
+audio:
+  sample_rate: 16000
+  channels: 1
+  device: null       # null = system default; or int index from python -m sounddevice
+  vad_enabled: true
+  silence_timeout_ms: 1500   # auto-stop after this much silence (toggle mode)
+
+# Audible feedback when you press the hotkey (so you know it's listening)
+sound:
+  enabled: true
+  # Each *_alias can be: a Windows system alias name (SystemAsterisk, etc.),
+  # a bare WAV filename (resolved against C:\Windows\Media), or a full WAV path.
+  start_alias: "ding.wav"                       # press → quick ding
+  stop_alias:  "Windows Notify Messaging.wav"   # release → soft confirmation
+  error_alias: "SystemHand"                     # error → louder warning
+  # Frequency/duration only used if the alias above fails to load.
+  start_freq: 1000
+  start_ms: 60
+  stop_freq: 700
+  stop_ms: 50
+  error_freq: 300
+  error_ms: 200
+
+whisper:
+  backend: "local"          # local | groq | hybrid. Auto-phasing may override.
+  model: "auto"             # auto = base on CPU, large-v3-turbo on CUDA. Or pin: tiny, base, small, medium, large-v3-turbo
+  device: "auto"            # auto, cuda, cpu
+  compute_type: "auto"      # auto, float16, int8_float16, int8
+  language: "en"            # English-only; pinning skips Whisper's language-detect step (~20ms win)
+  beam_size: 5
+  vad_filter: true
+  groq:
+    model: "whisper-large-v3-turbo"   # used only if backend=groq/hybrid and key set
+    api_key_env: "GROQ_API_KEY"
+
+cleanup:
+  enabled: true
+  provider: "ollama"        # groq | ollama | anthropic | openai | learned | none. Auto-phasing may override.
+  groq:
+    # Speed vs quality tradeoff:
+    #   llama-3.3-70b-versatile: ~200ms, best quality, reliable instruction following
+    #   llama-3.1-8b-instant:    ~80ms, faster but slightly more chatbot risk
+    # Hallucination guard catches edge cases either way, so 8b is now usable.
+    model: "llama-3.1-8b-instant"
+    api_key_env: "GROQ_API_KEY"
+  # Adaptive learning: inject your past corrections as few-shot examples
+  learning:
+    enabled: true
+    max_examples: 6          # few-shot pairs to include in the prompt
+    max_vocab_terms: 25      # personal vocabulary entries
+    min_example_chars: 12    # ignore trivially short dictations
+    # RAG retrieval: pick SEMANTICALLY similar past dictations (smarter than recency)
+    retrieval:
+      enabled: true
+      min_similarity: 0.6    # cosine threshold; higher = only strong matches feed back as examples (prevents pollution)
+      backfill_on_startup: true
+  ollama:
+    base_url: "http://localhost:11434"
+    model: "qwen2.5:3b-instruct"   # 3b = CPU-friendly (~1.9 GB). Bump to 7b for better quality on GPU/16GB+.
+  # "learned" provider: LLM-free cleanup. Applies vocab + high-confidence learned patterns only.
+  learned:
+    min_similarity: 0.85           # cosine threshold for retrieving a past correction as a fix
+    min_pattern_confidence: 0.7    # require pattern to have been seen this often (success / total)
+    fallback_to_ollama: true       # if no high-confidence fix found, fall back to ollama for this dictation
+  anthropic:
+    model: "claude-haiku-4-5-20251001"
+    api_key_env: "ANTHROPIC_API_KEY"
+  # A/B provider shadow testing — runs an alternate provider in the background
+  # on each dictation, grades both, and logs the comparison to provider_ab_log.
+  # The primary (current `provider`) is what gets pasted — A/B is observational.
+  # Useful for deciding whether `learned` is ready to replace `ollama`.
+  ab_test:
+    enabled: false                  # opt-in
+    alternate: "learned"            # provider to compare against the primary
+
+  # Snippet expansion — short codes → full phrases. Applied AFTER LLM cleanup
+  # so the model doesn't try to "correct" them back. Case-aware: dictating
+  # "Btw" yields "By the way", "BTW" yields "BY THE WAY", "btw" → "by the way".
+  # Word-boundary matched: "btw" inside "btwise" is left alone.
+  snippets:
+    btw: "by the way"
+    fyi: "for your information"
+    ttyl: "talk to you later"
+    lgtm: "looks good to me"
+    imo: "in my opinion"
+    afaik: "as far as I know"
+    asap: "as soon as possible"
+    eta: "estimated time of arrival"
+    tbh: "to be honest"
+    idk: "I don't know"
+
+  # Profile picked based on focused window title (substring match, first hit wins)
+  # Styles: default | code | casual | email
+  profiles:
+    - match: ["Code", "Cursor", "Sublime", "PyCharm", "Vim"]
+      style: "code"
+    - match: ["Slack", "Discord", "Teams", "WhatsApp"]
+      style: "casual"
+    - match: ["Gmail", "Outlook", "Mail"]
+      style: "email"
+    - match: []
+      style: "default"
+
+inject:
+  method: "paste"      # paste (clipboard+ctrl+v, fast) | type (slow, no clipboard)
+  restore_clipboard: true
+  trailing_space: true
+
+history:
+  enabled: true
+  db_path: "data/history.db"
+  keep_audio: false    # set true to also save WAVs (eats disk)
+
+logging:
+  level: "INFO"
+
+# Auto-phasing: gradually go from cloud → fully local → self-sufficient as history grows.
+#   Phase 1 Bootstrap        (0–50):     Groq Whisper + Groq cleanup        — needs internet
+#   Phase 2 Hybrid           (50–200):   Local Whisper + Groq cleanup       — needs internet for cleanup
+#   Phase 3 Independent      (200–2000): Local Whisper + Ollama cleanup     — fully offline
+#   Phase 4 Self-Sufficient  (2000+):    Local Whisper + learned cleanup    — fully offline, LLM-free
+# Missing providers degrade gracefully (no Groq → skip ahead; no Ollama → stay on Groq or 'none').
+phasing:
+  enabled: true
+  bootstrap_until: 50
+  independent_after: 200
+  self_sufficient_after: 2000     # switch to learned-only cleanup once enough corrections exist
+  min_learned_coverage: 0.6       # % of recent dictations that found a high-confidence learned fix
+  recompute_every: 1

@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.wav
+*.log
+ruvector.db
+.pytest_cache/
+
+# Runtime data — everything in data/ except the .gitkeep placeholder
+data/*
+!data/.gitkeep
+
+# Same for logs/
+logs/*
+!logs/.gitkeep
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
