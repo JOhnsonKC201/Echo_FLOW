@@ -1,0 +1,76 @@
+name: EchoFlow
+options:
+  bundleIdPrefix: com.echoflow
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+
+packages:
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit
+    from: "0.9.0"
+
+targets:
+  EchoFlow:
+    type: application
+    platform: iOS
+    sources:
+      - path: EchoFlow
+      - path: EchoFlowCore
+    info:
+      path: EchoFlow/Info.plist
+      properties:
+        CFBundleDisplayName: Echo Flow
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSMicrophoneUsageDescription: "Echo Flow needs the microphone so the keyboard can transcribe your voice into text."
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.echoflow.app
+        CODE_SIGN_ENTITLEMENTS: EchoFlow/EchoFlow.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - target: EchoFlowKeyboard
+      - package: WhisperKit
+
+  EchoFlowKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: EchoFlowKeyboard
+      - path: EchoFlowCore
+    info:
+      path: EchoFlowKeyboard/Info.plist
+      properties:
+        CFBundleDisplayName: Echo Flow
+        NSExtension:
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            RequestsOpenAccess: true
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.echoflow.app.keyboard
+        CODE_SIGN_ENTITLEMENTS: EchoFlowKeyboard/EchoFlowKeyboard.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: WhisperKit

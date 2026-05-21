@@ -61,8 +61,13 @@ tests/       run with scripts\run_tests.bat
 data/        your history.db lives here, and the knowledge graph HTML
 logs/        debug output
 scripts/     setup, helpers, utility scripts you'll rarely need
+ios/         iOS keyboard-extension port — see ios/README.md
 config.yaml  the only thing you should normally edit
 ```
+
+## iOS
+
+There's an iOS version too — a custom keyboard you install via Settings, hold to dictate, release to insert. Same Groq + on-device Whisper fallback as the desktop. See [`ios/README.md`](ios/README.md) for build steps (needs a Mac with Xcode).
 
 The main entry points: `INSTALL.bat` for first-time setup with autostart, `run.bat` to launch manually, `RESTART.bat` to kill and relaunch (useful after config changes), `UNINSTALL.bat` to remove the autostart shortcut and optionally wipe data.
 
