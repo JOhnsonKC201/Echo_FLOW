@@ -127,6 +127,18 @@ history:
   db_path: "data/history.db"
   keep_audio: false    # set true to also save WAVs (eats disk)
 
+# Mobile bridge: expose the desktop pipeline to your phone over local Wi-Fi.
+# Phone sends WAV → PC runs Whisper + Cleaner → cleaned text back. Same
+# learning loop as the hotkey path. See MOBILE_BRIDGE.md for setup.
+mobile:
+  enabled: false              # flip to true once you've read MOBILE_BRIDGE.md
+  bind_address: "0.0.0.0"     # "127.0.0.1" to keep it PC-only for testing
+  port: 8765
+  shared_key: ""              # auto-generated on first run if empty
+  advertise_mdns: true        # iPhone can hit http://echoflow.local:8765
+  allow_history_write: true   # mobile dictations feed the learner like desktop
+  default_style: "casual"     # used when the phone doesn't pass ?style=
+
 logging:
   level: "INFO"
 

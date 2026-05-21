@@ -60,6 +60,10 @@ If after a week of using FUTO plus iOS dictation you find yourself missing the c
 
 Until then, this gives you most of the value at zero effort.
 
+## Tier 3: bring the desktop smarts to your phone — [MOBILE_BRIDGE.md](MOBILE_BRIDGE.md)
+
+If you have Echo Flow already running on a PC you can reach over Wi-Fi, you can use **its** Whisper + LLM cleanup + learned corrections from your phone via an iOS Shortcut or Android Tasker recipe. Phone records audio, PC does the brain work, cleaned text lands on the phone's clipboard. Same `history.db`, same learning loop, no internet required. See `MOBILE_BRIDGE.md` for the recipes.
+
 ## Sources
 
 - [FUTO Voice Input homepage](https://voiceinput.futo.org/)

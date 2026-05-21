@@ -66,15 +66,22 @@ def _announce(msg: str, level: str = "info") -> None:
     getattr(_log, level, _log.info)(plain)
 
 
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+
 def load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent / "config.yaml"
-    with open(cfg_path, "r", encoding="utf-8") as f:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 class App:
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, cfg_path: Path | None = None):
         self.cfg = cfg
+        self.cfg_path = cfg_path or CONFIG_PATH
+        # Shared lock between desktop hotkey path and mobile HTTP bridge —
+        # faster-whisper + Ollama HTTP client aren't guaranteed thread-safe
+        # on a single model instance. Cheap when only one path is active.
+        self._pipeline_lock = threading.RLock()
         # Auto-phase: decide backend BEFORE loading anything
         db_path = cfg["history"]["db_path"]
         self.phase = phase_mod.decide(cfg, db_path)
@@ -274,7 +281,8 @@ class App:
             self.tray.set_state("thinking")
         console.print(f"[dim]Captured {duration_ms} ms (RMS={rms:.3f}) — transcribing…[/dim]")
         t0 = time.time()
-        raw, lang, whisper_meta = self.transcriber.transcribe(audio, sr)
+        with self._pipeline_lock:
+            raw, lang, whisper_meta = self.transcriber.transcribe(audio, sr)
         t1 = time.time()
         console.print(f"[green]Raw ({lang}, {t1-t0:.2f}s):[/green] {raw}")
         _log.info("raw (%s, %.2fs): %s", lang, t1 - t0, raw)
@@ -316,12 +324,15 @@ class App:
         max_tokens_override = self._pe_cfg.get("max_output_tokens") if use_prompt else None
         fallback_provider = self._pe_cfg.get("fallback_provider") if use_prompt else None
         _skipped_before = self.cleaner._n_polish_skipped
-        cleaned = self.cleaner.clean(
-            raw, style=style, augmentation=augmentation,
-            provider_override=provider_override,
-            max_tokens_override=max_tokens_override,
-            fallback_provider=fallback_provider,
-        )
+        # Pipeline lock: shared with mobile HTTP bridge to prevent concurrent
+        # Whisper/Ollama hits on a single model instance.
+        with self._pipeline_lock:
+            cleaned = self.cleaner.clean(
+                raw, style=style, augmentation=augmentation,
+                provider_override=provider_override,
+                max_tokens_override=max_tokens_override,
+                fallback_provider=fallback_provider,
+            )
         t2 = time.time()
         polish_skipped = self.cleaner._n_polish_skipped > _skipped_before
         # Cache immediately so Ctrl+Shift+Win re-paste sees this dictation
@@ -703,6 +714,26 @@ class App:
             wnotify.set_tray(getattr(self.tray, "_icon", None))
             wnotify.notify("Echo Flow", "Ready. Hold Ctrl+Shift to dictate.", "info")
         threading.Thread(target=_wire_notify, daemon=True).start()
+
+        # Mobile bridge: optional HTTP server so the user's phone can hit the
+        # same pipeline over local Wi-Fi (see MOBILE_BRIDGE.md).
+        mobile_cfg = self.cfg.get("mobile", {})
+        if mobile_cfg.get("enabled"):
+            try:
+                from . import bridge as _bridge
+                key = _bridge.ensure_shared_key(self.cfg, self.cfg_path)
+                host = mobile_cfg.get("bind_address", "0.0.0.0")
+                port = int(mobile_cfg.get("port", 8765))
+                threading.Thread(
+                    target=_bridge.serve,
+                    args=(self, host, port, _announce),
+                    daemon=True,
+                ).start()
+                if mobile_cfg.get("advertise_mdns", True):
+                    self._mdns_handle = _bridge.advertise_mdns(host, port)
+                _announce(f"[dim]Mobile shared key: {key}[/dim]")
+            except Exception as e:
+                _log.warning("mobile bridge failed to start: %s", e)
 
         # Secondary listener: re-paste last dictation on Ctrl+Win (or whatever
         # paste_last_combo is configured to). Runs in its own thread so it
