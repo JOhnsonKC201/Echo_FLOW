@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import hmac
 import io
+import re
 import secrets
 import socket
-import threading
 import time
 import wave
 from functools import wraps
@@ -62,7 +62,14 @@ def _decode_wav(raw_bytes: bytes) -> tuple[np.ndarray, int]:
 
 
 def ensure_shared_key(cfg: dict, cfg_path: Path | str) -> str:
-    """Return the shared key, autogenerating + persisting it on first run."""
+    """Return the shared key, autogenerating + persisting it on first run.
+
+    Persists via a targeted in-place text edit so YAML comments survive. The
+    config.yaml that ships with the repo carries ~40 lines of comments that
+    yaml.safe_dump would otherwise wipe on first mobile-bridge start. We only
+    fall back to a full safe_dump if the placeholder line isn't found
+    (e.g. user hand-edited the file without the empty `shared_key: ""`).
+    """
     mobile = cfg.setdefault("mobile", {})
     key = mobile.get("shared_key", "") or ""
     if key:
@@ -71,10 +78,22 @@ def ensure_shared_key(cfg: dict, cfg_path: Path | str) -> str:
     mobile["shared_key"] = key
     try:
         with open(cfg_path, "r", encoding="utf-8") as f:
-            on_disk = yaml.safe_load(f) or {}
-        on_disk.setdefault("mobile", {})["shared_key"] = key
+            text = f.read()
+        new_text, n = re.subn(
+            r'^(\s*shared_key:\s*)("")(\s*(?:#.*)?)$',
+            lambda m: f'{m.group(1)}"{key}"{m.group(3)}',
+            text,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        if n == 0:
+            # Placeholder not found — fall back to a structural rewrite. Users
+            # who removed the placeholder also presumably accept comment loss.
+            on_disk = yaml.safe_load(text) or {}
+            on_disk.setdefault("mobile", {})["shared_key"] = key
+            new_text = yaml.safe_dump(on_disk, sort_keys=False, default_flow_style=False)
         with open(cfg_path, "w", encoding="utf-8") as f:
-            yaml.safe_dump(on_disk, f, sort_keys=False, default_flow_style=False)
+            f.write(new_text)
     except Exception as e:
         _log.warning("could not persist generated shared_key to %s: %s", cfg_path, e)
     return key
@@ -95,11 +114,36 @@ def _local_ip_hint() -> str:
 
 def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write: bool):
     """Build the Flask app. Imported lazily so tests can patch and the desktop
-    path doesn't pay the import cost when mobile.enabled is False."""
+    path doesn't pay the import cost when mobile.enabled is False.
+
+    Requires `app_ref._pipeline_lock` — the shared serialization point between
+    the desktop hotkey path and HTTP requests. Resolved once here so route
+    handlers don't each re-resolve (and risk drifting to per-request locks if
+    a future refactor drops the attribute).
+    """
     from flask import Flask, jsonify, request
 
+    pipeline_lock = getattr(app_ref, "_pipeline_lock", None)
+    if pipeline_lock is None:
+        raise RuntimeError(
+            "bridge requires app_ref._pipeline_lock; set it in App.__init__"
+        )
+
     flask_app = Flask("echoflow.bridge")
-    flask_app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB cap
+    # 8 MB cap: 16 kHz mono PCM16 WAV is ~32 KB/s, so this is ~4 min of audio.
+    # The use case is bursty dictation, not file uploads.
+    flask_app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+
+    def _augmentation_for(text: str, style: str) -> str:
+        """Mirror src/main.py:255 — RAG few-shot for non-trivial inputs."""
+        learner = getattr(app_ref, "learner", None)
+        if learner is None or len(text) < 25:
+            return ""
+        try:
+            return learner.build_prompt_augmentation(style, query_text=text)
+        except Exception as e:
+            _log.warning("learner augmentation failed: %s", e)
+            return ""
 
     def auth_required(fn):
         @wraps(fn)
@@ -172,9 +216,9 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         style = (body.get("style") or default_style or "default").strip()
         if not text:
             return jsonify({"text": "", "style": style})
-        lock = getattr(app_ref, "_pipeline_lock", None) or threading.RLock()
-        with lock:
-            cleaned = app_ref.cleaner.clean(text, style=style)
+        augmentation = _augmentation_for(text, style)
+        with pipeline_lock:
+            cleaned = app_ref.cleaner.clean(text, style=style, augmentation=augmentation)
         return jsonify({"text": cleaned, "style": style})
 
     @flask_app.post("/v1/transcribe")
@@ -188,8 +232,7 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         if skip:
             return jsonify(info)
         t0 = time.time()
-        lock = getattr(app_ref, "_pipeline_lock", None) or threading.RLock()
-        with lock:
+        with pipeline_lock:
             raw, lang, _meta = app_ref.transcriber.transcribe(audio, sr)
         ms = int((time.time() - t0) * 1000)
         return jsonify({"text": raw, "language": lang, "ms": ms})
@@ -209,8 +252,7 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         window_title = _source_label()
 
         t0 = time.time()
-        lock = getattr(app_ref, "_pipeline_lock", None) or threading.RLock()
-        with lock:
+        with pipeline_lock:
             raw, lang, _meta = app_ref.transcriber.transcribe(audio, sr)
         t1 = time.time()
 
@@ -221,12 +263,27 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         if not raw.strip():
             return jsonify({"raw": "", "cleaned": "", "reason": "empty_transcription", "ms": int((t1 - t0) * 1000)})
 
-        with lock:
-            cleaned = app_ref.cleaner.clean(raw, style=style)
+        augmentation = _augmentation_for(raw, style)
+        with pipeline_lock:
+            cleaned = app_ref.cleaner.clean(raw, style=style, augmentation=augmentation)
         t2 = time.time()
 
         if allow_history_write and getattr(app_ref, "history", None) is not None:
             try:
+                # Embed for RAG so future dictations (mobile or desktop) can
+                # retrieve this as a few-shot example. Mirrors main.py:343-348.
+                emb_blob = None
+                emb_model = None
+                retriever = getattr(app_ref, "retriever", None)
+                if retriever is not None:
+                    try:
+                        vec = retriever.embed_text(raw)
+                        if vec is not None:
+                            from .retrieval import to_blob
+                            emb_blob = to_blob(vec)
+                            emb_model = retriever.model_name()
+                    except Exception as e:
+                        _log.warning("retriever embed failed: %s", e)
                 app_ref.history.log(
                     window_title=window_title,
                     style=style,
@@ -234,6 +291,8 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
                     duration_ms=duration_ms,
                     raw_text=raw,
                     cleaned_text=cleaned,
+                    embedding=emb_blob,
+                    embedding_model=emb_model,
                 )
                 if getattr(app_ref, "learner", None) is not None:
                     app_ref.learner.invalidate_cache()
@@ -289,6 +348,16 @@ def serve(app_ref, host: str, port: int, log_fn=None) -> None:
     shared_key = cfg.get("shared_key") or ""
     default_style = cfg.get("default_style", "casual")
     allow_history_write = bool(cfg.get("allow_history_write", True))
+    if not shared_key:
+        msg = (
+            "[red]Mobile bridge NOT started: mobile.shared_key is empty.[/red] "
+            "[dim]Set it in config.yaml or restart so it can autogenerate.[/dim]"
+        )
+        if log_fn:
+            log_fn(msg)
+        else:
+            _log.error("mobile bridge not started: shared_key empty")
+        return
     flask_app = _make_app(app_ref, shared_key, default_style, allow_history_write)
 
     from werkzeug.serving import make_server
