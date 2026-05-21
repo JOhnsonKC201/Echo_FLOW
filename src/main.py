@@ -731,7 +731,8 @@ class App:
                 ).start()
                 if mobile_cfg.get("advertise_mdns", True):
                     self._mdns_handle = _bridge.advertise_mdns(host, port)
-                _announce(f"[dim]Mobile shared key: {key}[/dim]")
+                # Do NOT print the full key — the bridge banner already shows
+                # a truncated prefix. Full value lives in config.yaml.
             except Exception as e:
                 _log.warning("mobile bridge failed to start: %s", e)
 

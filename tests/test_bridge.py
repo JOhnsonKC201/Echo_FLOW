@@ -64,21 +64,29 @@ class _StubCleaner:
         self.delay = delay
         self.suffix = suffix
         self.calls: list[tuple[str, str]] = []
+        self.augmentations: list[str] = []
         self.provider = "stub"
 
     def clean(self, text: str, style: str = "default", augmentation: str = "") -> str:
         self.calls.append((text, style))
+        self.augmentations.append(augmentation)
         if self.delay:
             time.sleep(self.delay)
         return (text + self.suffix).strip()
 
 
 class _StubLearner:
-    def __init__(self):
+    def __init__(self, augmentation: str = ""):
         self.invalidations = 0
+        self.augmentation = augmentation
+        self.augmentation_calls: list[tuple[str, str]] = []
 
     def invalidate_cache(self):
         self.invalidations += 1
+
+    def build_prompt_augmentation(self, style: str, query_text: str = "") -> str:
+        self.augmentation_calls.append((style, query_text))
+        return self.augmentation
 
 
 class _StubPatternMiner:
@@ -87,6 +95,19 @@ class _StubPatternMiner:
 
     def record(self, raw: str, cleaned: str):
         self.records.append((raw, cleaned))
+
+
+class _StubRetriever:
+    def __init__(self, vec_value: float = 0.5):
+        self.vec_value = vec_value
+
+    def embed_text(self, text: str):
+        import numpy as _np
+        return _np.full(384, self.vec_value, dtype=_np.float32)
+
+    @staticmethod
+    def model_name():
+        return "stub-embed-v1"
 
 
 def _make_app_ref(history=None, *, cleaner_delay=0.0, transcriber_delay=0.0):
@@ -302,36 +323,50 @@ def test_dictate_filters_whisper_hallucinations(temp_db):
 # ---------------------------------------------------------------------------
 
 def test_pipeline_lock_serializes_concurrent_dictate(temp_db):
+    """The shared lock must guarantee at most one transcribe runs at a time.
+
+    Deterministic check: the transcriber stub increments a counter on entry,
+    sleeps, decrements on exit. With a working lock, the counter never
+    exceeds 1. Timing-based assertions on this were flaky under GC pressure.
+    """
     from src import bridge
     h, _ = temp_db
-    # Simulate a slow transcriber so two requests would overlap without the lock.
-    app_ref = _make_app_ref(history=h, transcriber_delay=0.2)
+    app_ref = _make_app_ref(history=h)
+
+    in_flight = {"now": 0, "max": 0}
+    in_flight_lock = threading.Lock()
+
+    def slow_transcribe(audio, sample_rate=16000):
+        with in_flight_lock:
+            in_flight["now"] += 1
+            if in_flight["now"] > in_flight["max"]:
+                in_flight["max"] = in_flight["now"]
+        time.sleep(0.05)
+        with in_flight_lock:
+            in_flight["now"] -= 1
+        return "hello world", "en", {}
+
+    app_ref.transcriber.transcribe = slow_transcribe
+
     flask_app = bridge._make_app(app_ref, "test-key", "casual", True)
     flask_app.config["TESTING"] = True
     client = flask_app.test_client()
     wav = _wav_bytes(sr=16000, duration_s=1.0)
 
-    intervals: list[tuple[float, float]] = []
-    lock = threading.Lock()
+    results: list[int] = []
 
     def go():
-        t0 = time.time()
         r = client.post("/v1/dictate",
                         data={"file": (io.BytesIO(wav), "audio.wav")},
                         headers={"X-Echo-Key": "test-key"},
                         content_type="multipart/form-data")
-        t1 = time.time()
-        with lock:
-            intervals.append((t0, t1))
-        assert r.status_code == 200
+        results.append(r.status_code)
 
-    threads = [threading.Thread(target=go) for _ in range(2)]
+    threads = [threading.Thread(target=go) for _ in range(4)]
     for t in threads: t.start()
     for t in threads: t.join()
-    intervals.sort()
-    # If the lock serializes, the second request finishes after the first
-    # finishes, not 200ms after both started. Total wall time ≥ 2 * 0.2s.
-    assert (intervals[1][1] - intervals[0][0]) >= 0.35
+    assert results == [200, 200, 200, 200]
+    assert in_flight["max"] == 1, f"lock violated: {in_flight['max']} concurrent transcribes"
 
 
 # ---------------------------------------------------------------------------
@@ -384,3 +419,184 @@ def test_shared_key_existing_key_is_preserved(tmp_path):
 
     key = _bridge.ensure_shared_key(cfg_in_memory, cfg_path)
     assert key == "preset-key-1234567890"
+
+
+# ---------------------------------------------------------------------------
+# Audit-pass fixes — additional regressions to guard against
+# ---------------------------------------------------------------------------
+
+def test_ensure_shared_key_preserves_yaml_comments(tmp_path):
+    """Finding 1: yaml.safe_dump nukes comments. Targeted text edit must not."""
+    from src import bridge as _bridge
+    cfg_path = tmp_path / "config.yaml"
+    original = (
+        "# Top-level comment that must survive\n"
+        "history:\n"
+        "  enabled: true   # inline comment\n"
+        "\n"
+        "# Mobile bridge: see MOBILE_BRIDGE.md\n"
+        "mobile:\n"
+        '  enabled: true\n'
+        '  shared_key: ""        # auto-generated on first run\n'
+        "  port: 8765\n"
+    )
+    cfg_path.write_text(original, encoding="utf-8")
+    cfg = {"mobile": {"enabled": True, "shared_key": ""}}
+
+    key = _bridge.ensure_shared_key(cfg, cfg_path)
+
+    new_text = cfg_path.read_text(encoding="utf-8")
+    assert "# Top-level comment that must survive" in new_text
+    assert "# inline comment" in new_text
+    assert "# Mobile bridge: see MOBILE_BRIDGE.md" in new_text
+    assert "# auto-generated on first run" in new_text
+    assert f'shared_key: "{key}"' in new_text
+    assert 'shared_key: ""' not in new_text
+
+
+def test_ensure_shared_key_falls_back_when_placeholder_missing(tmp_path):
+    """If the user's config has no `shared_key: ""` line, fall back to yaml dump."""
+    import yaml as _yaml
+    from src import bridge as _bridge
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("history:\n  enabled: true\n", encoding="utf-8")
+    cfg = {"history": {"enabled": True}}
+
+    key = _bridge.ensure_shared_key(cfg, cfg_path)
+
+    on_disk = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    assert on_disk["mobile"]["shared_key"] == key
+
+
+def test_dictate_passes_augmentation_when_learner_present(temp_db):
+    """Finding 2: bridge must thread augmentation into cleaner.clean (RAG)."""
+    from src import bridge
+    h, _ = temp_db
+    app_ref = _make_app_ref(history=h)
+    app_ref.learner = _StubLearner(augmentation=" [RAG-context]")
+    flask_app = bridge._make_app(app_ref, "test-key", "casual", True)
+    flask_app.config["TESTING"] = True
+    client = flask_app.test_client()
+    # 25+ chars so it passes the skip_aug short-circuit
+    long_text = "this is a longer dictation that should trigger augmentation"
+    app_ref.transcriber.return_text = long_text
+    wav = _wav_bytes(sr=16000, duration_s=1.0)
+
+    client.post("/v1/dictate",
+                data={"file": (io.BytesIO(wav), "audio.wav")},
+                headers={"X-Echo-Key": "test-key"},
+                content_type="multipart/form-data")
+    assert app_ref.learner.augmentation_calls == [("casual", long_text)]
+    assert app_ref.cleaner.augmentations[-1] == " [RAG-context]"
+
+
+def test_dictate_skips_augmentation_for_short_text(temp_db):
+    """Mirror desktop's skip_aug = len(raw) < 25 short-circuit."""
+    from src import bridge
+    h, _ = temp_db
+    app_ref = _make_app_ref(history=h)
+    app_ref.learner = _StubLearner(augmentation=" [RAG]")
+    flask_app = bridge._make_app(app_ref, "test-key", "casual", True)
+    flask_app.config["TESTING"] = True
+    client = flask_app.test_client()
+    app_ref.transcriber.return_text = "short"   # 5 chars
+    wav = _wav_bytes(sr=16000, duration_s=1.0)
+
+    client.post("/v1/dictate",
+                data={"file": (io.BytesIO(wav), "audio.wav")},
+                headers={"X-Echo-Key": "test-key"},
+                content_type="multipart/form-data")
+    # Learner never called for short inputs; cleaner gets empty augmentation
+    assert app_ref.learner.augmentation_calls == []
+    assert app_ref.cleaner.augmentations[-1] == ""
+
+
+def test_cleanup_endpoint_passes_augmentation(temp_db):
+    """/v1/cleanup must also use the learner — phones using text-only path."""
+    from src import bridge
+    h, _ = temp_db
+    app_ref = _make_app_ref(history=h)
+    app_ref.learner = _StubLearner(augmentation=" [RAG]")
+    flask_app = bridge._make_app(app_ref, "test-key", "casual", True)
+    flask_app.config["TESTING"] = True
+    client = flask_app.test_client()
+
+    client.post("/v1/cleanup",
+                json={"text": "this is a longer text body to clean up properly"},
+                headers={"X-Echo-Key": "test-key"})
+    assert app_ref.cleaner.augmentations[-1] == " [RAG]"
+
+
+def test_dictate_writes_embedding_when_retriever_present(temp_db):
+    """Finding 3: mobile rows must carry an embedding so the retriever sees them."""
+    from src import bridge
+    h, _ = temp_db
+    app_ref = _make_app_ref(history=h)
+    app_ref.retriever = _StubRetriever(vec_value=0.25)
+    flask_app = bridge._make_app(app_ref, "test-key", "casual", True)
+    flask_app.config["TESTING"] = True
+    client = flask_app.test_client()
+    wav = _wav_bytes(sr=16000, duration_s=1.0)
+
+    r = client.post("/v1/dictate",
+                    data={"file": (io.BytesIO(wav), "audio.wav")},
+                    headers={"X-Echo-Key": "test-key"},
+                    content_type="multipart/form-data")
+    assert r.status_code == 200
+    row = h.conn.execute(
+        "SELECT embedding, embedding_model FROM dictations"
+    ).fetchone()
+    assert row[0] is not None and len(row[0]) > 0
+    assert row[1] == "stub-embed-v1"
+
+
+def test_dictate_handles_missing_retriever_gracefully(client_and_app):
+    """No retriever attribute → null embedding, no crash."""
+    client, app_ref = client_and_app
+    # Default _make_app_ref has no retriever attr
+    assert not hasattr(app_ref, "retriever")
+    wav = _wav_bytes(sr=16000, duration_s=1.0)
+    r = client.post("/v1/dictate",
+                    data={"file": (io.BytesIO(wav), "audio.wav")},
+                    headers={"X-Echo-Key": "test-key"},
+                    content_type="multipart/form-data")
+    assert r.status_code == 200
+    row = app_ref.history.conn.execute(
+        "SELECT embedding FROM dictations"
+    ).fetchone()
+    assert row[0] is None
+
+
+def test_make_app_raises_without_pipeline_lock():
+    """Finding 5: bridge must refuse to build without the shared lock."""
+    import types as _types
+    from src import bridge
+    app_ref = _types.SimpleNamespace(cfg={})   # no _pipeline_lock
+    with pytest.raises(RuntimeError, match="_pipeline_lock"):
+        bridge._make_app(app_ref, "test-key", "casual", True)
+
+
+def test_serve_refuses_empty_key(temp_db, monkeypatch):
+    """Finding 6: serve() must refuse to bind if shared_key is empty."""
+    from src import bridge
+    h, _ = temp_db
+    app_ref = _make_app_ref(history=h)
+    app_ref.cfg["mobile"]["shared_key"] = ""
+
+    # Trip if it tries to actually bind a port
+    def boom(*a, **kw):
+        raise AssertionError("serve() must not call make_server when key is empty")
+    monkeypatch.setattr("werkzeug.serving.make_server", boom)
+
+    logged: list[str] = []
+    bridge.serve(app_ref, "127.0.0.1", 18765, log_fn=logged.append)
+    assert any("not started" in m.lower() for m in logged)
+
+
+def test_max_content_length_is_8mb():
+    """Finding 7: cap should be 8 MB, not 25 MB."""
+    from src import bridge
+    import types as _types, threading as _thr
+    app_ref = _types.SimpleNamespace(cfg={}, _pipeline_lock=_thr.RLock())
+    flask_app = bridge._make_app(app_ref, "test-key", "casual", True)
+    assert flask_app.config["MAX_CONTENT_LENGTH"] == 8 * 1024 * 1024
