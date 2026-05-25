@@ -1,4 +1,4 @@
-"""Shared pytest fixtures. Tests must not require Groq/network."""
+"""Shared pytest fixtures. Tests must not require network — Echo Flow is local-only."""
 import os
 import sys
 import tempfile
@@ -26,6 +26,7 @@ def temp_db(tmp_path):
 
 @pytest.fixture
 def isolated_env(monkeypatch, tmp_path):
-    """Run tests with no real GROQ_API_KEY leaking in."""
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    """Run tests with no cloud API keys leaking in (Echo Flow is local-only)."""
+    for k in ("GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
     monkeypatch.chdir(tmp_path)

@@ -87,34 +87,39 @@ def test_history_log_embedding_blob(temp_db):
 
 # --- Phase decisions ----------------------------------------------------------
 
-def test_phase_decision_bootstrap_when_no_history(temp_db, monkeypatch):
+def test_phase_decision_independent_when_no_history(temp_db):
+    """Local-only: a fresh install with Ollama unreachable falls back to raw output,
+    transcribe backend is always local."""
     from src import phase as phase_mod
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
     _, path = temp_db
     cfg = {
-        "phasing": {"enabled": True, "bootstrap_until": 50, "independent_after": 200},
-        "whisper": {"backend": "hybrid"},
-        "cleanup": {"provider": "groq",
+        "phasing": {"enabled": True, "self_sufficient_after": 2000},
+        "whisper": {"backend": "local"},
+        "cleanup": {"provider": "ollama",
                     "ollama": {"base_url": "http://localhost:1"}},
     }
     decision = phase_mod.decide(cfg, path)
-    assert decision.name == "bootstrap"
-    assert decision.transcribe_backend == "groq"
+    assert decision.name == "independent"
+    assert decision.transcribe_backend == "local"
+    # Port 1 is dead → ollama_alive is False → cleanup_provider == "none"
+    assert decision.cleanup_provider == "none"
 
 
-def test_phase_respects_disabled_flag(temp_db, monkeypatch):
+def test_phase_respects_disabled_flag(temp_db):
+    """When phasing is disabled, transcribe backend is still forced to local,
+    and a legacy cloud provider name is normalized to ollama."""
     from src import phase as phase_mod
-    monkeypatch.setenv("GROQ_API_KEY", "gsk_fake")
     _, path = temp_db
     cfg = {
         "phasing": {"enabled": False},
-        "whisper": {"backend": "groq"},
+        "whisper": {"backend": "local"},
         "cleanup": {"provider": "groq",
                     "ollama": {"base_url": "http://localhost:1"}},
     }
     decision = phase_mod.decide(cfg, path)
     assert decision.name == "manual"
-    assert decision.transcribe_backend == "groq"
+    assert decision.transcribe_backend == "local"
+    assert decision.cleanup_provider == "ollama"
 
 
 # --- Singleton lock -----------------------------------------------------------

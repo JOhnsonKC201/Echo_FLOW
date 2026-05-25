@@ -33,27 +33,17 @@ sound:
   error_ms: 200
 
 whisper:
-  backend: "local"          # local | groq | hybrid. Auto-phasing may override.
+  backend: "local"          # local-only. Cloud backends removed.
   model: "auto"             # auto = base on CPU, large-v3-turbo on CUDA. Or pin: tiny, base, small, medium, large-v3-turbo
   device: "auto"            # auto, cuda, cpu
   compute_type: "auto"      # auto, float16, int8_float16, int8
   language: "en"            # English-only; pinning skips Whisper's language-detect step (~20ms win)
   beam_size: 5
   vad_filter: true
-  groq:
-    model: "whisper-large-v3-turbo"   # used only if backend=groq/hybrid and key set
-    api_key_env: "GROQ_API_KEY"
 
 cleanup:
   enabled: true
-  provider: "ollama"        # groq | ollama | anthropic | openai | learned | none. Auto-phasing may override.
-  groq:
-    # Speed vs quality tradeoff:
-    #   llama-3.3-70b-versatile: ~200ms, best quality, reliable instruction following
-    #   llama-3.1-8b-instant:    ~80ms, faster but slightly more chatbot risk
-    # Hallucination guard catches edge cases either way, so 8b is now usable.
-    model: "llama-3.1-8b-instant"
-    api_key_env: "GROQ_API_KEY"
+  provider: "ollama"        # ollama | learned | none. Local-only.
   # Adaptive learning: inject your past corrections as few-shot examples
   learning:
     enabled: true
@@ -67,15 +57,12 @@ cleanup:
       backfill_on_startup: true
   ollama:
     base_url: "http://localhost:11434"
-    model: "qwen2.5:3b-instruct"   # 3b = CPU-friendly (~1.9 GB). Bump to 7b for better quality on GPU/16GB+.
+    model: "qwen3.5:latest"        # 9.7B Qwen3.5 (~6.5 GB) — actually installed locally; strong instruction-following for prompt-engineering fallback.
   # "learned" provider: LLM-free cleanup. Applies vocab + high-confidence learned patterns only.
   learned:
     min_similarity: 0.85           # cosine threshold for retrieving a past correction as a fix
     min_pattern_confidence: 0.7    # require pattern to have been seen this often (success / total)
     fallback_to_ollama: true       # if no high-confidence fix found, fall back to ollama for this dictation
-  anthropic:
-    model: "claude-haiku-4-5-20251001"
-    api_key_env: "ANTHROPIC_API_KEY"
   # A/B provider shadow testing — runs an alternate provider in the background
   # on each dictation, grades both, and logs the comparison to provider_ab_log.
   # The primary (current `provider`) is what gets pasted — A/B is observational.
@@ -112,6 +99,18 @@ cleanup:
     - match: []
       style: "default"
 
+# Prompt Engineering mode — when enabled via tray toggle or one-shot hotkey,
+# the next dictation is rewritten into a full engineered prompt (constraints,
+# requirements, output format) instead of just cleaned. Designed for sending
+# short spoken ideas to Claude Code / ChatGPT.
+prompt_engineering:
+  enabled: true
+  provider: "ollama"             # local-only: ollama
+  fallback_provider: "ollama"    # invoked only if primary raises
+  oneshot_combo: "ctrl+shift+alt"  # arm prompt mode for the NEXT dictation only; "" to disable
+  audience: "claude-code"        # claude-code | chatgpt | generic — picks system-prompt variant
+  max_output_tokens: 700         # room for richer polish on complex multi-component dictations without inviting PRD-style padding
+
 inject:
   method: "paste"      # paste (clipboard+ctrl+v, fast) | type (slow, no clipboard)
   restore_clipboard: true
@@ -125,16 +124,13 @@ history:
 logging:
   level: "INFO"
 
-# Auto-phasing: gradually go from cloud → fully local → self-sufficient as history grows.
-#   Phase 1 Bootstrap        (0–50):     Groq Whisper + Groq cleanup        — needs internet
-#   Phase 2 Hybrid           (50–200):   Local Whisper + Groq cleanup       — needs internet for cleanup
-#   Phase 3 Independent      (200–2000): Local Whisper + Ollama cleanup     — fully offline
-#   Phase 4 Self-Sufficient  (2000+):    Local Whisper + learned cleanup    — fully offline, LLM-free
-# Missing providers degrade gracefully (no Groq → skip ahead; no Ollama → stay on Groq or 'none').
+# Auto-phasing (local-only):
+#   Phase 1 Independent      (0 – self_sufficient_after): Local Whisper + Ollama cleanup
+#   Phase 2 Self-Sufficient  (>= self_sufficient_after, with enough learned patterns + quality):
+#                                                          Local Whisper + LLM-free cleanup
+# If Ollama is unreachable, falls back to raw Whisper output.
 phasing:
   enabled: true
-  bootstrap_until: 50
-  independent_after: 200
   self_sufficient_after: 2000     # switch to learned-only cleanup once enough corrections exist
   min_learned_coverage: 0.6       # % of recent dictations that found a high-confidence learned fix
   recompute_every: 1

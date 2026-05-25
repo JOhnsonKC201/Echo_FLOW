@@ -13,13 +13,21 @@ from . import sound as wsound
 wlog.setup()
 _log = wlog.get("main")
 
+# Local-only enforcement: warn loudly if any legacy cloud key is set in the
+# environment so the user knows we are ignoring it.
+BLOCKED_ENV = ["GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+for _k in BLOCKED_ENV:
+    if os.getenv(_k):
+        _log.warning(
+            "%s is set but Echo Flow is local-only. Ignoring.", _k
+        )
+
 import yaml
 from rich.console import Console
 from rich.panel import Panel
 
 from .audio import AudioConfig, Recorder
 from .transcribe import WhisperConfig, Transcriber
-from .transcribe_cloud import GroqTranscriber, GroqWhisperConfig, HybridTranscriber
 from .cleanup import Cleaner
 from .inject import Injector
 from .history import History
@@ -86,42 +94,22 @@ class App:
         ))
         wc = cfg["whisper"]
         backend = wc.get("backend", "local")
-        local = None
-        cloud = None
-        if backend in ("local", "hybrid"):
-            _announce(f"[cyan]Loading local Whisper: {wc['model']}…[/cyan]")
-            local = Transcriber(WhisperConfig(
-                model=wc["model"],
-                device=wc.get("device", "auto"),
-                compute_type=wc.get("compute_type", "auto"),
-                language=wc.get("language"),
-                beam_size=wc.get("beam_size", 5),
-                vad_filter=wc.get("vad_filter", True),
-            ))
-        else:
-            _announce("[dim]Skipping local Whisper (groq-only mode = fast)[/dim]")
-        if backend in ("groq", "hybrid"):
-            gc = wc.get("groq", {})
-            try:
-                _announce(f"[cyan]Using Groq Whisper: {gc.get('model', 'whisper-large-v3-turbo')}[/cyan]")
-                cloud = GroqTranscriber(GroqWhisperConfig(
-                    model=gc.get("model", "whisper-large-v3-turbo"),
-                    language=wc.get("language"),
-                    api_key_env=gc.get("api_key_env", "GROQ_API_KEY"),
-                ))
-            except Exception as e:
-                _announce(f"[yellow]Groq disabled: {e}[/yellow]", level="warning")
-                cloud = None
-        if backend == "groq" and cloud:
-            self.transcriber = cloud
-        elif backend == "hybrid" and cloud and local:
-            self.transcriber = HybridTranscriber(cloud, local)
-        elif local:
-            self.transcriber = local
-        elif cloud:
-            self.transcriber = cloud
-        else:
-            raise RuntimeError("No transcription backend available")
+        if backend != "local":
+            _log.warning(
+                "whisper.backend=%s is a legacy cloud setting; Echo Flow is "
+                "local-only. Forcing backend=local.", backend,
+            )
+            backend = "local"
+            wc["backend"] = "local"
+        _announce(f"[cyan]Loading local Whisper: {wc['model']}…[/cyan]")
+        self.transcriber = Transcriber(WhisperConfig(
+            model=wc["model"],
+            device=wc.get("device", "auto"),
+            compute_type=wc.get("compute_type", "auto"),
+            language=wc.get("language"),
+            beam_size=wc.get("beam_size", 5),
+            vad_filter=wc.get("vad_filter", True),
+        ))
         self.cleaner = Cleaner(cfg["cleanup"])
         ic = cfg["inject"]
         self.injector = Injector(
@@ -165,6 +153,11 @@ class App:
         self._record_thread: threading.Thread | None = None
         self._active = False
         self._paused = False
+        # Prompt Engineering mode: sticky toggle from tray, plus a one-shot
+        # flag armed by an optional hotkey and consumed on the next dictation.
+        self._pe_cfg = cfg.get("prompt_engineering", {"enabled": False})
+        self._prompt_mode = False
+        self._prompt_oneshot = False
         self._last_row_id: int | None = None
         # Most-recent cleaned text held in RAM so re-paste isn't racing the
         # async DB write (which lands ~100-300ms after we paste).
@@ -242,14 +235,33 @@ class App:
         title = self.injector.focused_title()
         style = self.cleaner.pick_style(title)
 
-        # Skip RAG augmentation for short inputs — they don't benefit and the
-        # extra prompt tokens add ~50-100ms latency.
-        skip_aug = len(raw) < 25
+        # Prompt Engineering mode: tray-sticky toggle OR one-shot hotkey.
+        # Overrides style + provider, and disables RAG/A-B/pattern-mining for
+        # this dictation since those infer from cleanup pairs, not rewrites.
+        use_prompt = bool(self._pe_cfg.get("enabled")) and (
+            self._prompt_mode or self._prompt_oneshot
+        )
+        if use_prompt:
+            style = "prompt"
+            self._prompt_oneshot = False  # consume the one-shot arm
+            console.print("[magenta]🪄 Prompt Engineering mode active for this dictation.[/magenta]")
+
+        # Skip RAG augmentation for short inputs (no benefit) AND for prompt
+        # mode (past cleanup examples derail the rewrite).
+        skip_aug = use_prompt or len(raw) < 25
         augmentation = (
             self.learner.build_prompt_augmentation(style, query_text=raw)
             if (self.learner and not skip_aug) else ""
         )
-        cleaned = self.cleaner.clean(raw, style=style, augmentation=augmentation)
+        provider_override = self._pe_cfg.get("provider") if use_prompt else None
+        max_tokens_override = self._pe_cfg.get("max_output_tokens") if use_prompt else None
+        fallback_provider = self._pe_cfg.get("fallback_provider") if use_prompt else None
+        cleaned = self.cleaner.clean(
+            raw, style=style, augmentation=augmentation,
+            provider_override=provider_override,
+            max_tokens_override=max_tokens_override,
+            fallback_provider=fallback_provider,
+        )
         t2 = time.time()
         # Cache immediately so Ctrl+Shift+Win re-paste sees this dictation
         # even before the async DB write commits.
@@ -259,7 +271,7 @@ class App:
         # raw text in a background thread, grades both, and logs the
         # comparison. We still paste the primary (predictable UX).
         ab_cfg = self.cfg.get("cleanup", {}).get("ab_test", {})
-        if ab_cfg.get("enabled") and self.history:
+        if ab_cfg.get("enabled") and self.history and not use_prompt:
             alt = ab_cfg.get("alternate", "learned")
             primary = self.cleaner.provider
             if alt and alt != primary:
@@ -303,31 +315,36 @@ class App:
         _log.info("cleaned (%s, %.2fs)%s: %s", style, t2 - t1, learn_marker, cleaned)
 
         # Offline self-grading: produces a 0-100 quality score per dictation.
-        try:
-            quality = grade_mod.grade(
-                raw=raw, cleaned=cleaned, whisper_meta=whisper_meta,
-                retriever=self.retriever, pattern_miner=self.pattern_miner,
-                learner=self.learner, weights=self._grading_weights,
-            )
-            console.print(
-                f"[cyan]Quality: {quality.overall:.0f} "
-                f"(W:{quality.whisper_conf:.0f} H:{quality.no_hallucination:.0f} "
-                f"S:{quality.semantic_coherence:.0f} P:{quality.pattern_coverage:.0f})"
-                f" — {quality.explanation}[/cyan]"
-            )
-            if quality.overall < 50:
-                wnotify.notify(
-                    "Echo Flow",
-                    f"Low-confidence dictation ({quality.overall:.0f}/100) — review?",
-                    "warning",
-                )
-            self._last_quality = quality
-            self._recent_qualities.append(quality.overall)
-            if len(self._recent_qualities) > 50:
-                self._recent_qualities = self._recent_qualities[-50:]
-        except Exception as e:
-            _log.warning("grading failed: %s", e)
+        # Skip in prompt mode — the rewrite intentionally diverges from raw,
+        # which would tank the semantic-coherence score and skew weights.
+        if use_prompt:
             self._last_quality = None
+        else:
+            try:
+                quality = grade_mod.grade(
+                    raw=raw, cleaned=cleaned, whisper_meta=whisper_meta,
+                    retriever=self.retriever, pattern_miner=self.pattern_miner,
+                    learner=self.learner, weights=self._grading_weights,
+                )
+                console.print(
+                    f"[cyan]Quality: {quality.overall:.0f} "
+                    f"(W:{quality.whisper_conf:.0f} H:{quality.no_hallucination:.0f} "
+                    f"S:{quality.semantic_coherence:.0f} P:{quality.pattern_coverage:.0f})"
+                    f" — {quality.explanation}[/cyan]"
+                )
+                if quality.overall < 50:
+                    wnotify.notify(
+                        "Echo Flow",
+                        f"Low-confidence dictation ({quality.overall:.0f}/100) — review?",
+                        "warning",
+                    )
+                self._last_quality = quality
+                self._recent_qualities.append(quality.overall)
+                if len(self._recent_qualities) > 50:
+                    self._recent_qualities = self._recent_qualities[-50:]
+            except Exception as e:
+                _log.warning("grading failed: %s", e)
+                self._last_quality = None
 
         # PASTE FIRST — user feels the speed.
         self.injector.inject(cleaned)
@@ -356,7 +373,8 @@ class App:
                     if self.learner:
                         self.learner.invalidate_cache()
                     # Mine token-level substitutions for the LLM-free provider.
-                    if self.pattern_miner and raw != cleaned:
+                    # Skip for prompt mode — the rewrite isn't a cleanup pair.
+                    if self.pattern_miner and raw != cleaned and not use_prompt:
                         try:
                             self.pattern_miner.record(raw, cleaned)
                         except Exception as e:
@@ -542,6 +560,17 @@ class App:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
 
+    def tray_toggle_prompt_mode(self):
+        """Tray menu: toggle sticky Prompt Engineering mode."""
+        self._prompt_mode = not self._prompt_mode
+        state = "ON" if self._prompt_mode else "off"
+        console.print(f"[magenta]🪄 Prompt Engineering: {state}[/magenta]")
+        _log.info("prompt_mode toggled: %s", state)
+        wnotify.notify("Echo Flow", f"Prompt Engineering: {state}", "info")
+
+    def tray_get_prompt_mode_state(self) -> bool:
+        return self._prompt_mode
+
     def tray_pin_last(self):
         """Pin the most recent dictation as a Note via a quick Tk dialog."""
         db = self.cfg["history"]["db_path"]
@@ -566,23 +595,6 @@ class App:
         ))
         _log.info("Echo Flow ready (hotkey=%s mode=%s)", combo, self._mode)
 
-        # Pre-warm Groq HTTPS connection so first dictation is fast (~200ms saved)
-        def _prewarm():
-            try:
-                import os, requests
-                key = os.environ.get("GROQ_API_KEY")
-                if not key:
-                    return
-                # HEAD on a real endpoint establishes TLS + keeps it pooled
-                self.cleaner._session.head(
-                    "https://api.groq.com/openai/v1/models",
-                    headers={"Authorization": f"Bearer {key}"},
-                    timeout=5,
-                )
-            except Exception:
-                pass
-        threading.Thread(target=_prewarm, daemon=True).start()
-
         # Tray icon in its own thread
         self.tray = TrayApp(
             get_status=self.tray_status,
@@ -592,6 +604,10 @@ class App:
             on_open_graph=self.tray_open_graph,
             on_open_review_queue=self.tray_open_review_queue,
             on_pin_last=self.tray_pin_last,
+            on_toggle_prompt_mode=self.tray_toggle_prompt_mode
+                if self._pe_cfg.get("enabled") else None,
+            get_prompt_mode_state=self.tray_get_prompt_mode_state
+                if self._pe_cfg.get("enabled") else None,
             on_quit=self.tray_quit,
         )
         threading.Thread(target=self.tray.run, daemon=True).start()
@@ -620,6 +636,33 @@ class App:
                 _announce(f"[dim]Re-paste hotkey: {paste_combo} (fires on release)[/dim]")
             except Exception as e:
                 _log.warning("paste-last listener failed to start: %s", e)
+
+        # Prompt-engineering one-shot hotkey: arms _prompt_oneshot so the very
+        # next dictation goes through the prompt-engineering pipeline, even if
+        # the tray toggle is off. Fires on release for the same reason as the
+        # paste-last listener — modifier state needs to clear first.
+        oneshot_combo = self._pe_cfg.get("oneshot_combo") if self._pe_cfg.get("enabled") else None
+        if oneshot_combo:
+            try:
+                def _arm_prompt_oneshot():
+                    if self._prompt_oneshot:
+                        return  # already armed
+                    self._prompt_oneshot = True
+                    _log.info("prompt-engineering one-shot armed")
+                    wnotify.notify(
+                        "Echo Flow",
+                        "🪄 Prompt Engineering armed for next dictation",
+                        "info",
+                    )
+                pe_listener = HotkeyListener(
+                    oneshot_combo, "hold",
+                    on_activate=lambda: None,
+                    on_deactivate=_arm_prompt_oneshot,
+                )
+                threading.Thread(target=pe_listener.run, daemon=True).start()
+                _announce(f"[dim]Prompt-engineering one-shot hotkey: {oneshot_combo}[/dim]")
+            except Exception as e:
+                _log.warning("prompt-engineering listener failed to start: %s", e)
 
         # The dictation listener vetoes when "win" is added — that means the
         # user is forming the re-paste combo (Ctrl+Shift+Win), not dictating.

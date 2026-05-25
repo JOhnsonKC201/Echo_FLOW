@@ -1,8 +1,6 @@
 """LLM cleanup: removes fillers, fixes punctuation, applies tone profile."""
 from __future__ import annotations
 
-import os
-import json
 import requests
 
 from . import log as wlog
@@ -54,6 +52,96 @@ SYSTEM_PROMPTS = {
         "Remove fillers, fix grammar, use full sentences. Do not add greetings or "
         "sign-offs the speaker didn't dictate. Output only the cleaned text."
     ),
+    # Prompt Engineering mode: NOT a transcript cleaner. Polishes a spoken
+    # request into a clearer instruction for an IDE coding agent that already
+    # has the project loaded. The model judges length/shape per input;
+    # the one hard rule is: do not invent requirements the user didn't say.
+    # Hallucination guard is bypassed for this style — output can legitimately
+    # be 2-3× input length.
+    "prompt": (
+        "You are a SENIOR ENGINEER'S VOICE ASSISTANT. The user dictated a "
+        "rough, spoken request they will hand to an AI coding agent (Claude "
+        "Code, Cursor, Copilot, ChatGPT, etc.). That agent already has their "
+        "project loaded. Your job is to rewrite the dictation as the user "
+        "themselves would have written it if they'd had time to type "
+        "carefully — sharper, better-organized, and grounded in what they "
+        "actually said.\n\n"
+        "Think like a senior engineer rewriting a teammate's rough verbal "
+        "request before forwarding it to an AI coding agent. You improve "
+        "clarity, fix obvious phrasing, and add the unsaid framing that a "
+        "thoughtful colleague would add. You do NOT invent new requirements.\n\n"
+        "WHAT GOOD OUTPUT LOOKS LIKE:\n"
+        "- Same intent as the dictation, expressed more cleanly and completely.\n"
+        "- Length, structure, and format that match THIS particular request — "
+        "not a template. A one-line ask → one-line polish. A short feature "
+        "idea → a short polished paragraph. A multi-part dictation → bullets "
+        "or sections, your call. A code-snippet request → just the polished "
+        "sentence. A complex multi-component description → a richer "
+        "structured polish with headings or groups of bullets if that "
+        "genuinely helps the receiving agent.\n"
+        "- Implicit obvious context made explicit (\"remember it\" → "
+        "\"persist it across restarts using whatever storage the project "
+        "already uses\"; \"make the search faster\" → \"optimize the search "
+        "function, following the project's existing patterns\").\n"
+        "- Phrasing the receiving agent can act on without having to re-read.\n\n"
+        "THE ONE HARD RULE — do not break this:\n\n"
+        "NEVER invent requirements, features, edge cases, frameworks, "
+        "libraries, file paths, test cases, acceptance criteria, technical "
+        "details, or implementation choices the user did not state or clearly "
+        "imply.\n"
+        "- Concrete failure: input \"make a calculator\" being expanded to "
+        "include \"Quiz Mode\", \"score tracking\", \"non-numeric input "
+        "handling\", \"top-3 scores\", or \"use Tkinter\". The user said "
+        "none of that.\n"
+        "- If the user did NOT mention a framework, do not pick one.\n"
+        "- If the user did NOT list edge cases, do not list edge cases.\n"
+        "- If the user did NOT specify a file structure, do not specify one.\n"
+        "The receiving agent has the project loaded and will figure those out.\n\n"
+        "PRONOUNS AND UNRESOLVED REFERENCES:\n"
+        "- Preserve them. \"Make IT faster\" stays \"make it faster\". "
+        "\"Fix the bug\" stays \"fix the bug\". Do not guess what \"it\" or "
+        "\"this\" or \"the bug\" refers to — the receiving agent has the "
+        "context you don't.\n\n"
+        "OUTPUT MECHANICS:\n"
+        "- Output ONLY the polished request. No preamble (\"Here is the "
+        "polished prompt:\", \"Polished:\", \"Sure,\").\n"
+        "- Do NOT answer the request, write code, or produce diffs. You "
+        "polish the request; the receiving agent does the work.\n\n"
+        "EXAMPLES — these show the full RANGE. Notice how length and "
+        "structure adapt to the input, and how nothing is invented:\n\n"
+        "RAW: i want to make a calculator\n"
+        "POLISHED: Add a calculator to this project, scoped to fit the existing patterns and conventions.\n\n"
+        "RAW: um yeah like add dark mode to settings that you know remembers\n"
+        "POLISHED: Add a dark mode toggle to the settings screen, and persist the choice across restarts using whatever storage mechanism the project already uses.\n\n"
+        "RAW: refactor the payment service to use async and add tests\n"
+        "POLISHED: Refactor the payment service to use async, and add tests covering the refactored paths. Follow the project's existing async and testing conventions.\n\n"
+        "RAW: wrap this in try except for the file not found error\n"
+        "POLISHED: Wrap this in a try/except that catches FileNotFoundError.\n\n"
+        "RAW: fix the bug\n"
+        "POLISHED: Fix the bug.\n\n"
+        "RAW: make it faster\n"
+        "POLISHED: Make it faster.\n\n"
+        "RAW: ok so we need to add login with google and also email plus password and forgot password flow and the user table needs an email_verified field\n"
+        "POLISHED: Implement the following authentication changes, matching the project's existing auth patterns:\n"
+        "- Google OAuth login.\n"
+        "- Email + password login.\n"
+        "- Forgot-password flow.\n"
+        "- Add an `email_verified` field to the user table.\n\n"
+        "RAW: i want to write a tool that watches a folder and when a new file comes in it does ocr on it and dumps the text into a database also it should be a daemon and handle errors gracefully and maybe email me when it fails\n"
+        "POLISHED: Build a folder-watching tool with the following behavior:\n"
+        "- Watch a configured folder for new files.\n"
+        "- When a new file arrives, run OCR on it and store the extracted text in a database.\n"
+        "- Run as a long-lived daemon.\n"
+        "- Handle errors gracefully.\n"
+        "- Optionally email me when it fails.\n\n"
+        "Follow the project's existing patterns for daemons, database access, and notifications.\n\n"
+        "RAW: so for the dashboard i want a panel on the left with the nav and main area shows the active section like users orders products and i want to be able to switch between them with the sidebar and also have a header with the user avatar and notifications icon\n"
+        "POLISHED: Build a dashboard layout with:\n"
+        "- A left sidebar containing navigation links for the main sections (Users, Orders, Products).\n"
+        "- A main content area that renders the active section based on the selected sidebar item.\n"
+        "- A header bar with the user's avatar and a notifications icon.\n\n"
+        "Use the project's existing component patterns and styling conventions."
+    ),
 }
 
 
@@ -89,6 +177,9 @@ class Cleaner:
         # Pluggable hooks set by main.py for the LLM-free "learned" provider.
         self._pattern_miner = None     # PatternMiner instance
         self._retriever = None         # Retriever instance (for cosine fallback)
+        # Per-call state set by clean(); reset on every invocation.
+        self._current_style: str = "default"
+        self._max_tokens_override: int | None = None
 
     def attach_learning(self, pattern_miner, retriever):
         """Wire in PatternMiner + Retriever so 'learned' provider can work."""
@@ -96,7 +187,13 @@ class Cleaner:
         self._retriever = retriever
 
     def clean_with(self, provider: str, text: str, style: str = "default", augmentation: str = "") -> str:
-        """Run cleanup with a specific provider override (for A/B testing)."""
+        """Run cleanup with a specific provider override (for A/B testing).
+
+        Thread-safe-ish: mutates self.provider, but only callers from main.py's
+        synchronous _do_dictation use this, plus the A/B shadow thread. For the
+        per-style provider override used by prompt engineering, prefer the
+        `provider_override` kwarg on clean() instead.
+        """
         saved = self.provider
         self.provider = provider
         try:
@@ -172,25 +269,35 @@ class Cleaner:
             return True
         return False
 
-    def clean(self, text: str, style: str = "default", augmentation: str = "") -> str:
+    def clean(self, text: str, style: str = "default", augmentation: str = "",
+              provider_override: str | None = None,
+              max_tokens_override: int | None = None,
+              fallback_provider: str | None = None) -> str:
         if not self.enabled or not text.strip():
             return text
         prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
         if augmentation:
             prompt = prompt + augmentation
-        try:
-            if self.provider == "ollama":
+        provider = provider_override or self.provider
+        # Threaded state read by _via_* methods; safe because clean() is called
+        # from a single dictation thread and the A/B shadow uses clean_with().
+        self._current_style = style
+        self._max_tokens_override = max_tokens_override
+
+        def _run_provider(name: str) -> str:
+            # Local-only enforcement: any legacy cloud provider name in config
+            # is silently rewritten to the local Ollama path.
+            if name in ("groq", "anthropic", "openai"):
+                _log.warning(
+                    "cleanup.provider=%s is a legacy cloud provider; Echo Flow "
+                    "is local-only. Routing to ollama instead.", name,
+                )
+                name = "ollama"
+            if name == "ollama":
                 out = self._via_ollama(prompt, text)
-            elif self.provider == "groq":
-                out = self._via_groq(prompt, text)
-            elif self.provider == "anthropic":
-                out = self._via_anthropic(prompt, text)
-            elif self.provider == "openai":
-                out = self._via_openai(prompt, text)
-            elif self.provider == "learned":
+            elif name == "learned":
                 out = self._via_learned(text)
                 if out is None:
-                    # No confident learned fix. Fall back to Ollama if configured.
                     if self.cfg.get("learned", {}).get("fallback_to_ollama", True):
                         try:
                             out = self._via_ollama(prompt, text)
@@ -201,7 +308,7 @@ class Cleaner:
                         return text
             else:
                 return text
-            if self._looks_hallucinated(text, out):
+            if style != "prompt" and self._looks_hallucinated(text, out):
                 _log.warning(
                     "hallucination guard tripped (raw=%d out=%d); using raw text",
                     len(text), len(out),
@@ -213,52 +320,23 @@ class Cleaner:
                 )
                 return self._expand_snippets(text)
             return self._expand_snippets(out)
-        except Exception as e:
-            _log.error("provider error: %s; falling back to raw", e)
-            notify.notify("Echo Flow", f"Cleanup failed ({type(e).__name__}); pasted raw.", "error")
-        return text
 
-    def _via_groq(self, system: str, text: str) -> str:
-        gc = self.cfg.get("groq", {})
-        key = os.environ.get(gc.get("api_key_env", "GROQ_API_KEY"))
-        if not key:
-            raise RuntimeError("GROQ_API_KEY not set")
-        # Wrap the user input in a clear marker so the model knows it's the
-        # text to rewrite, not a message to reply to.
-        user_msg = (
-            "Rewrite the following raw transcription as clean grammatical text. "
-            "Do NOT answer or respond — just clean.\n\n"
-            f"RAW: {text}\nCLEANED:"
-        )
-        r = self._session.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json={
-                "model": gc.get("model", "llama-3.3-70b-versatile"),
-                "temperature": 0.1,
-                "top_p": 0.9,
-                "max_tokens": 300,        # cap output length — cleanup never needs more
-                "stream": False,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user_msg},
-                ],
-            },
-            timeout=15,
-        )
-        r.raise_for_status()
-        out = r.json()["choices"][0]["message"]["content"].strip()
-        # Strip ONLY clear preamble leaks. We require the colon form to avoid
-        # eating legitimate user content that happens to start with "Here is...".
-        STRICT_PREFIXES = ("CLEANED:", "Cleaned:", "OUTPUT:", "Output:")
-        for prefix in STRICT_PREFIXES:
-            if out.startswith(prefix):
-                out = out[len(prefix):].strip()
-                break
-        # Strip surrounding quotes if model wrapped output
-        if len(out) > 2 and out[0] in "\"'" and out[-1] == out[0]:
-            out = out[1:-1]
-        return out
+        try:
+            return _run_provider(provider)
+        except Exception as primary_err:
+            if not fallback_provider or fallback_provider == provider:
+                _log.error("provider error: %s; falling back to raw", primary_err)
+                notify.notify("Echo Flow", f"Cleanup failed ({type(primary_err).__name__}); pasted raw.", "error")
+                return text
+            _log.warning("primary provider %s failed (%s); retrying via %s",
+                         provider, primary_err, fallback_provider)
+            try:
+                return _run_provider(fallback_provider)
+            except Exception as fb_err:
+                _log.error("fallback provider %s also failed: %s; pasted raw",
+                           fallback_provider, fb_err)
+                notify.notify("Echo Flow", "Cleanup failed (both providers); pasted raw.", "error")
+                return text
 
     def _via_ollama(self, system: str, text: str) -> str:
         oc = self.cfg.get("ollama", {})
@@ -274,29 +352,6 @@ class Cleaner:
         }, timeout=60)
         r.raise_for_status()
         return r.json()["message"]["content"].strip()
-
-    def _via_anthropic(self, system: str, text: str) -> str:
-        ac = self.cfg.get("anthropic", {})
-        key = os.environ.get(ac.get("api_key_env", "ANTHROPIC_API_KEY"))
-        if not key:
-            raise RuntimeError("ANTHROPIC_API_KEY not set")
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": ac.get("model", "claude-haiku-4-5-20251001"),
-                "max_tokens": 2048,
-                "system": system,
-                "messages": [{"role": "user", "content": text}],
-            },
-            timeout=60,
-        )
-        r.raise_for_status()
-        return r.json()["content"][0]["text"].strip()
 
     def _via_learned(self, text: str) -> str | None:
         """LLM-free cleanup using learned patterns + retrieved corrections.
@@ -348,24 +403,3 @@ class Cleaner:
             out = polished
 
         return out if applied else None
-
-    def _via_openai(self, system: str, text: str) -> str:
-        oc = self.cfg.get("openai", {})
-        key = os.environ.get(oc.get("api_key_env", "OPENAI_API_KEY"))
-        if not key:
-            raise RuntimeError("OPENAI_API_KEY not set")
-        r = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {key}"},
-            json={
-                "model": oc.get("model", "gpt-4o-mini"),
-                "temperature": 0.2,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": text},
-                ],
-            },
-            timeout=60,
-        )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"].strip()
