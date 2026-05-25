@@ -189,6 +189,186 @@ def recent_grouped(
     return [{"group": label, "items": bucket[label]} for label in order]
 
 
+def fixes_made(
+    conn: sqlite3.Connection,
+    *,
+    include_mobile: bool = False,
+) -> dict:
+    """How much Echo Flow has fixed.
+
+    Returns {"words_corrected": N, "dictionary_fixes": M, "total": N+M}.
+    - words_corrected: |word_count(cleaned_text) - word_count(raw_text)| summed.
+      A rough but honest "Echo edited X words on your behalf."
+    - dictionary_fixes: count of dictations where raw vs cleaned differ AND
+      the raw word survives as a substring of the cleaned (treat as a vocab fix).
+      Approximation — exact attribution requires per-token diff.
+    """
+    where_src = _source_clause(include_mobile)
+    cur = conn.execute(
+        f"SELECT raw_text, cleaned_text FROM dictations "
+        f"WHERE raw_text IS NOT NULL AND cleaned_text IS NOT NULL{where_src}"
+    )
+    words_corrected = 0
+    dictionary_fixes = 0
+    for raw, cleaned in cur:
+        rw, cw = _word_count(raw), _word_count(cleaned)
+        words_corrected += abs(cw - rw)
+        if raw.strip() != cleaned.strip():
+            dictionary_fixes += 1
+    return {
+        "words_corrected": words_corrected,
+        "dictionary_fixes": dictionary_fixes,
+        "total": words_corrected + dictionary_fixes,
+    }
+
+
+def streak_heatmap(
+    conn: sqlite3.Connection,
+    *,
+    weeks: int = 14,
+    include_mobile: bool = False,
+) -> dict:
+    """GitHub-style heatmap data.
+
+    Returns {"days": [{"date": "YYYY-MM-DD", "count": N, "level": 0..4}, ...],
+             "weeks": <weeks>, "max": <peak count>}.
+    `level` is a 0-4 bucket suitable for color-stepping in CSS.
+    Days are emitted oldest->newest so the template can fill columns naturally.
+    """
+    where_src = _source_clause(include_mobile)
+    cutoff = _now_ts() - (weeks * 7 * 86400)
+    cur = conn.execute(
+        f"SELECT ts FROM dictations WHERE ts >= ?{where_src}",
+        (cutoff,),
+    )
+    counts: dict[dt.date, int] = defaultdict(int)
+    for (ts,) in cur:
+        counts[dt.datetime.fromtimestamp(ts).date()] += 1
+
+    today = dt.date.today()
+    start = today - dt.timedelta(days=weeks * 7 - 1)
+    days = []
+    peak = max(counts.values()) if counts else 0
+    for offset in range(weeks * 7):
+        d = start + dt.timedelta(days=offset)
+        c = counts.get(d, 0)
+        # 5 buckets: 0, 1-2, 3-5, 6-10, 11+. Scales with usage but stable.
+        if c == 0:
+            level = 0
+        elif c <= 2:
+            level = 1
+        elif c <= 5:
+            level = 2
+        elif c <= 10:
+            level = 3
+        else:
+            level = 4
+        days.append({"date": d.isoformat(), "count": c, "level": level,
+                     "weekday": d.weekday()})
+    return {"days": days, "weeks": weeks, "max": peak}
+
+
+def app_usage_breakdown(
+    conn: sqlite3.Connection,
+    *,
+    top_n: int = 6,
+    window_days: int = 30,
+    include_mobile: bool = False,
+) -> list[dict]:
+    """Group dictations by window_title bucket; return top N + 'Other'.
+
+    Returns [{"label": "Code", "count": N, "pct": 0.79}, ...] sorted by count desc.
+    Mirrors Wispr's "Desktop usage" panel.
+    """
+    where_src = _source_clause(include_mobile)
+    cutoff = _now_ts() - (window_days * 86400)
+    cur = conn.execute(
+        f"SELECT window_title FROM dictations "
+        f"WHERE ts >= ?{where_src}",
+        (cutoff,),
+    )
+    bucket_for_title = _bucket_window_title
+    counts: dict[str, int] = defaultdict(int)
+    total = 0
+    for (title,) in cur:
+        label = bucket_for_title(title)
+        counts[label] += 1
+        total += 1
+    if total == 0:
+        return []
+    sorted_buckets = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    top = sorted_buckets[:top_n]
+    rest = sorted_buckets[top_n:]
+    result = [
+        {"label": label, "count": cnt, "pct": cnt / total}
+        for label, cnt in top
+    ]
+    if rest:
+        other = sum(c for _, c in rest)
+        result.append({"label": "Other", "count": other, "pct": other / total})
+    return result
+
+
+# Window-title -> friendly category for the usage breakdown.
+# Substring matching, first hit wins. Mirrors cleanup.profiles intent but
+# decoupled (we don't want a usage chart change to break style routing).
+_USAGE_BUCKETS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Code",      ("code", "cursor", "windsurf", "pycharm", "sublime", "vim", "intellij", "vscode")),
+    ("Browser",   ("chrome", "edge", "firefox", "brave", "safari", "opera")),
+    ("Chat",      ("slack", "discord", "teams", "whatsapp", "telegram", "signal", "messenger")),
+    ("Email",     ("gmail", "outlook", "mail")),
+    ("Documents", ("word", "docs", "notion", "obsidian", "onenote", "evernote")),
+    ("Terminal",  ("terminal", "powershell", "cmd", "iterm", "wezterm")),
+    ("Meet",      ("zoom", "meet", "webex")),
+)
+
+
+def _bucket_window_title(title: str | None) -> str:
+    """Categorize a window title into a usage bucket label."""
+    if not title:
+        return "Other"
+    t = title.lower()
+    for label, needles in _USAGE_BUCKETS:
+        if any(n in t for n in needles):
+            return label
+    return "Other"
+
+
+def quality_trend(
+    conn: sqlite3.Connection,
+    *,
+    limit: int = 50,
+    include_mobile: bool = False,
+) -> list[float]:
+    """Most-recent N quality scores, oldest->newest, for the sparkline.
+
+    Returns floats in [0, 100]. Skips rows with NULL quality_score.
+    """
+    where_src = _source_clause(include_mobile)
+    cur = conn.execute(
+        f"SELECT quality_score FROM dictations "
+        f"WHERE quality_score IS NOT NULL{where_src} "
+        f"ORDER BY ts DESC LIMIT ?",
+        (limit,),
+    )
+    rows = [float(q) for (q,) in cur if q is not None]
+    rows.reverse()  # oldest first for left-to-right sparkline
+    return rows
+
+
+def insights_payload(conn: sqlite3.Connection) -> dict:
+    """One call for the Insights route."""
+    return {
+        "wpm": current_wpm(conn),
+        "total_words": total_words(conn),
+        "streak": day_streak(conn),
+        "fixes": fixes_made(conn),
+        "heatmap": streak_heatmap(conn),
+        "apps": app_usage_breakdown(conn),
+        "trend": quality_trend(conn),
+    }
+
+
 def home_payload(
     conn: sqlite3.Connection,
     *,

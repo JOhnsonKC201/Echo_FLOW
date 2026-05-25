@@ -97,9 +97,23 @@ def make_app(app_ref):
 
     @flask_app.get("/insights")
     def insights():
+        from . import analytics
+        payload = {
+            "wpm": 0, "total_words": 0, "streak": 0,
+            "fixes": {"words_corrected": 0, "dictionary_fixes": 0, "total": 0},
+            "heatmap": {"days": [], "weeks": 14, "max": 0},
+            "apps": [], "trend": [],
+        }
+        history = getattr(app_ref, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                payload = analytics.insights_payload(history.conn)
+            except Exception as e:
+                _log.warning("insights analytics failed: %s", e)
         return render_template(
             "insights.html", sections=SECTIONS, active="insights",
             theme=dcfg.get("theme", "dark"),
+            **payload,
         )
 
     @flask_app.get("/dictionary")

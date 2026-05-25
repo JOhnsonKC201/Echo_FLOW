@@ -150,3 +150,36 @@ button.primary, .btn.primary { background: var(--accent); color: #08110b; border
 }
 .stat-value { font-size: 32px; font-weight: 700; line-height: 1; }
 .stat-label { margin-top: 4px; color: var(--muted); font-size: 12px; text-transform: lowercase; letter-spacing: 0.3px; }
+
+/* --- Insights -------------------------------------------------------- */
+.insights-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+.tile-value { font-size: 28px; font-weight: 700; line-height: 1; }
+.tile-label { margin-top: 6px; color: var(--muted); font-size: 13px; }
+.tile-sub { margin-top: 6px; color: var(--muted); font-size: 12px; }
+.muted.small, .small { font-size: 11px; font-weight: normal; }
+.insights-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+.insight-card h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+.usage-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.usage-bar-wrap { background: var(--panel-2); border-radius: 999px; height: 10px; overflow: hidden; }
+.usage-bar { background: var(--accent); height: 100%; border-radius: 999px; }
+.usage-meta { display: flex; gap: 10px; align-items: baseline; margin-top: 4px; font-size: 12px; }
+.usage-pct { color: var(--text); font-weight: 600; min-width: 36px; }
+.usage-label { color: var(--text); }
+
+/* Heatmap */
+.heatmap { width: 100%; height: auto; display: block; }
+.hm-axis { fill: var(--muted); font-size: 9px; }
+.hm-cell { fill: var(--panel-2); stroke: var(--border); stroke-width: 0.5; }
+.hm-l0 { fill: var(--panel-2); }
+.hm-l1 { fill: #1f3a2c; }
+.hm-l2 { fill: #2c6a47; }
+.hm-l3 { fill: #3e9d68; }
+.hm-l4 { fill: var(--accent); }
+.hm-legend { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+.hm-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; border: 1px solid var(--border); }
+
+/* Sparkline */
+.spark { width: 100%; height: 80px; }
+.spark-line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.spark-grid { stroke: var(--border); stroke-dasharray: 2 4; }
