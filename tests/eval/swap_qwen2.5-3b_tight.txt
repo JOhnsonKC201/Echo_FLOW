@@ -1,0 +1,37 @@
+﻿# Polish eval � provider=ollama model=qwen2.5:3b-instruct-q4_K_M
+# 30 cases
+
+id             pts    ms     output
+----------------------------------------------------------------------------------------------------
+filler_001     1/2    378    'Yeah, I was thinking we should discuss the feature today.'
+filler_002     1/2    139    'the build fails on Windows.'
+filler_003     1/2    149    'the database is slow today I guess'
+filler_004     2/2    158    'We should actually rewrite the cache layer.'
+filler_005     2/2    163    'want to look at the metrics dashboard.'
+filler_006     2/2    190    'so the test failed because the mock was wrong'
+filler_007     2/2    165    'Sure send u the link when u can'
+filler_008     2/2    171    'We need to deploy by Friday.'
+filler_009     2/2    163    'I think the bug is in the parser.'
+filler_010     2/2    186    'I was working on the API endpoint when it crashed.'
+punct_001      2/2    146    'What time is the meeting?'
+punct_002      2/2    156    'I need to email John tomorrow.'
+punct_003      2/2    146    'Are you free at 3 PM?'
+punct_004      2/2    140    'Hi, how are you doing today?'
+punct_005      2/2    118    'Ship it'
+punct_006      2/2    162    'Did you finish the review?'
+punct_007      2/2    176    'The deployment was done; it took ten minutes.'
+punct_008      2/2    192    'thank you for the review, i will merge it now'
+tech_001       2/2    177    'The FastApiEndpoint()->500()'
+tech_002       2/2    180    'Create a new Supabase project for the demo.'
+tech_003       2/2    165    'We trained the embeddings using Node2Vec last week.'
+tech_004       2/2    174    'Move the table from PostgreSQL SQL to a new schema.'
+tech_005       1/2    179    'open paren error open paren dash .* close paren'
+tone_001       2/2    158    'Hey, still on for lunch?'
+tone_002       2/2    166    'Please find attached the updated proposal for your review.'
+tone_003       2/2    150    '(x = y + 1)'
+tone_004       2/2    205    'Let me know what time works best for the sync meeting tom...'
+edge_001       2/2    113    'okay'
+edge_002       2/2    164    'fix the bug'
+edge_003       2/2    183    'We should test it first.'
+----------------------------------------------------------------------------------------------------
+TOTAL: 56 / 60  (93.3%)  elapsed=5.1s

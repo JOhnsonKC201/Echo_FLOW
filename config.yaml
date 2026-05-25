@@ -57,7 +57,7 @@ cleanup:
       backfill_on_startup: true
   ollama:
     base_url: "http://localhost:11434"
-    model: "qwen3.5:latest"        # 9.7B Qwen3.5 (~6.5 GB) — actually installed locally; strong instruction-following for prompt-engineering fallback.
+    model: "qwen2.5:3b-instruct-q4_K_M"   # 3B Q4 (~2 GB VRAM) — leaves headroom for Whisper on an 8 GB RTX 5060. Previously qwen3.5:latest (6.5 GB).
   # "learned" provider: LLM-free cleanup. Applies vocab + high-confidence learned patterns only.
   learned:
     min_similarity: 0.85           # cosine threshold for retrieving a past correction as a fix
