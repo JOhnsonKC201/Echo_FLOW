@@ -59,6 +59,24 @@ class History:
             # mobile-bridge submissions (which must not poison RAG by default).
             if "source" not in cols:
                 self.conn.execute("ALTER TABLE dictations ADD COLUMN source TEXT NOT NULL DEFAULT 'desktop'")
+            # Dashboard-managed collections (added 2026-05-25). These shadow
+            # the older config.yaml-based snippets so the UI is the source of
+            # truth. Empty tables = fall back to config defaults.
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS custom_vocabulary (
+                    id INTEGER PRIMARY KEY,
+                    term TEXT NOT NULL UNIQUE,
+                    added_at REAL NOT NULL
+                )
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_snippets (
+                    id INTEGER PRIMARY KEY,
+                    code TEXT NOT NULL UNIQUE,
+                    expansion TEXT NOT NULL,
+                    added_at REAL NOT NULL
+                )
+            """)
         except Exception as e:
             # Column migrations should never fail in practice (idempotent via PRAGMA check).
             # If they do, log it loudly so we don't end up with a half-migrated schema.

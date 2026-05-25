@@ -1,14 +1,48 @@
 {% extends "base.html" %}
 {% block title %}Dictionary — Echo Flow{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Dictionary</h2>
-    <div class="sub">Custom vocabulary that biases Whisper's decoder.</div>
-    <div class="placeholder">
-      <div>
-        <div class="ph-title">Dictionary — Phase 3</div>
-        <div class="ph-body">CRUD + bulk import. Reads/writes config.yaml via the comment-preserving config_writer ported from bridge.ensure_shared_key.</div>
-      </div>
-    </div>
+<h1 class="welcome">Dictionary</h1>
+<div class="muted small" style="margin-bottom: 14px;">
+  Custom vocabulary that biases Whisper. Names, jargon, technical terms — anything that gets transcribed wrong.
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <h2>Add a term</h2>
+  <form method="post" action="/dictionary/add" class="row-form">
+    <input type="text" name="term" placeholder="e.g. FastAPI, qwen2.5, Morgan State" maxlength="80" autofocus required>
+    <button type="submit" class="primary">Add</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All terms <span class="muted small">{{ terms|length }} total</span></h2>
+  {% if terms %}
+    <ul class="term-list">
+      {% for t in terms %}
+        <li>
+          <span class="term">{{ t.term }}</span>
+          <form method="post" action="/dictionary/delete" class="inline">
+            <input type="hidden" name="id" value="{{ t.id }}">
+            <button type="submit" class="link-danger" title="Remove">✕</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="muted small">No custom terms yet. Add one above, or bulk-import below.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Bulk import</h2>
+  <div class="muted small" style="margin-bottom: 8px;">
+    Paste a list — comma-separated or one per line. Duplicates are ignored.
   </div>
+  <form method="post" action="/dictionary/import">
+    <textarea name="bulk" rows="6" placeholder="FastAPI&#10;Supabase&#10;node2vec&#10;PostgreSQL"></textarea>
+    <div style="margin-top: 10px;"><button type="submit" class="primary">Import</button></div>
+  </form>
+</div>
 {% endblock %}

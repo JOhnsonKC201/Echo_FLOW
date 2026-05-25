@@ -13,6 +13,20 @@ from .. import log as wlog
 _log = wlog.get("dashboard.app")
 
 
+def _maybe_reload_config(app_ref) -> None:
+    """Call App.reload_config() if it exists, swallowing errors.
+
+    Lets dashboard mutations take effect on the next dictation without a
+    full daemon restart. App.reload_config is added in Phase 3 to main.py.
+    """
+    fn = getattr(app_ref, "reload_config", None)
+    if callable(fn):
+        try:
+            fn()
+        except Exception as e:
+            _log.warning("reload_config failed after mutation: %s", e)
+
+
 # Sections in sidebar order, must match base.html nav.
 SECTIONS = [
     ("home", "Home", "/", "home.html"),
@@ -118,10 +132,84 @@ def make_app(app_ref):
 
     @flask_app.get("/dictionary")
     def dictionary():
+        from . import vocabulary as _vocab
+        from flask import request as _req
+        terms = []
+        history = getattr(app_ref, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                terms = _vocab.list_terms(history.conn)
+            except Exception as e:
+                _log.warning("dictionary list failed: %s", e)
+        flash = _req.args.get("flash", "")
         return render_template(
             "dictionary.html", sections=SECTIONS, active="dictionary",
             theme=dcfg.get("theme", "dark"),
+            terms=terms, flash=flash,
         )
+
+    @flask_app.post("/dictionary/add")
+    def dictionary_add():
+        from . import vocabulary as _vocab
+        from flask import request as _req, redirect
+        term = _req.form.get("term", "").strip()
+        history = getattr(app_ref, "history", None)
+        msg = ""
+        if not term:
+            msg = "Empty term ignored."
+        elif history is None or getattr(history, "conn", None) is None:
+            msg = "History disabled — cannot store terms."
+        else:
+            try:
+                _vocab.add_term(history.conn, term)
+                msg = f"Added {term!r}."
+                _maybe_reload_config(app_ref)
+            except ValueError as e:
+                msg = str(e)
+            except Exception as e:
+                _log.warning("dictionary add failed: %s", e)
+                msg = f"Error: {e}"
+        return redirect(f"/dictionary?flash={msg}")
+
+    @flask_app.post("/dictionary/delete")
+    def dictionary_delete():
+        from . import vocabulary as _vocab
+        from flask import request as _req, redirect
+        tid = int(_req.form.get("id", "0"))
+        history = getattr(app_ref, "history", None)
+        msg = ""
+        if history is not None and getattr(history, "conn", None) is not None and tid > 0:
+            try:
+                if _vocab.delete_term(history.conn, tid):
+                    msg = "Term removed."
+                    _maybe_reload_config(app_ref)
+                else:
+                    msg = "Term not found."
+            except Exception as e:
+                _log.warning("dictionary delete failed: %s", e)
+                msg = f"Error: {e}"
+        return redirect(f"/dictionary?flash={msg}")
+
+    @flask_app.post("/dictionary/import")
+    def dictionary_import():
+        from . import vocabulary as _vocab
+        from flask import request as _req, redirect
+        raw = _req.form.get("bulk", "")
+        history = getattr(app_ref, "history", None)
+        msg = ""
+        if history is None or getattr(history, "conn", None) is None:
+            msg = "History disabled — cannot import."
+        else:
+            try:
+                result = _vocab.bulk_import(history.conn, raw)
+                msg = (f"Imported {result['added']} "
+                       f"(skipped {result['duplicates']} duplicate, "
+                       f"{result['invalid']} invalid).")
+                _maybe_reload_config(app_ref)
+            except Exception as e:
+                _log.warning("dictionary import failed: %s", e)
+                msg = f"Error: {e}"
+        return redirect(f"/dictionary?flash={msg}")
 
     @flask_app.get("/snippets")
     def snippets():

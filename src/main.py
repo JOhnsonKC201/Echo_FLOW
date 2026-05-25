@@ -221,6 +221,26 @@ class App:
                     _log.warning("self-improve pass failed: %s", e)
             threading.Thread(target=_self_improve, daemon=True).start()
 
+    def reload_config(self) -> None:
+        """Rebuild hot-reloadable state after a dashboard config mutation.
+
+        Currently re-derives the Whisper initial_prompt (so dictionary
+        additions take effect on the next dictation without a daemon
+        restart). Other settings (mic device, hotkey, model) still
+        require a full restart — the dashboard surfaces that as a banner.
+        """
+        try:
+            vocab = self._build_custom_vocabulary()
+            ip = ("Vocabulary: " + ", ".join(vocab[:80])) if vocab else None
+            if hasattr(self.transcriber, "cfg"):
+                self.transcriber.cfg.initial_prompt = ip
+                _log.info(
+                    "reload_config: initial_prompt refreshed with %d terms",
+                    len(vocab[:80]),
+                )
+        except Exception as e:
+            _log.warning("reload_config failed: %s", e)
+
     def _build_custom_vocabulary(self) -> list[str]:
         """Assemble the vocabulary list used to bias the Whisper decoder.
 
@@ -247,6 +267,16 @@ class App:
         if isinstance(static, list):
             for t in static:
                 _add(str(t))
+
+        # 1b. Dashboard-managed terms (custom_vocabulary table). Highest user
+        # intent — user typed these explicitly through the Dictionary UI.
+        if self.history is not None:
+            try:
+                from .dashboard import vocabulary as _vocab
+                for t in _vocab.all_terms(self.history.conn):
+                    _add(t)
+            except Exception as e:
+                _log.warning("dashboard custom_vocabulary read failed: %s", e)
 
         # 2. Snippet expansion targets.
         snippets = (self.cfg.get("cleanup") or {}).get("snippets") or {}
