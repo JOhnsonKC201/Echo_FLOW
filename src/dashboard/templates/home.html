@@ -1,14 +1,47 @@
 {% extends "base.html" %}
 {% block title %}Home — Echo Flow{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Welcome back</h2>
-    <div class="sub">Your local dictation history will appear here.</div>
-    <div class="placeholder">
-      <div>
-        <div class="ph-title">Home — Phase 1</div>
-        <div class="ph-body">Chronological history (Today / Yesterday / older) with right-side stats card (total words, WPM, day streak) ships in Phase 1.</div>
+<div class="home-grid">
+  <section class="home-main">
+    <h1 class="welcome">Welcome back</h1>
+    {% if groups %}
+      {% for group in groups %}
+        <div class="day-label">{{ group['group'] }}</div>
+        <ul class="dictation-list">
+          {% for item in group['items'] %}
+            <li class="dictation-row">
+              <span class="time">{{ item.time }}</span>
+              <span class="preview">{{ item.text or "(empty)" }}</span>
+              {% if item.source != "desktop" %}
+                <span class="src-pill" title="from {{ item.source }}">{{ item.source }}</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endfor %}
+    {% else %}
+      <div class="placeholder">
+        <div>
+          <div class="ph-title">No dictations yet</div>
+          <div class="ph-body">Hold your dictation hotkey and speak. Your history will appear here.</div>
+        </div>
       </div>
+    {% endif %}
+  </section>
+
+  <aside class="home-stats">
+    <div class="stat-card">
+      <div class="stat-value">{{ "{:,}".format(stats.total_words) }}</div>
+      <div class="stat-label">total words</div>
     </div>
-  </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.wpm }}</div>
+      <div class="stat-label">wpm <span class="muted">(7-day avg)</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.streak }}</div>
+      <div class="stat-label">day{{ '' if stats.streak == 1 else 's' }} streak</div>
+    </div>
+  </aside>
+</div>
 {% endblock %}

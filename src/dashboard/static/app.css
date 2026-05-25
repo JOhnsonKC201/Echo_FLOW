@@ -101,3 +101,52 @@ button, .btn {
 }
 button:hover, .btn:hover { border-color: var(--accent); }
 button.primary, .btn.primary { background: var(--accent); color: #08110b; border-color: transparent; font-weight: 600; }
+
+/* --- Home layout ----------------------------------------------------- */
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: start;
+}
+.home-main { min-width: 0; }
+.welcome { font-size: 22px; font-weight: 600; margin: 4px 0 18px; }
+.day-label {
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin: 18px 0 8px;
+}
+.dictation-list { list-style: none; padding: 0; margin: 0; }
+.dictation-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+.dictation-row .time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.dictation-row .preview { color: var(--text); font-size: 14px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dictation-row .src-pill {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.home-stats { display: flex; flex-direction: column; gap: 12px; position: sticky; top: calc(var(--topbar-h) + 24px); }
+.stat-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.stat-value { font-size: 32px; font-weight: 700; line-height: 1; }
+.stat-label { margin-top: 4px; color: var(--muted); font-size: 12px; text-transform: lowercase; letter-spacing: 0.3px; }

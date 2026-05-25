@@ -75,14 +75,24 @@ def make_app(app_ref):
         if h not in allowlist:
             abort(400, description="bad host")
 
-    # --- Section routes (Phase 0 stubs) ----------------------------------
+    # --- Section routes --------------------------------------------------
     @flask_app.get("/")
     def home():
+        from . import analytics
+        payload = {"stats": {"total_words": 0, "wpm": 0, "streak": 0}, "groups": []}
+        history = getattr(app_ref, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                payload = analytics.home_payload(history.conn)
+            except Exception as e:
+                _log.warning("home analytics failed: %s", e)
         return render_template(
             "home.html",
             sections=SECTIONS,
             active="home",
             theme=dcfg.get("theme", "dark"),
+            stats=payload["stats"],
+            groups=payload["groups"],
         )
 
     @flask_app.get("/insights")
