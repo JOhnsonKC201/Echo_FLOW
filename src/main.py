@@ -248,7 +248,7 @@ class App:
 
         return terms[:80]
 
-    def _do_dictation(self, audio):
+    def _do_dictation(self, audio, t_release: float | None = None):
         if self._paused:
             console.print("[dim]Paused — discarding audio.[/dim]")
             return
@@ -404,8 +404,26 @@ class App:
 
         # PASTE FIRST — user feels the speed.
         self.injector.inject(cleaned)
+        t3 = time.time()
         if self.tray:
             self.tray.set_state("ok" if not self._paused else "paused")
+        # End-to-end latency instrumentation. t_release is None for the
+        # toggle/silence path; in that case skip the e2e number.
+        if t_release is not None:
+            _log.info(
+                "latency: release→asr=%.0fms asr→polish=%.0fms polish→inject=%.0fms e2e=%.0fms",
+                (t0 - t_release) * 1000,
+                (t1 - t0) * 1000,
+                (t3 - t2) * 1000,
+                (t3 - t_release) * 1000,
+            )
+        else:
+            _log.info(
+                "latency: asr=%.0fms polish=%.0fms inject=%.0fms",
+                (t1 - t0) * 1000,
+                (t2 - t1) * 1000,
+                (t3 - t2) * 1000,
+            )
 
         # THEN log + embed in background so it doesn't add to perceived latency.
         if self.history:
@@ -487,11 +505,14 @@ class App:
         if not self._active:
             return
         self._active = False
+        t_release = time.time()
         audio = self.recorder.stop()
         _log.info("hotkey released: stop, captured %d samples", len(audio))
         wsound.play("stop", self.cfg.get("sound"))
         console.print("[bold]■ stop[/bold]")
-        threading.Thread(target=self._do_dictation, args=(audio,), daemon=True).start()
+        threading.Thread(
+            target=self._do_dictation, args=(audio, t_release), daemon=True
+        ).start()
 
     def on_cancel_hold(self):
         """Veto: another combo (e.g. Ctrl+Shift+Win) is forming — abort recording."""
