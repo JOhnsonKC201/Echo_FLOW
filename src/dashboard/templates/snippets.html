@@ -1,14 +1,56 @@
 {% extends "base.html" %}
 {% block title %}Snippets — Echo Flow{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Snippets</h2>
-    <div class="sub">Shortcode → phrase expansion. Applied after LLM cleanup.</div>
-    <div class="placeholder">
-      <div>
-        <div class="ph-title">Snippets — Phase 4</div>
-        <div class="ph-body">Add / edit / delete snippets. Bulk import. Backend already lives in cleanup.py:_expand_snippets.</div>
-      </div>
-    </div>
+<h1 class="welcome">Snippets</h1>
+<div class="muted small" style="margin-bottom: 14px;">
+  Shortcode → phrase expansion. Say "btw" and Echo Flow types "by the way."
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <h2>Add or update a snippet</h2>
+  <form method="post" action="/snippets/add" class="row-form">
+    <input type="text" name="code" placeholder="code (e.g. btw)" maxlength="40" required style="flex: 0 0 180px;">
+    <input type="text" name="expansion" placeholder="expansion (e.g. by the way)" maxlength="500" required>
+    <button type="submit" class="primary">Save</button>
+  </form>
+  <div class="muted small" style="margin-top: 8px;">Saving an existing code updates its expansion.</div>
+</div>
+
+<div class="card">
+  <h2>All snippets <span class="muted small">{{ items|length }} total</span></h2>
+  {% if items %}
+    <table class="kv-table">
+      <thead><tr><th>Code</th><th>Expansion</th><th></th></tr></thead>
+      <tbody>
+        {% for s in items %}
+          <tr>
+            <td><code>{{ s.code }}</code></td>
+            <td>{{ s.expansion }}</td>
+            <td>
+              <form method="post" action="/snippets/delete" class="inline">
+                <input type="hidden" name="id" value="{{ s.id }}">
+                <button type="submit" class="link-danger" title="Remove">✕</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted small">No snippets yet. Add one above or bulk-import below.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Bulk import</h2>
+  <div class="muted small" style="margin-bottom: 8px;">
+    One per line: <code>code = expansion</code> or <code>code -&gt; expansion</code>.
   </div>
+  <form method="post" action="/snippets/import">
+    <textarea name="bulk" rows="6" placeholder="btw = by the way&#10;fyi -> for your information&#10;lgtm = looks good to me"></textarea>
+    <div style="margin-top: 10px;"><button type="submit" class="primary">Import</button></div>
+  </form>
+</div>
 {% endblock %}

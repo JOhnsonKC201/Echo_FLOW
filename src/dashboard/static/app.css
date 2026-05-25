@@ -202,3 +202,7 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .link-danger { background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font-size: 14px; }
 .link-danger:hover { color: var(--warn); }
 .inline { display: inline; }
+.kv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kv-table th, .kv-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.kv-table th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.kv-table code { background: var(--panel-2); padding: 2px 6px; border-radius: 4px; }

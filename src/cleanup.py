@@ -195,6 +195,16 @@ class Cleaner:
         finally:
             self.provider = saved
 
+    def set_snippets_provider(self, provider) -> None:
+        """Inject a callable returning the live snippets mapping.
+
+        When set, _expand_snippets calls provider() to fetch the current
+        map (e.g. from the SQLite user_snippets table) instead of reading
+        the static cfg["snippets"] dict. Provider returning {} or raising
+        falls back to cfg.
+        """
+        self._snippets_provider = provider
+
     def _expand_snippets(self, text: str) -> str:
         """Replace short-codes with full phrases after LLM cleanup.
 
@@ -203,7 +213,14 @@ class Cleaner:
         ("Btw"), the replacement gets a capitalized first letter ("By the way").
         Word-boundary matched so "btw" inside "btwise" stays intact.
         """
-        snippets = self.cfg.get("snippets") or {}
+        provider = getattr(self, "_snippets_provider", None)
+        if callable(provider):
+            try:
+                snippets = provider() or {}
+            except Exception:
+                snippets = self.cfg.get("snippets") or {}
+        else:
+            snippets = self.cfg.get("snippets") or {}
         if not snippets or not text:
             return text
         import re as _re

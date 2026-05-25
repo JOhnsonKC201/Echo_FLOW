@@ -213,10 +213,62 @@ def make_app(app_ref):
 
     @flask_app.get("/snippets")
     def snippets():
+        from . import snippets as _sn
+        from flask import request as _req
+        items = []
+        history = getattr(app_ref, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                items = _sn.list_snippets(history.conn)
+            except Exception as e:
+                _log.warning("snippets list failed: %s", e)
         return render_template(
             "snippets.html", sections=SECTIONS, active="snippets",
             theme=dcfg.get("theme", "dark"),
+            items=items, flash=_req.args.get("flash", ""),
         )
+
+    @flask_app.post("/snippets/add")
+    def snippets_add():
+        from . import snippets as _sn
+        from flask import request as _req, redirect
+        code = _req.form.get("code", "").strip()
+        expansion = _req.form.get("expansion", "").strip()
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/snippets?flash=History disabled — cannot save.")
+        try:
+            _sn.add_snippet(history.conn, code, expansion)
+            _maybe_reload_config(app_ref)
+            return redirect(f"/snippets?flash=Saved {code!r}.")
+        except ValueError as e:
+            return redirect(f"/snippets?flash={e}")
+
+    @flask_app.post("/snippets/delete")
+    def snippets_delete():
+        from . import snippets as _sn
+        from flask import request as _req, redirect
+        sid = int(_req.form.get("id", "0"))
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None or sid <= 0:
+            return redirect("/snippets?flash=Nothing to remove.")
+        _sn.delete_snippet(history.conn, sid)
+        _maybe_reload_config(app_ref)
+        return redirect("/snippets?flash=Snippet removed.")
+
+    @flask_app.post("/snippets/import")
+    def snippets_import():
+        from . import snippets as _sn
+        from flask import request as _req, redirect
+        raw = _req.form.get("bulk", "")
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/snippets?flash=History disabled — cannot import.")
+        r = _sn.bulk_import(history.conn, raw)
+        _maybe_reload_config(app_ref)
+        msg = (f"Imported {r['added']} new, updated {r['updated']}, "
+               f"skipped {r['invalid']} malformed.")
+        return redirect(f"/snippets?flash={msg}")
 
     @flask_app.get("/style")
     def style():

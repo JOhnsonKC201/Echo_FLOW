@@ -160,6 +160,19 @@ class App:
         if self.pattern_miner and self.retriever:
             self.cleaner.attach_learning(self.pattern_miner, self.retriever)
 
+        # Wire dashboard-managed snippets into the cleaner so user edits in
+        # the Snippets UI take effect on the next dictation. Falls back to
+        # the static config.yaml mapping when the SQLite table is empty.
+        if self.history is not None:
+            try:
+                from .dashboard import snippets as _sn
+                config_snips = (self.cfg.get("cleanup") or {}).get("snippets") or {}
+                self.cleaner.set_snippets_provider(
+                    lambda h=self.history, d=config_snips: _sn.merged_snippet_map(h.conn, d)
+                )
+            except Exception as e:
+                _log.warning("snippet provider wiring failed: %s", e)
+
         # Bias the Whisper decoder with the user's custom vocabulary so
         # proper nouns + technical terms are heard correctly the first time.
         # Built once at startup (cached on the Transcriber's WhisperConfig).
