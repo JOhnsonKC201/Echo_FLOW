@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+- Vestigial `ruvector.db` at repo root. No `src/` module referenced it;
+  the active vector store is the `embedding` BLOB column on the
+  `dictations` table in `data/history.db`. Personalization via
+  correction-learning is planned in a future v0.X release.
+
+### Changed
+- Local-only enforcement. Removed Groq / Anthropic / OpenAI cleanup paths,
+  removed `src/transcribe_cloud.py`, removed Groq HTTPS pre-warm, removed
+  auto-phasing to cloud providers. Cloud API keys in the environment are
+  now logged and ignored.
+- Polish LLM: `qwen3.5:latest` (~6.5 GB) → `qwen2.5:3b-instruct-q4_K_M`
+  (~2 GB) for VRAM headroom on 8 GB cards. Eval score went up
+  (50/60 → 56/60 with a tighter default system prompt).
+
+### Added
+- Whisper decoder biasing via `initial_prompt` built from custom
+  vocabulary + snippet expansions + personal vocabulary.
+- Polish eval harness at `tests/eval/` (30 cases) plus ASR eval stub.
+
 ## 0.1.0 — 2026-05-20
 
 First numbered version. The day a lot happened.
