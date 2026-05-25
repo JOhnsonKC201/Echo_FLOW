@@ -165,6 +165,16 @@ class Cleaner:
         # Per-call state set by clean(); reset on every invocation.
         self._current_style: str = "default"
         self._max_tokens_override: int | None = None
+        # Process-lifetime counters for skip-rate observability.
+        self._n_clean_calls: int = 0
+        self._n_polish_skipped: int = 0
+
+    def skip_stats(self) -> tuple[int, int, float]:
+        """(skipped, total, ratio) since process start. ratio = skipped/total."""
+        total = self._n_clean_calls
+        skipped = self._n_polish_skipped
+        ratio = (skipped / total) if total else 0.0
+        return skipped, total, ratio
 
     def attach_learning(self, pattern_miner, retriever):
         """Wire in PatternMiner + Retriever so 'learned' provider can work."""
@@ -233,14 +243,63 @@ class Cleaner:
                     return prof.get("style", "default")
         return "default"
 
+    # Filler tokens that the LLM cleanup is supposed to strip. If raw text
+    # contains none of these AND already has decent punctuation, the LLM call
+    # is wasted latency — deterministic polish does the same work in <1ms.
+    _FILLERS = frozenset({
+        "um", "uh", "uhh", "umm", "er", "ah", "hmm",
+        "like", "basically", "literally", "actually", "honestly",
+        "sort", "kind",  # "sort of", "kind of" — match the head token
+        "well", "so", "right",  # only flagged when sentence-initial
+    })
+    _FILLER_BIGRAMS = frozenset({"you know", "i mean", "i guess", "you see"})
+
+    @classmethod
+    def _is_already_clean(cls, raw: str) -> bool:
+        """True when raw Whisper output is clean enough to skip the LLM polish.
+
+        Conservative by design — a false positive here costs ugly output;
+        a false negative just costs an LLM round-trip we'd have made anyway.
+        Skips: short, well-capitalized, terminally punctuated, no fillers.
+        """
+        if not raw or not raw.strip():
+            return False
+        s = raw.strip()
+        # Length guard — long dictations are more likely to need restructuring.
+        if len(s) > 140:
+            return False
+        # Must end with sentence-final punctuation.
+        if s[-1] not in ".!?":
+            return False
+        # First alpha char must be capitalized (Whisper usually does this when confident).
+        first_alpha = next((c for c in s if c.isalpha()), "")
+        if first_alpha and not first_alpha.isupper():
+            return False
+        lower = s.lower()
+        # Filler bigrams.
+        for bg in cls._FILLER_BIGRAMS:
+            if bg in lower:
+                return False
+        # Filler unigrams (word-boundary).
+        import re as _re
+        tokens = _re.findall(r"[a-z']+", lower)
+        if any(t in cls._FILLERS for t in tokens):
+            return False
+        # Immediate word repeats ("the the", "I I") — Whisper artifact.
+        for i in range(len(tokens) - 1):
+            if tokens[i] == tokens[i + 1] and len(tokens[i]) > 1:
+                return False
+        return True
+
     @staticmethod
     def _looks_hallucinated(raw: str, out: str) -> bool:
         """Detect when the model gave a structured/chatbot response instead of cleaning."""
         if not out:
             return False
-        # Length guard: cleaned output should be <= ~2.5x the raw input.
-        # (Real cleanup adds a few articles/punctuation; structured replies add paragraphs.)
-        if len(out) > max(80, len(raw) * 2.5):
+        # Length guard: cleaned output should be <= ~2.5x raw, AND not more
+        # than raw + 30 chars of slack. Both must allow it; otherwise tripped.
+        # Old guard let "hi" (2 chars) silently accept 79-char hallucinations.
+        if len(out) > max(len(raw) + 30, len(raw) * 2.5):
             return True
         # Markdown structure = definitely a chatbot response, not a transcript clean.
         markdown_signals = ("**", "##", "- **", "* **", "Cleaned Text:", "Filler Words:",
@@ -260,6 +319,23 @@ class Cleaner:
               fallback_provider: str | None = None) -> str:
         if not self.enabled or not text.strip():
             return text
+        self._n_clean_calls += 1
+        # Fast path: if raw text is already clean and we're not in prompt mode,
+        # skip the LLM entirely. Saves 200-2000ms per dictation.
+        skip_when_clean = self.cfg.get("skip_when_clean", True)
+        if (
+            skip_when_clean
+            and style != "prompt"
+            and provider_override is None
+            and self._is_already_clean(text)
+        ):
+            self._n_polish_skipped += 1
+            _, total, ratio = self.skip_stats()
+            _log.info(
+                "polish: skipped LLM (already clean, %d chars) — skip-rate %.0f%% (%d/%d)",
+                len(text), ratio * 100, self._n_polish_skipped, total,
+            )
+            return self._expand_snippets(_polish_text(text))
         prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
         if augmentation:
             prompt = prompt + augmentation
@@ -326,17 +402,46 @@ class Cleaner:
     def _via_ollama(self, system: str, text: str) -> str:
         oc = self.cfg.get("ollama", {})
         url = f"{oc.get('base_url', 'http://localhost:11434').rstrip('/')}/api/chat"
-        r = requests.post(url, json={
+        options: dict = {"temperature": 0.2}
+        # Honor max_tokens_override (used by prompt-engineering mode).
+        if self._max_tokens_override:
+            options["num_predict"] = int(self._max_tokens_override)
+        timeout = float(oc.get("timeout_sec", 8.0))
+        r = self._session.post(url, json={
             "model": oc.get("model", "qwen2.5:7b-instruct"),
             "stream": False,
+            "keep_alive": oc.get("keep_alive", "10m"),
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": text},
             ],
-            "options": {"temperature": 0.2},
-        }, timeout=60)
+            "options": options,
+        }, timeout=timeout)
         r.raise_for_status()
         return r.json()["message"]["content"].strip()
+
+    def warmup(self) -> None:
+        """Preload the Ollama model so the first dictation isn't slow.
+
+        Sends a 1-token request that forces the model into VRAM and keeps
+        it resident per `cleanup.ollama.keep_alive`. Failures are silent —
+        Ollama may not be running yet; the real call will retry/fall back.
+        """
+        if self.provider != "ollama":
+            return
+        oc = self.cfg.get("ollama", {})
+        url = f"{oc.get('base_url', 'http://localhost:11434').rstrip('/')}/api/chat"
+        try:
+            self._session.post(url, json={
+                "model": oc.get("model", "qwen2.5:7b-instruct"),
+                "stream": False,
+                "keep_alive": oc.get("keep_alive", "10m"),
+                "messages": [{"role": "user", "content": "."}],
+                "options": {"num_predict": 1, "temperature": 0.0},
+            }, timeout=30.0)
+            _log.info("ollama warmup: model %s loaded", oc.get("model"))
+        except Exception as e:
+            _log.warning("ollama warmup skipped: %s", e)
 
     def _via_learned(self, text: str) -> str | None:
         """LLM-free cleanup using learned patterns + retrieved corrections.
@@ -371,11 +476,19 @@ class Cleaner:
                 patterns = {}
             if patterns:
                 import re as _re
+                # Normalize keys once so lookup is case-insensitive even if
+                # the miner emitted mixed-case patterns.
+                norm_patterns = {k.lower(): v for k, v in patterns.items()}
                 def _sub(match: "_re.Match[str]") -> str:
                     tok = match.group(0)
-                    repl = patterns.get(tok.lower())
+                    repl = norm_patterns.get(tok.lower())
                     if repl is None:
                         return tok
+                    # Preserve original casing: ALLCAPS → upper, Capitalized → cap.
+                    if tok.isupper() and len(tok) > 1:
+                        return repl.upper()
+                    if tok[:1].isupper():
+                        return repl[:1].upper() + repl[1:]
                     return repl
                 out = _re.sub(r"\b[\w']+\b", _sub, out)
                 if out != text:

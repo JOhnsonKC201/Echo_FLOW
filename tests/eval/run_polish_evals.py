@@ -106,4 +106,5 @@ def main(yaml_path: str | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    sys.exit(main(arg))

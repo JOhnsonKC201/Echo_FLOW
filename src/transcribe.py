@@ -21,6 +21,25 @@ class WhisperConfig:
     initial_prompt: str | None = None
 
 
+def _select_cuda_model() -> str:
+    """Pick the largest Whisper model that fits remaining VRAM.
+
+    large-v3 is ~3 GB fp16; turbo is ~1.5 GB. The cleanup LLM (Ollama
+    qwen2.5:3b ~2 GB) loads lazily on first dictation, so we must reserve
+    headroom for it on top of PyTorch + OS overhead (~1 GB). Total reserve:
+    ~3 GB. Only upgrade to large-v3 when free VRAM >= 7 GB.
+    """
+    try:
+        import torch
+        free, _ = torch.cuda.mem_get_info()
+        free_gb = free / (1024 ** 3)
+        if free_gb >= 7.0:
+            return "large-v3"
+        return "large-v3-turbo"
+    except Exception:
+        return "large-v3-turbo"
+
+
 class Transcriber:
     def __init__(self, cfg: WhisperConfig):
         from faster_whisper import WhisperModel
@@ -36,9 +55,13 @@ class Transcriber:
             compute = "float16" if device == "cuda" else "int8"
         model = cfg.model
         if model == "auto":
-            # GPU: large-v3-turbo matches Groq latency (~300ms).
-            # CPU: base balances accuracy (~85% WER) with ~1-2s latency on modern laptops.
-            model = "large-v3-turbo" if device == "cuda" else "base"
+            # CPU: base balances accuracy (~85% WER) with ~1-2s latency.
+            # GPU: turbo by default; upgrade to large-v3 if there is real VRAM
+            # headroom (>=5 GB free after the cleanup LLM has loaded).
+            if device != "cuda":
+                model = "base"
+            else:
+                model = _select_cuda_model()
         self.cfg = cfg
         self.resolved_model = model
         self.resolved_device = device

@@ -44,6 +44,10 @@ whisper:
 cleanup:
   enabled: true
   provider: "ollama"        # ollama | learned | none. Local-only.
+  # Fast-path: if Whisper output is already clean (capitalized, punctuated, no
+  # fillers, <=140 chars) skip the LLM polish entirely. Saves 200-2000ms on
+  # the common case. Set false to force LLM polish on every dictation.
+  skip_when_clean: true
   # Adaptive learning: inject your past corrections as few-shot examples
   learning:
     enabled: true
@@ -58,6 +62,8 @@ cleanup:
   ollama:
     base_url: "http://localhost:11434"
     model: "qwen2.5:3b-instruct-q4_K_M"   # 3B Q4 (~2 GB VRAM) — leaves headroom for Whisper on an 8 GB RTX 5060. Previously qwen3.5:latest (6.5 GB).
+    timeout_sec: 8.0        # tight cleanup timeout; fallback chain catches stalls
+    keep_alive: "10m"       # how long Ollama keeps the model resident after a call
   # "learned" provider: LLM-free cleanup. Applies vocab + high-confidence learned patterns only.
   learned:
     min_similarity: 0.85           # cosine threshold for retrieving a past correction as a fix

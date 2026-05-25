@@ -1,0 +1,78 @@
+# HELD-OUT polish-pipeline eval cases.
+#
+# RULES (READ BEFORE EDITING):
+#   - These cases must NOT be inspected while iterating on prompts or models.
+#   - Only run them when releasing a model/prompt change to confirm the main
+#     eval set did not over-fit.
+#   - Authored 2026-05-25 by separate pass; intentionally avoids reusing
+#     templates from polish_evals.yaml.
+#
+# Same scoring shape as polish_evals.yaml. Run with:
+#     python tests/eval/run_polish_evals.py tests/eval/polish_evals_heldout.yaml
+
+cases:
+  # --- Filler removal (different phrasings than main set) ----------------
+  - id: hf_001
+    raw: "honestly we kinda need to roll back the deploy right now"
+    expected_contains: ["roll back", "deploy"]
+    expected_not_contains: ["honestly", "kinda"]
+    tone: default
+  - id: hf_002
+    raw: "look the thing is the api keeps timing out on us"
+    expected_contains: ["api", "timing out"]
+    expected_not_contains: ["look the thing is"]
+    tone: default
+  - id: hf_003
+    raw: "alright so i guess we should probably bump the timeout"
+    expected_contains: ["bump", "timeout"]
+    expected_not_contains: ["alright so", "i guess"]
+    tone: default
+
+  # --- Already-clean inputs (should pass through near-verbatim) ----------
+  - id: hc_001
+    raw: "The migration completed successfully."
+    expected_contains: ["migration", "completed", "successfully"]
+    expected_not_contains: ["sorry", "cleaned"]
+    expected_exact: ["The migration completed successfully."]
+    tone: default
+  - id: hc_002
+    raw: "Ship it."
+    expected_contains: ["Ship"]
+    expected_not_contains: ["sorry"]
+    expected_exact: ["Ship it."]
+    tone: default
+
+  # --- Casual tone --------------------------------------------------------
+  - id: hcas_001
+    raw: "yo can you uh review the pr when you get a sec"
+    expected_contains: ["review", "pr"]
+    expected_not_contains: ["uh"]
+    tone: casual
+
+  # --- Email tone ---------------------------------------------------------
+  - id: he_001
+    raw: "um following up on the proposal we sent last tuesday any updates"
+    expected_contains: ["following up", "proposal"]
+    expected_not_contains: ["um"]
+    tone: email
+
+  # --- Code tone (symbol words) ------------------------------------------
+  - id: hco_001
+    raw: "x equals y dot length"
+    expected_contains: ["x", "y", "length"]
+    expected_not_contains: ["equals", " dot "]
+    tone: code
+
+  # --- Hallucination-prone short utterances ------------------------------
+  - id: hsh_001
+    raw: "nope just that"
+    expected_contains: ["just"]
+    expected_not_contains: ["**", "Cleaned Text"]
+    tone: default
+
+  # --- Word-repeat artifact ----------------------------------------------
+  - id: hr_001
+    raw: "we we should probably probably fix the the bug today"
+    expected_contains: ["fix", "bug", "today"]
+    expected_not_contains: ["we we", "probably probably", "the the"]
+    tone: default

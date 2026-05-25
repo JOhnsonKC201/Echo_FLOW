@@ -111,6 +111,9 @@ class App:
             vad_filter=wc.get("vad_filter", True),
         ))
         self.cleaner = Cleaner(cfg["cleanup"])
+        # Preload the cleanup model in the background so the first dictation
+        # doesn't pay the cold-start cost (5-15s for qwen2.5:3b).
+        threading.Thread(target=self.cleaner.warmup, daemon=True).start()
         ic = cfg["inject"]
         self.injector = Injector(
             method=ic.get("method", "paste"),
@@ -312,6 +315,7 @@ class App:
         provider_override = self._pe_cfg.get("provider") if use_prompt else None
         max_tokens_override = self._pe_cfg.get("max_output_tokens") if use_prompt else None
         fallback_provider = self._pe_cfg.get("fallback_provider") if use_prompt else None
+        _skipped_before = self.cleaner._n_polish_skipped
         cleaned = self.cleaner.clean(
             raw, style=style, augmentation=augmentation,
             provider_override=provider_override,
@@ -319,6 +323,7 @@ class App:
             fallback_provider=fallback_provider,
         )
         t2 = time.time()
+        polish_skipped = self.cleaner._n_polish_skipped > _skipped_before
         # Cache immediately so Ctrl+Shift+Win re-paste sees this dictation
         # even before the async DB write commits.
         self._last_cleaned_text = cleaned
@@ -327,7 +332,7 @@ class App:
         # raw text in a background thread, grades both, and logs the
         # comparison. We still paste the primary (predictable UX).
         ab_cfg = self.cfg.get("cleanup", {}).get("ab_test", {})
-        if ab_cfg.get("enabled") and self.history and not use_prompt:
+        if ab_cfg.get("enabled") and self.history and not use_prompt and not polish_skipped:
             alt = ab_cfg.get("alternate", "learned")
             primary = self.cleaner.provider
             if alt and alt != primary:
@@ -409,20 +414,24 @@ class App:
             self.tray.set_state("ok" if not self._paused else "paused")
         # End-to-end latency instrumentation. t_release is None for the
         # toggle/silence path; in that case skip the e2e number.
+        skip_marker = " [polish-skipped]" if polish_skipped else ""
         if t_release is not None:
             _log.info(
-                "latency: release→asr=%.0fms asr→polish=%.0fms polish→inject=%.0fms e2e=%.0fms",
+                "latency: release→asr=%.0fms asr=%.0fms polish=%.0fms inject=%.0fms e2e=%.0fms%s",
                 (t0 - t_release) * 1000,
-                (t1 - t0) * 1000,
-                (t3 - t2) * 1000,
-                (t3 - t_release) * 1000,
-            )
-        else:
-            _log.info(
-                "latency: asr=%.0fms polish=%.0fms inject=%.0fms",
                 (t1 - t0) * 1000,
                 (t2 - t1) * 1000,
                 (t3 - t2) * 1000,
+                (t3 - t_release) * 1000,
+                skip_marker,
+            )
+        else:
+            _log.info(
+                "latency: asr=%.0fms polish=%.0fms inject=%.0fms%s",
+                (t1 - t0) * 1000,
+                (t2 - t1) * 1000,
+                (t3 - t2) * 1000,
+                skip_marker,
             )
 
         # THEN log + embed in background so it doesn't add to perceived latency.
