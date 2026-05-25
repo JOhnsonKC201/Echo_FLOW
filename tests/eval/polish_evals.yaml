@@ -1,0 +1,170 @@
+# Polish-pipeline eval cases. Each case feeds `raw` through the same Cleaner
+# the live app uses and scores three things:
+#   - exact: cleaned == any of `expected_exact` (optional, 0/1)
+#   - contains_all: every token in `expected_contains` appears (0/1)
+#   - contains_none: no token in `expected_not_contains` appears (0/1)
+# Score per case = sum of (contains_all, contains_none) plus exact if provided.
+# Used by tests/eval/run_polish_evals.py; not a pytest test.
+#
+# Tone values must match a SYSTEM_PROMPTS style key: default | code | casual | email.
+
+cases:
+  # --- 10 filler-removal cases --------------------------------------------
+  - id: filler_001
+    raw: "um yeah so like i was thinking we should ship the feature today"
+    expected_contains: ["thinking", "ship", "feature", "today"]
+    expected_not_contains: ["um", " uh ", " like ", " you know "]
+    tone: default
+  - id: filler_002
+    raw: "uh you know basically the build is failing on windows"
+    expected_contains: ["build", "failing", "windows"]
+    expected_not_contains: ["uh", "you know", "basically"]
+    tone: default
+  - id: filler_003
+    raw: "i mean like sort of the database is slow today i guess"
+    expected_contains: ["database", "slow"]
+    expected_not_contains: ["I mean", "sort of", "i guess"]
+    tone: default
+  - id: filler_004
+    raw: "well um actually i think we should rewrite the cache layer"
+    expected_contains: ["rewrite", "cache"]
+    expected_not_contains: ["um", "well"]
+    tone: default
+  - id: filler_005
+    raw: "kind of want to look at the metrics dashboard you know"
+    expected_contains: ["metrics", "dashboard"]
+    expected_not_contains: ["kind of", "you know"]
+    tone: default
+  - id: filler_006
+    raw: "so basically the test failed because uh the mock was wrong"
+    expected_contains: ["test", "failed", "mock"]
+    expected_not_contains: ["basically", "uh"]
+    tone: default
+  - id: filler_007
+    raw: "um yeah send me the link when you get a chance"
+    expected_contains: ["send", "link"]
+    expected_not_contains: ["um", "yeah"]
+    tone: casual
+  - id: filler_008
+    raw: "like i was saying we need to deploy before friday"
+    expected_contains: ["deploy", "friday"]
+    expected_not_contains: ["like I was saying"]
+    tone: default
+  - id: filler_009
+    raw: "you know what i think the bug is in the parser"
+    expected_contains: ["bug", "parser"]
+    expected_not_contains: ["you know what"]
+    tone: default
+  - id: filler_010
+    raw: "um so i was um working on the api endpoint and um it crashed"
+    expected_contains: ["api", "crashed"]
+    expected_not_contains: ["um"]
+    tone: default
+
+  # --- 8 punctuation / capitalization cases -------------------------------
+  - id: punct_001
+    raw: "what time is the meeting"
+    expected_contains: ["What time is the meeting?"]
+    expected_not_contains: []
+    tone: default
+  - id: punct_002
+    raw: "i need to email john tomorrow"
+    expected_contains: ["I need to email"]
+    expected_not_contains: []
+    tone: default
+  - id: punct_003
+    raw: "are you free at three pm"
+    expected_contains: ["?"]
+    expected_not_contains: []
+    tone: default
+  - id: punct_004
+    raw: "hi how are you doing today"
+    expected_contains: ["?"]
+    expected_not_contains: []
+    tone: default
+  - id: punct_005
+    raw: "ship it"
+    expected_contains: ["Ship it"]
+    expected_not_contains: []
+    tone: default
+  - id: punct_006
+    raw: "did you finish the review"
+    expected_contains: ["?"]
+    expected_not_contains: []
+    tone: default
+  - id: punct_007
+    raw: "the deployment is done it took ten minutes"
+    expected_contains: ["deployment", "done"]
+    expected_not_contains: []
+    tone: default
+  - id: punct_008
+    raw: "thanks for the review i will merge it now"
+    expected_contains: ["merge"]
+    expected_not_contains: []
+    tone: default
+
+  # --- 5 technical-vocab cases --------------------------------------------
+  - id: tech_001
+    raw: "the fast api endpoint is returning a five hundred"
+    expected_contains: ["FastAPI", "500"]
+    expected_not_contains: []
+    tone: code
+  - id: tech_002
+    raw: "spin up a new supabase project for the demo"
+    expected_contains: ["Supabase"]
+    expected_not_contains: []
+    tone: default
+  - id: tech_003
+    raw: "we trained the embeddings with node two vec last week"
+    expected_contains: ["node2vec"]
+    expected_not_contains: []
+    tone: default
+  - id: tech_004
+    raw: "move the table from postgres sql to a new schema"
+    expected_contains: ["PostgreSQL"]
+    expected_not_contains: []
+    tone: default
+  - id: tech_005
+    raw: "write a regex to match all the log lines starting with error"
+    expected_contains: ["regex"]
+    expected_not_contains: []
+    tone: code
+
+  # --- 4 tone cases --------------------------------------------------------
+  - id: tone_001
+    raw: "hey just wanted to check if we are still on for lunch"
+    expected_contains: ["lunch"]
+    expected_not_contains: []
+    tone: casual
+  - id: tone_002
+    raw: "please find attached the updated proposal for your review"
+    expected_contains: ["proposal", "review"]
+    expected_not_contains: []
+    tone: email
+  - id: tone_003
+    raw: "open paren x equals y plus one close paren"
+    expected_contains: ["("]
+    expected_not_contains: []
+    tone: code
+  - id: tone_004
+    raw: "let me know what time works for the sync tomorrow"
+    expected_contains: ["sync"]
+    expected_not_contains: []
+    tone: email
+
+  # --- 3 edge cases --------------------------------------------------------
+  - id: edge_001
+    raw: "ok"
+    expected_contains: ["Ok"]
+    expected_not_contains: []
+    tone: default
+  - id: edge_002
+    raw: "fix the bug"
+    expected_contains: ["Fix the bug"]
+    expected_not_contains: []
+    tone: default
+  - id: edge_003
+    raw: "i i i mean we should we should test it first"
+    expected_contains: ["test"]
+    expected_not_contains: ["i i i", "we should we should"]
+    tone: default

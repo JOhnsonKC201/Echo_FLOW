@@ -1,0 +1,64 @@
+﻿.\.venv\Scripts\python.exe : provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+At line:1 char:18
++ ... \Echo_FLOW; .\.venv\Scripts\python.exe tests\eval\run_polish_evals.py ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (provider error:...ing back to raw:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+TOAST [Echo Flow]: Cleanup failed (ReadTimeout); pasted raw.
+provider error: HTTPConnectionPool(host='localhost', port=11434): Read timed out. (read timeout=60); falling back to raw
+# Polish eval � provider=ollama model=qwen3.5:latest
+# 30 cases
+
+id             pts    ms     output
+----------------------------------------------------------------------------------------------------
+filler_001     2/2    27167  'Yeah, I was thinking we should ship the feature today.'
+filler_002     1/2    17836  'Basically, the build is failing on Windows.'
+filler_003     1/2    60028  'i mean like sort of the database is slow today i guess'
+filler_004     1/2    60018  'well um actually i think we should rewrite the cache layer'
+filler_005     1/2    60025  'kind of want to look at the metrics dashboard you know'
+filler_006     1/2    60014  'so basically the test failed because uh the mock was wrong'
+filler_007     1/2    43803  'Yeah, send me the link when you get a chance.'
+filler_008     2/2    31452  'I was saying we need to deploy before Friday.'
+filler_009     2/2    38801  'I think the bug is in the parser.'
+filler_010     2/2    25985  'I was working on the API endpoint and it crashed.'
+punct_001      2/2    18462  'What time is the meeting?'
+punct_002      2/2    20638  'I need to email John tomorrow.'
+punct_003      1/2    60020  'are you free at three pm'
+punct_004      2/2    29803  'Hi, how are you doing today?'
+punct_005      2/2    30147  'Ship it.'
+punct_006      2/2    24780  'Did you finish the review?'
+punct_007      2/2    19646  'The deployment is done. It took ten minutes.'
+punct_008      2/2    34512  'Thanks for the review. I will merge it now.'
+tech_001       1/2    60020  'the fast api endpoint is returning a five hundred'
+tech_002       2/2    28989  'Spin up a new Supabase project for the demo.'
+tech_003       2/2    35988  'We trained the embeddings with Node2Vec last week.'
+tech_004       1/2    60004  'move the table from postgres sql to a new schema'
+tech_005       2/2    60017  'write a regex to match all the log lines starting with error'
+tone_001       2/2    60016  'hey just wanted to check if we are still on for lunch'
+tone_002       2/2    60010  'please find attached the updated proposal for your review'
+tone_003       2/2    16905  '(x=y+1)'
+tone_004       2/2    52801  'Please let me know what time works for the sync tomorrow.'
+edge_001       2/2    34794  'OK.'
+edge_002       2/2    17871  'Fix the bug.'
+edge_003       1/2    60010  'i i i mean we should we should test it first'
+----------------------------------------------------------------------------------------------------
+TOTAL: 50 / 60  (83.3%)  elapsed=1210.6s
