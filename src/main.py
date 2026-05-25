@@ -270,10 +270,11 @@ class App:
 
         # 1b. Dashboard-managed terms (custom_vocabulary table). Highest user
         # intent — user typed these explicitly through the Dictionary UI.
-        if self.history is not None:
+        history = getattr(self, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
             try:
                 from .dashboard import vocabulary as _vocab
-                for t in _vocab.all_terms(self.history.conn):
+                for t in _vocab.all_terms(history.conn):
                     _add(t)
             except Exception as e:
                 _log.warning("dashboard custom_vocabulary read failed: %s", e)
