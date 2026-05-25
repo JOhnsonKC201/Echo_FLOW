@@ -30,6 +30,13 @@ class History:
     def __init__(self, db_path: str):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        # WAL mode: readers (dashboard) never block writers (dictation daemon)
+        # and vice versa. Important now that the dashboard reads dictations
+        # live while the daemon is logging new rows.
+        try:
+            self.conn.execute("PRAGMA journal_mode=WAL")
+        except Exception:
+            pass
         # Step 1: ensure base table exists (without new columns)
         self.conn.executescript(BASE_SCHEMA)
         # Step 2: idempotent column migrations

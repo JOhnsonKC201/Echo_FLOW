@@ -1,0 +1,103 @@
+/* Echo Flow dashboard — palette lifted + extended from src/viewer.py */
+:root {
+  --bg: #0f1115;
+  --panel: #1a1d24;
+  --panel-2: #20242d;
+  --border: #2a2f3a;
+  --muted: #8b93a4;
+  --text: #e7e9ee;
+  --accent: #58c77a;
+  --accent-2: #4aa9ff;
+  --warn: #e6a23c;
+  --raw: #2a1f1f;
+  --clean: #1f2a23;
+  --sidebar-w: 220px;
+  --topbar-h: 56px;
+}
+[data-theme="light"] {
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --panel-2: #f1f3f7;
+  --border: #e4e7ee;
+  --muted: #6a7280;
+  --text: #1c2230;
+  --accent: #1f8a4c;
+  --accent-2: #1f6fd0;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; }
+a { color: inherit; text-decoration: none; }
+
+.sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 18px 14px;
+}
+.brand { display: flex; align-items: center; gap: 8px; padding: 4px 6px 18px; }
+.brand .logo { font-family: ui-monospace, monospace; color: var(--accent); }
+.brand-name { font-weight: 600; letter-spacing: 0.2px; }
+.pill { font-size: 10px; padding: 2px 6px; border-radius: 999px; background: var(--panel-2); color: var(--muted); margin-left: auto; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--muted); }
+.nav-item:hover { background: var(--panel-2); color: var(--text); }
+.nav-item.active { background: var(--panel-2); color: var(--text); }
+.nav-dot { width: 6px; height: 6px; background: var(--border); border-radius: 999px; }
+.nav-item.active .nav-dot { background: var(--accent); }
+.sidebar-footer { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); }
+.muted { color: var(--muted); font-size: 12px; }
+
+.topbar {
+  position: fixed; top: 0; left: var(--sidebar-w); right: 0;
+  height: var(--topbar-h);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.crumb { font-weight: 600; }
+.topbar-actions { display: flex; align-items: center; gap: 12px; }
+.bell { position: relative; padding: 6px; border-radius: 8px; }
+.bell:hover { background: var(--panel); }
+.bell-glyph { filter: grayscale(0.2); }
+.bell-badge {
+  position: absolute; top: -2px; right: -2px;
+  background: var(--accent); color: var(--bg);
+  font-size: 10px; padding: 1px 5px; border-radius: 999px;
+}
+
+.content {
+  margin-left: var(--sidebar-w);
+  margin-top: var(--topbar-h);
+  padding: 24px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.card h2 { margin: 0 0 6px; font-size: 16px; }
+.card .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.placeholder {
+  display: grid; place-items: center;
+  min-height: 280px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  background: var(--panel);
+}
+.placeholder .ph-title { font-size: 16px; color: var(--text); margin-bottom: 4px; }
+.placeholder .ph-body { font-size: 13px; max-width: 420px; text-align: center; }
+
+button, .btn {
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); padding: 8px 14px;
+  border-radius: 8px; cursor: pointer; font-size: 13px;
+}
+button:hover, .btn:hover { border-color: var(--accent); }
+button.primary, .btn.primary { background: var(--accent); color: #08110b; border-color: transparent; font-weight: 600; }

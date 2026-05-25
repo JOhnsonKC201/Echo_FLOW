@@ -639,6 +639,40 @@ class App:
         db = self.cfg["history"]["db_path"]
         threading.Thread(target=render_graph, args=(db,), daemon=True).start()
 
+    def tray_open_dashboard(self):
+        """Launch the PyWebView dashboard window in a detached subprocess.
+
+        Falls back to opening the default browser if the window can't open
+        (PyWebView missing, WebView2 runtime absent, etc.). The window
+        process is independent of the daemon — closing it won't stop
+        dictation, and a crash won't take the daemon down.
+        """
+        import subprocess
+        try:
+            from . import dashboard as _dash
+            port = _dash.read_port_file() or int(
+                self.cfg.get("dashboard", {}).get("port", 8766)
+            )
+        except Exception:
+            port = 8766
+
+        venv_python = Path(__file__).resolve().parent.parent / ".venv" / "Scripts" / "python.exe"
+        py = str(venv_python) if venv_python.exists() else sys.executable
+
+        def _spawn():
+            try:
+                subprocess.Popen(
+                    [py, "-m", "src.dashboard.window", "--port", str(port)],
+                    cwd=str(Path(__file__).resolve().parent.parent),
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception as e:
+                _log.warning("dashboard window launch failed: %s; opening in browser", e)
+                import webbrowser
+                webbrowser.open(f"http://127.0.0.1:{port}/")
+
+        threading.Thread(target=_spawn, daemon=True).start()
+
     def _on_paste_last(self):
         """Re-paste handler: prefers the in-memory cache (no race with async DB write),
         falls back to the database for newly-started sessions."""
@@ -721,6 +755,7 @@ class App:
             on_edit_last=self.tray_edit_last,
             on_open_history=self.tray_open_history,
             on_open_graph=self.tray_open_graph,
+            on_open_dashboard=self.tray_open_dashboard,
             on_open_review_queue=self.tray_open_review_queue,
             on_pin_last=self.tray_pin_last,
             on_toggle_prompt_mode=self.tray_toggle_prompt_mode
@@ -757,6 +792,23 @@ class App:
                 # a truncated prefix. Full value lives in config.yaml.
             except Exception as e:
                 _log.warning("mobile bridge failed to start: %s", e)
+
+        # Desktop dashboard: local Flask app for the Wispr-style sidebar UI.
+        # Bound to 127.0.0.1 by default — same-machine trust model, no auth.
+        # Daemon thread so the hotkey/audio path is never blocked by it.
+        dash_cfg = self.cfg.get("dashboard", {})
+        if dash_cfg.get("enabled", True):
+            try:
+                from . import dashboard as _dash
+                dhost = dash_cfg.get("host", "127.0.0.1")
+                dport = int(dash_cfg.get("port", 8766))
+                threading.Thread(
+                    target=_dash.serve,
+                    args=(self, dhost, dport, _announce),
+                    daemon=True,
+                ).start()
+            except Exception as e:
+                _log.warning("dashboard failed to start: %s", e)
 
         # Secondary listener: re-paste last dictation on Ctrl+Win (or whatever
         # paste_last_combo is configured to). Runs in its own thread so it
