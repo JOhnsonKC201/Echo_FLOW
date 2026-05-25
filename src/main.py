@@ -149,6 +149,20 @@ class App:
         if self.pattern_miner and self.retriever:
             self.cleaner.attach_learning(self.pattern_miner, self.retriever)
 
+        # Bias the Whisper decoder with the user's custom vocabulary so
+        # proper nouns + technical terms are heard correctly the first time.
+        # Built once at startup (cached on the Transcriber's WhisperConfig).
+        try:
+            vocab = self._build_custom_vocabulary()
+            if vocab:
+                # Keep well under faster-whisper's ~224-token initial_prompt
+                # budget. Capping at 80 terms is roughly 100-160 tokens.
+                ip = "Vocabulary: " + ", ".join(vocab[:80])
+                self.transcriber.cfg.initial_prompt = ip
+                _log.info("whisper initial_prompt set with %d vocab terms", min(80, len(vocab)))
+        except Exception as e:
+            _log.warning("custom vocabulary biasing skipped: %s", e)
+
         self._mode = cfg["hotkey"].get("mode", "hold")
         self._record_thread: threading.Thread | None = None
         self._active = False
@@ -191,6 +205,48 @@ class App:
                 except Exception as e:
                     _log.warning("self-improve pass failed: %s", e)
             threading.Thread(target=_self_improve, daemon=True).start()
+
+    def _build_custom_vocabulary(self) -> list[str]:
+        """Assemble the vocabulary list used to bias the Whisper decoder.
+
+        Merges (in priority order):
+          1. Static custom_vocabulary list from config.yaml (if present)
+          2. Snippet expansions (config.yaml cleanup.snippets values) so
+             snippet outputs land in the acoustic prior too.
+          3. Personal vocabulary mined from history via Learner.
+
+        De-duplicates while preserving order, returning at most ~80 terms.
+        """
+        terms: list[str] = []
+        seen: set[str] = set()
+
+        def _add(t: str) -> None:
+            t = (t or "").strip()
+            if not t or t.lower() in seen:
+                return
+            seen.add(t.lower())
+            terms.append(t)
+
+        # 1. Optional static list from config (top-level custom_vocabulary).
+        static = self.cfg.get("custom_vocabulary") or []
+        if isinstance(static, list):
+            for t in static:
+                _add(str(t))
+
+        # 2. Snippet expansion targets.
+        snippets = (self.cfg.get("cleanup") or {}).get("snippets") or {}
+        for v in snippets.values():
+            _add(str(v))
+
+        # 3. Personal vocabulary mined from history.
+        if self.learner is not None:
+            try:
+                for t in self.learner.personal_vocabulary(limit=80):
+                    _add(t)
+            except Exception as e:
+                _log.warning("personal_vocabulary failed: %s", e)
+
+        return terms[:80]
 
     def _do_dictation(self, audio):
         if self._paused:

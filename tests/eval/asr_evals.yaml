@@ -1,0 +1,33 @@
+# ASR (Whisper) eval stub — measures whether initial_prompt biasing fixes
+# proper-noun mishears. NOT runnable headlessly: audio fixtures must be
+# recorded by the user (or generated via TTS) and placed under
+# tests/eval/asr_fixtures/.
+#
+# TODO(user): record or TTS-synthesize each `audio_path` clip below and
+# implement a companion runner (tests/eval/run_asr_evals.py) that loads the
+# WAV, calls Transcriber.transcribe(...), and asserts each `expected_term`
+# appears verbatim in the output.
+#
+# requires audio fixtures
+
+cases:
+  - id: asr_fastapi
+    audio_path: "asr_fixtures/fastapi.wav"
+    sentence: "The FastAPI endpoint is returning a five hundred."
+    expected_terms: ["FastAPI"]
+  - id: asr_supabase
+    audio_path: "asr_fixtures/supabase.wav"
+    sentence: "Spin up a new Supabase project for the demo."
+    expected_terms: ["Supabase"]
+  - id: asr_node2vec
+    audio_path: "asr_fixtures/node2vec.wav"
+    sentence: "We trained the embeddings with node2vec last week."
+    expected_terms: ["node2vec"]
+  - id: asr_postgresql
+    audio_path: "asr_fixtures/postgresql.wav"
+    sentence: "Move the table from PostgreSQL to a new schema."
+    expected_terms: ["PostgreSQL"]
+  - id: asr_regex
+    audio_path: "asr_fixtures/regex.wav"
+    sentence: "Write a regex to match all log lines starting with error."
+    expected_terms: ["regex"]

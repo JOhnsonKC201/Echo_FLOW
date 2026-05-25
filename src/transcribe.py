@@ -13,6 +13,12 @@ class WhisperConfig:
     language: str | None = None
     beam_size: int = 5
     vad_filter: bool = True
+    # Optional decoder bias — a comma-separated vocabulary string that the
+    # acoustic model sees as prior context. Useful for proper nouns and
+    # technical terms (FastAPI, Supabase, node2vec, ...). Kept under ~200
+    # tokens by the builder. Mutable post-init so main.py can set it after
+    # the personal vocabulary has been mined from history.
+    initial_prompt: str | None = None
 
 
 class Transcriber:
@@ -54,6 +60,7 @@ class Transcriber:
             beam_size=self.cfg.beam_size,
             vad_filter=self.cfg.vad_filter,
             condition_on_previous_text=False,
+            initial_prompt=self.cfg.initial_prompt,
         )
         # Iterate once: faster-whisper segments is a generator.
         parts: list[str] = []
