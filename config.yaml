@@ -132,12 +132,13 @@ history:
 # learning loop as the hotkey path. See MOBILE_BRIDGE.md for setup.
 mobile:
   enabled: false              # flip to true once you've read MOBILE_BRIDGE.md
-  bind_address: "0.0.0.0"     # "127.0.0.1" to keep it PC-only for testing
+  bind_address: "127.0.0.1"   # loopback-only by default. Set to "0.0.0.0" only on a trusted home Wi-Fi (see MOBILE_BRIDGE.md).
   port: 8765
-  shared_key: ""              # auto-generated on first run if empty
-  advertise_mdns: true        # iPhone can hit http://echoflow.local:8765
-  allow_history_write: true   # mobile dictations feed the learner like desktop
+  shared_key: ""              # auto-generated on first run if empty (min 20 chars)
+  advertise_mdns: false       # mDNS broadcasts the bridge to every device on the LAN. Off by default; enable only on trusted home Wi-Fi.
+  allow_history_write: true   # mobile dictations are still logged (with source='mobile') so you can review them
   default_style: "casual"     # used when the phone doesn't pass ?style=
+  trust_for_rag: false        # if true, mobile dictations are eligible as RAG few-shot examples. OFF by default to prevent prompt poisoning from a compromised phone.
 
 logging:
   level: "INFO"

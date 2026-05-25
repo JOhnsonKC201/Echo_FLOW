@@ -63,6 +63,10 @@ class RetrievalConfig:
     k: int = 6
     min_similarity: float = 0.35   # below this, treat as "no good match"
     backfill_on_startup: bool = True   # embed any rows that lack vectors
+    # When False (default), rows logged with source='mobile' are excluded from
+    # RAG retrieval so the untrusted mobile bridge can't poison the desktop
+    # few-shot pool. Flip to True only if you trust everything posted via /v1/dictate.
+    trust_mobile: bool = False
 
 
 class Retriever:
@@ -137,18 +141,23 @@ class Retriever:
         qv = self.embed_text(query_text)
         if qv is None:
             return []
+        # Defense-in-depth: filter mobile-sourced rows out of RAG by default.
+        # Schema guarantees source defaults to 'desktop' for legacy rows.
+        source_filter = "" if self.cfg.trust_mobile else " AND source != 'mobile'"
         try:
             conn = self._conn()
             if style:
                 rows = conn.execute(
                     "SELECT raw_text, cleaned_text, embedding FROM dictations "
-                    "WHERE embedding IS NOT NULL AND style = ? AND raw_text != cleaned_text",
+                    "WHERE embedding IS NOT NULL AND style = ? AND raw_text != cleaned_text"
+                    + source_filter,
                     (style,),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     "SELECT raw_text, cleaned_text, embedding FROM dictations "
                     "WHERE embedding IS NOT NULL AND raw_text != cleaned_text"
+                    + source_filter
                 ).fetchall()
         except Exception:
             return []

@@ -1,5 +1,6 @@
 """Smoke tests — lock down current correct behavior so refactors are safe."""
 import sqlite3
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -80,8 +81,9 @@ def test_clean_skips_llm_on_clean_input(monkeypatch):
         raise AssertionError("LLM was called on already-clean input")
     monkeypatch.setattr(cleaner, "_via_ollama", _boom)
 
-    out = cleaner.clean("Let's ship the migration tonight.")
+    out, skipped = cleaner.clean("Let's ship the migration tonight.")
     assert out == "Let's ship the migration tonight."
+    assert skipped is True
 
 
 def test_clean_calls_llm_on_messy_input(monkeypatch):
@@ -89,14 +91,15 @@ def test_clean_calls_llm_on_messy_input(monkeypatch):
     cleaner = Cleaner({"enabled": True, "provider": "ollama"})
     called = []
 
-    def _fake(prompt, text):
+    def _fake(prompt, text, **kwargs):
         called.append(text)
         return "Cleaned output."
     monkeypatch.setattr(cleaner, "_via_ollama", _fake)
 
-    out = cleaner.clean("um yeah like ship the thing")
+    out, skipped = cleaner.clean("um yeah like ship the thing")
     assert called, "LLM should have been called on filler-heavy input"
     assert out == "Cleaned output."
+    assert skipped is False
 
 
 def test_skip_path_runs_even_with_augmentation(monkeypatch):
@@ -108,9 +111,10 @@ def test_skip_path_runs_even_with_augmentation(monkeypatch):
         raise AssertionError("LLM was called despite clean input")
     monkeypatch.setattr(cleaner, "_via_ollama", _boom)
 
-    out = cleaner.clean("Let's ship the migration tonight.",
-                        augmentation="\nFew-shot examples:\n...")
+    out, skipped = cleaner.clean("Let's ship the migration tonight.",
+                                  augmentation="\nFew-shot examples:\n...")
     assert out == "Let's ship the migration tonight."
+    assert skipped is True
 
 
 # --- Hallucination guard: short-input floor ----------------------------------
@@ -131,7 +135,6 @@ def test_via_ollama_passes_num_predict(monkeypatch):
         "enabled": True, "provider": "ollama",
         "ollama": {"model": "test-model", "timeout_sec": 5.0},
     })
-    cleaner._max_tokens_override = 700
     captured = {}
 
     class _Resp:
@@ -145,7 +148,8 @@ def test_via_ollama_passes_num_predict(monkeypatch):
         return _Resp()
 
     monkeypatch.setattr(cleaner._session, "post", _fake_post)
-    out = cleaner._via_ollama("sys", "user")
+    # H4: max_tokens now passed as an explicit kwarg, not an instance field.
+    out = cleaner._via_ollama("sys", "user", max_tokens=700)
     assert out == "ok"
     assert captured["timeout"] == 5.0
     assert captured["json"]["options"]["num_predict"] == 700
@@ -256,6 +260,210 @@ def test_phase_respects_disabled_flag(temp_db):
     assert decision.name == "manual"
     assert decision.transcribe_backend == "local"
     assert decision.cleanup_provider == "ollama"
+
+
+# --- H2: warmup propagates HTTP errors ---------------------------------------
+
+def test_warmup_raises_on_http_error(monkeypatch):
+    """warmup() must call raise_for_status() and not log 'model loaded' on a 4xx."""
+    from src import cleanup as cleanup_mod
+    from src.cleanup import Cleaner
+    cleaner = Cleaner({"enabled": True, "provider": "ollama",
+                       "ollama": {"model": "missing-model"}})
+
+    raised = []
+
+    class _BadResp:
+        status_code = 404
+        def raise_for_status(self):
+            raised.append(True)
+            import requests
+            raise requests.HTTPError("404 model not found")
+        def json(self): return {}
+
+    def _fake_post(*a, **k):
+        return _BadResp()
+    monkeypatch.setattr(cleaner._session, "post", _fake_post)
+
+    # Spy on the module logger so we can confirm "loaded" is NOT logged.
+    info_calls = []
+    monkeypatch.setattr(cleanup_mod._log, "info",
+                        lambda msg, *a, **k: info_calls.append(msg % a if a else msg))
+    cleaner.warmup()
+    assert raised, "warmup() must call raise_for_status() on the response"
+    assert not any("loaded" in m.lower() for m in info_calls), \
+        f"warmup() must not log 'model loaded' on 4xx; got: {info_calls}"
+
+
+# --- H3: clean() returns (text, skipped) tuple --------------------------------
+
+def test_clean_returns_tuple_and_skipped_flag(monkeypatch):
+    from src.cleanup import Cleaner
+    cleaner = Cleaner({"enabled": True, "provider": "ollama"})
+
+    # Already-clean: skip path → skipped=True, LLM never called.
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("called")))
+    text, skipped = cleaner.clean("Ship the migration tonight.")
+    assert isinstance(text, str)
+    assert skipped is True
+
+
+def test_clean_returns_tuple_when_llm_runs(monkeypatch):
+    from src.cleanup import Cleaner
+    cleaner = Cleaner({"enabled": True, "provider": "ollama"})
+    monkeypatch.setattr(cleaner, "_via_ollama", lambda *a, **k: "Cleaned.")
+    text, skipped = cleaner.clean("um yeah like ship the thing")
+    assert text == "Cleaned."
+    assert skipped is False
+
+
+def test_clean_with_returns_tuple(monkeypatch):
+    from src.cleanup import Cleaner
+    cleaner = Cleaner({"enabled": True, "provider": "ollama"})
+    monkeypatch.setattr(cleaner, "_via_ollama", lambda *a, **k: "Polished.")
+    text, skipped = cleaner.clean_with("ollama", "um yeah ship it")
+    assert text == "Polished."
+    assert skipped is False
+
+
+def test_clean_empty_input_returns_tuple():
+    from src.cleanup import Cleaner
+    cleaner = Cleaner({"enabled": True, "provider": "ollama"})
+    out, skipped = cleaner.clean("")
+    assert out == ""
+    assert skipped is False
+
+
+# --- H4: no leaked instance state between clean() calls ----------------------
+
+def test_clean_does_not_leak_instance_state(monkeypatch):
+    """Cleaner must not stash per-call state (style/max_tokens) on self."""
+    from src.cleanup import Cleaner
+    cleaner = Cleaner({"enabled": True, "provider": "ollama"})
+    monkeypatch.setattr(cleaner, "_via_ollama", lambda *a, **k: "x.")
+    cleaner.clean("um whatever", style="email", max_tokens_override=500)
+    assert not hasattr(cleaner, "_current_style"), \
+        "Cleaner leaked _current_style onto self — race waiting to happen"
+    assert not hasattr(cleaner, "_max_tokens_override"), \
+        "Cleaner leaked _max_tokens_override onto self — race waiting to happen"
+
+
+def test_via_ollama_uses_kwarg_not_instance_field(monkeypatch):
+    """_via_ollama must read max_tokens from its kwarg, not self.*."""
+    from src.cleanup import Cleaner
+    cleaner = Cleaner({"enabled": True, "provider": "ollama"})
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self): pass
+        def json(self): return {"message": {"content": "ok"}}
+
+    def _fake_post(url, json=None, timeout=None, **k):
+        captured["json"] = json
+        return _Resp()
+    monkeypatch.setattr(cleaner._session, "post", _fake_post)
+    cleaner._via_ollama("sys", "user", max_tokens=123)
+    assert captured["json"]["options"].get("num_predict") == 123
+    # And: without the kwarg, num_predict is absent (no leaked state).
+    captured.clear()
+    cleaner._via_ollama("sys", "user")
+    assert "num_predict" not in captured["json"]["options"]
+
+
+# --- M7: adaptive beam_size for short clips ----------------------------------
+
+def test_short_audio_uses_greedy_beam(monkeypatch):
+    """Audio < 3s → beam_size=1; >= 3s → cfg.beam_size."""
+    from src.transcribe import Transcriber, WhisperConfig
+
+    cfg = WhisperConfig(model="tiny", beam_size=5)
+    # Avoid actually loading a model.
+    t = Transcriber.__new__(Transcriber)
+    t.cfg = cfg
+    captured = {}
+
+    class _Info: language = "en"
+
+    def _fake_transcribe(audio, **kwargs):
+        captured["beam_size"] = kwargs.get("beam_size")
+        return iter([]), _Info()
+
+    t.model = type("M", (), {"transcribe": staticmethod(_fake_transcribe)})()
+
+    # 2 seconds at 16kHz → greedy.
+    audio_short = np.zeros(16000 * 2, dtype=np.float32)
+    t.transcribe(audio_short, 16000)
+    assert captured["beam_size"] == 1, "<3s clip should use beam_size=1"
+
+    # 5 seconds → configured beam.
+    audio_long = np.zeros(16000 * 5, dtype=np.float32)
+    t.transcribe(audio_long, 16000)
+    assert captured["beam_size"] == 5, ">=3s clip should use cfg.beam_size"
+
+
+# --- M8: focused title cached at press time ----------------------------------
+
+def test_press_title_field_exists_and_default_none():
+    """App must have a _press_title cache that defaults to None."""
+    # Avoid full App() init (heavy deps). Just confirm the attribute is
+    # initialized via the field default by reading the source.
+    import src.main as m
+    src_text = (Path(m.__file__)).read_text(encoding="utf-8")
+    assert "self._press_title" in src_text, \
+        "App._press_title field missing — M8 not wired"
+    assert "self._press_title = None" in src_text, \
+        "App._press_title must default to None"
+    # And: on_press_hold / on_toggle must populate it.
+    assert "self._press_title = self.injector.focused_title()" in src_text, \
+        "hotkey handlers must cache focused_title() at press time"
+
+
+def test_press_title_consumed_in_do_dictation():
+    """_do_dictation should prefer cached title and clear it after use."""
+    import src.main as m
+    src_text = (Path(m.__file__)).read_text(encoding="utf-8")
+    # Must read from cache and clear it.
+    assert "title = self._press_title" in src_text
+    assert "self._press_title = None" in src_text
+
+
+# --- M9: learned + skip-clean still applies pattern substitution -------------
+
+def test_skip_path_applies_learned_patterns_when_provider_learned(monkeypatch):
+    """If provider='learned' and input is 'clean enough' to skip the LLM,
+    high-confidence learned patterns must still be applied."""
+    from src.cleanup import Cleaner
+
+    class _Miner:
+        def confident_patterns(self, min_confidence):
+            return {"migration": "Migration2024"}
+
+    cleaner = Cleaner({
+        "enabled": True, "provider": "learned",
+        "learned": {"min_pattern_confidence": 0.5, "fallback_to_ollama": False},
+    })
+    cleaner.attach_learning(_Miner(), None)
+    # Sentence is already-clean per heuristic.
+    out, skipped = cleaner.clean("Ship the migration tonight.")
+    assert skipped is True
+    assert "Migration2024" in out, \
+        f"skip path with learned provider must apply patterns; got: {out!r}"
+
+
+def test_skip_path_no_patterns_when_provider_ollama(monkeypatch):
+    """Sanity check: provider='ollama' skip path doesn't run pattern subst."""
+    from src.cleanup import Cleaner
+
+    class _Miner:
+        def confident_patterns(self, min_confidence):
+            return {"migration": "Migration2024"}
+
+    cleaner = Cleaner({"enabled": True, "provider": "ollama"})
+    cleaner.attach_learning(_Miner(), None)
+    out, skipped = cleaner.clean("Ship the migration tonight.")
+    assert skipped is True
+    assert "Migration2024" not in out
 
 
 # --- Singleton lock -----------------------------------------------------------

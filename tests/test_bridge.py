@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import re
 import threading
 import time
 import types
@@ -67,12 +69,12 @@ class _StubCleaner:
         self.augmentations: list[str] = []
         self.provider = "stub"
 
-    def clean(self, text: str, style: str = "default", augmentation: str = "") -> str:
+    def clean(self, text: str, style: str = "default", augmentation: str = "") -> tuple[str, bool]:
         self.calls.append((text, style))
         self.augmentations.append(augmentation)
         if self.delay:
             time.sleep(self.delay)
-        return (text + self.suffix).strip()
+        return (text + self.suffix).strip(), False
 
 
 class _StubLearner:
@@ -149,12 +151,26 @@ def client_and_app(temp_db):
 # ---------------------------------------------------------------------------
 
 def test_health_no_auth_required(client_and_app):
+    """C2: unauthenticated /v1/health returns only liveness, no provider detail."""
     client, _ = client_and_app
     r = client.get("/v1/health")
     assert r.status_code == 200
     data = r.get_json()
     assert data["ok"] is True
+    # Provider/phase metadata must NOT leak to unauthenticated callers
+    assert "providers" not in data
+    assert "phase" not in data
+
+
+def test_health_with_auth_returns_full_detail(client_and_app):
+    """C2: authenticated /v1/health includes provider/phase for the operator."""
+    client, _ = client_and_app
+    r = client.get("/v1/health", headers={"X-Echo-Key": "test-key"})
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["ok"] is True
     assert "providers" in data
+    assert "phase" in data
 
 
 def test_auth_missing_key_401(client_and_app):
@@ -323,11 +339,11 @@ def test_dictate_filters_whisper_hallucinations(temp_db):
 # ---------------------------------------------------------------------------
 
 def test_pipeline_lock_serializes_concurrent_dictate(temp_db):
-    """The shared lock must guarantee at most one transcribe runs at a time.
+    """C3: concurrent mobile requests must NOT pile up on pipeline_lock.
 
-    Deterministic check: the transcriber stub increments a counter on entry,
-    sleeps, decrements on exit. With a working lock, the counter never
-    exceeds 1. Timing-based assertions on this were flaky under GC pressure.
+    With the request semaphore (1 permit), one request runs while the others
+    get 429 immediately instead of queueing behind the slow desktop pipeline.
+    The transcriber's in-flight counter still confirms serialization.
     """
     from src import bridge
     h, _ = temp_db
@@ -365,7 +381,9 @@ def test_pipeline_lock_serializes_concurrent_dictate(temp_db):
     threads = [threading.Thread(target=go) for _ in range(4)]
     for t in threads: t.start()
     for t in threads: t.join()
-    assert results == [200, 200, 200, 200]
+    # At least one request must succeed; the rest get 429 (busy) — never 500.
+    assert 200 in results
+    assert all(rc in (200, 429) for rc in results), f"unexpected statuses: {results}"
     assert in_flight["max"] == 1, f"lock violated: {in_flight['max']} concurrent transcribes"
 
 
@@ -600,3 +618,235 @@ def test_max_content_length_is_8mb():
     app_ref = _types.SimpleNamespace(cfg={}, _pipeline_lock=_thr.RLock())
     flask_app = bridge._make_app(app_ref, "test-key", "casual", True)
     assert flask_app.config["MAX_CONTENT_LENGTH"] == 8 * 1024 * 1024
+
+
+# ---------------------------------------------------------------------------
+# Security audit pass (C1-C4 + M1, M3-M6)
+# ---------------------------------------------------------------------------
+
+def test_dictate_logs_with_source_mobile(client_and_app):
+    """C1: mobile dictations must be tagged source='mobile' in history."""
+    client, app_ref = client_and_app
+    wav = _wav_bytes(sr=16000, duration_s=1.0)
+    r = client.post("/v1/dictate",
+                    data={"file": (io.BytesIO(wav), "audio.wav")},
+                    headers={"X-Echo-Key": "test-key"},
+                    content_type="multipart/form-data")
+    assert r.status_code == 200
+    row = app_ref.history.conn.execute(
+        "SELECT source FROM dictations"
+    ).fetchone()
+    assert row[0] == "mobile"
+
+
+def test_retriever_excludes_mobile_rows_by_default(temp_db):
+    """C1: Retriever.search must skip source='mobile' rows when trust_mobile is False."""
+    from src.retrieval import Retriever, RetrievalConfig
+    h, db_path = temp_db
+    # Two rows: one desktop, one mobile, both with the same fake embedding.
+    import numpy as _np
+    vec = _np.full(384, 0.5, dtype=_np.float32)
+    blob = vec.tobytes()
+    h.conn.execute(
+        "INSERT INTO dictations(ts, window_title, style, language, duration_ms, "
+        "raw_text, cleaned_text, embedding, embedding_model, source) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (1.0, "Editor", "casual", "en", 1000, "raw desktop", "Cleaned desktop.",
+         blob, "stub", "desktop"),
+    )
+    h.conn.execute(
+        "INSERT INTO dictations(ts, window_title, style, language, duration_ms, "
+        "raw_text, cleaned_text, embedding, embedding_model, source) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (2.0, "Mobile:iOS", "casual", "en", 1000, "raw mobile", "Cleaned mobile.",
+         blob, "stub", "mobile"),
+    )
+    h.conn.commit()
+
+    # Patch embed_text so we don't need the real model
+    r = Retriever(db_path, RetrievalConfig(enabled=True, k=10, min_similarity=0.0, backfill_on_startup=False))
+    r.embed_text = lambda text: vec  # type: ignore[method-assign]
+    results = r.search("anything")
+    raws = [raw for raw, _, _ in results]
+    assert "raw desktop" in raws
+    assert "raw mobile" not in raws
+
+    # With trust_mobile=True the mobile row is eligible again
+    r2 = Retriever(db_path, RetrievalConfig(enabled=True, k=10, min_similarity=0.0,
+                                            backfill_on_startup=False, trust_mobile=True))
+    r2.embed_text = lambda text: vec  # type: ignore[method-assign]
+    results2 = r2.search("anything")
+    raws2 = [raw for raw, _, _ in results2]
+    assert "raw mobile" in raws2
+
+
+def test_learner_excludes_mobile_examples_by_default(temp_db):
+    """C1: Learner.recent_examples must skip mobile rows by default."""
+    from src.learn import Learner, LearningConfig
+    h, db_path = temp_db
+    h.log(window_title="Editor", style="casual", language="en",
+          duration_ms=1000, raw_text="raw desktop one two three",
+          cleaned_text="Cleaned desktop one two three.", source="desktop")
+    h.log(window_title="Mobile:iOS", style="casual", language="en",
+          duration_ms=1000, raw_text="raw mobile one two three",
+          cleaned_text="Cleaned mobile one two three.", source="mobile")
+    learner = Learner(db_path, LearningConfig(enabled=True, max_examples=10, min_example_chars=5))
+    pairs = learner.recent_examples("casual", 10)
+    raws = [r for r, _ in pairs]
+    assert any("desktop" in r for r in raws)
+    assert not any("mobile" in r for r in raws)
+
+    learner_trust = Learner(db_path, LearningConfig(enabled=True, max_examples=10,
+                                                    min_example_chars=5, trust_mobile=True))
+    raws_trust = [r for r, _ in learner_trust.recent_examples("casual", 10)]
+    assert any("mobile" in r for r in raws_trust)
+
+
+def test_health_decodes_429_on_lockout(client_and_app):
+    """M1: per-IP lockout after 10 failed auth attempts in 60s."""
+    from src import bridge as _bridge
+    # Reset module-level state so other tests don't bleed in
+    with _bridge._auth_fail_lock:
+        _bridge._auth_failures.clear()
+        _bridge._auth_lockouts.clear()
+    client, _ = client_and_app
+    for _ in range(_bridge._AUTH_FAIL_THRESHOLD):
+        r = client.post("/v1/cleanup",
+                        json={"text": "x"},
+                        headers={"X-Echo-Key": "nope"})
+        assert r.status_code == 401
+    # Next request from same IP should be locked out
+    r = client.post("/v1/cleanup",
+                    json={"text": "x"},
+                    headers={"X-Echo-Key": "nope"})
+    assert r.status_code == 429
+    # Cleanup so other tests aren't affected
+    with _bridge._auth_fail_lock:
+        _bridge._auth_failures.clear()
+        _bridge._auth_lockouts.clear()
+
+
+def test_wav_rejects_out_of_range_sample_rate(client_and_app):
+    """M3: WAV with sample rate outside 8000..48000 returns 415."""
+    client, _ = client_and_app
+    # Build a WAV with sr=4000 (below bound)
+    wav = _wav_bytes(sr=8000, duration_s=1.0)
+    # Patch the sample rate header in the WAV file: rebuild at 4000
+    bad = io.BytesIO()
+    with wave.open(bad, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(4000)
+        w.writeframes(b"\x00\x00" * 4000)
+    r = client.post("/v1/transcribe",
+                    data={"file": (io.BytesIO(bad.getvalue()), "audio.wav")},
+                    headers={"X-Echo-Key": "test-key"},
+                    content_type="multipart/form-data")
+    assert r.status_code == 415
+
+
+def test_wav_rejects_too_many_channels(client_and_app):
+    """M3: WAV with >2 channels rejected with 415."""
+    client, _ = client_and_app
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(4)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(b"\x00\x00" * 16000 * 4)
+    r = client.post("/v1/transcribe",
+                    data={"file": (io.BytesIO(buf.getvalue()), "audio.wav")},
+                    headers={"X-Echo-Key": "test-key"},
+                    content_type="multipart/form-data")
+    assert r.status_code == 415
+
+
+def test_source_label_sanitizes_special_chars(temp_db):
+    """M6: caller-supplied ?source= must be stripped of shell/log metachars."""
+    from src import bridge
+    h, _ = temp_db
+    app_ref = _make_app_ref(history=h)
+    flask_app = bridge._make_app(app_ref, "test-key", "casual", True)
+    flask_app.config["TESTING"] = True
+    client = flask_app.test_client()
+    wav = _wav_bytes(sr=16000, duration_s=1.0)
+    # Try to inject ANSI escape + path traversal + rich markup
+    bad = "\x1b[31m../../[red]EVIL[/red]"
+    r = client.post(
+        f"/v1/dictate?source={bad}",
+        data={"file": (io.BytesIO(wav), "audio.wav")},
+        headers={"X-Echo-Key": "test-key"},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200
+    src = r.get_json()["source"]
+    # Only [A-Za-z0-9_-] survives the sanitizer, prefixed with "Mobile:"
+    assert src.startswith("Mobile:")
+    tail = src.split(":", 1)[1]
+    assert re.match(r"^[A-Za-z0-9_-]*$", tail)
+    assert "[" not in src and "/" not in src and "\x1b" not in src
+
+
+def test_ensure_shared_key_rejects_short_keys(tmp_path):
+    """M1: a hand-set short shared_key must be regenerated, not used."""
+    import yaml as _yaml
+    from src import bridge as _bridge
+    cfg_path = tmp_path / "config.yaml"
+    initial = {"mobile": {"enabled": True, "shared_key": "abc"}}
+    cfg_path.write_text(_yaml.safe_dump(initial), encoding="utf-8")
+    cfg = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    key = _bridge.ensure_shared_key(cfg, cfg_path)
+    assert key != "abc"
+    assert len(key) >= 20
+
+
+def test_ensure_shared_key_handles_single_quoted_placeholder(tmp_path):
+    """M5: regex should match single-quoted placeholder, not just double-quoted."""
+    from src import bridge as _bridge
+    cfg_path = tmp_path / "config.yaml"
+    original = "mobile:\n  enabled: true\n  shared_key: ''   # comment\n"
+    cfg_path.write_text(original, encoding="utf-8")
+    cfg = {"mobile": {"enabled": True, "shared_key": ""}}
+    key = _bridge.ensure_shared_key(cfg, cfg_path)
+    text = cfg_path.read_text(encoding="utf-8")
+    assert f'shared_key: "{key}"' in text
+    assert "# comment" in text  # comment preserved
+
+
+def test_ensure_shared_key_atomic_write(tmp_path, monkeypatch):
+    """M5: on persist failure mid-write, the original config must remain intact."""
+    from src import bridge as _bridge
+    cfg_path = tmp_path / "config.yaml"
+    original = 'mobile:\n  shared_key: ""\n'
+    cfg_path.write_text(original, encoding="utf-8")
+    cfg = {"mobile": {"shared_key": ""}}
+
+    real_replace = os.replace
+
+    def boom(src, dst):
+        raise OSError("simulated disk failure")
+
+    monkeypatch.setattr("os.replace", boom)
+    key = _bridge.ensure_shared_key(cfg, cfg_path)
+    # In-memory key still generated and returned
+    assert key
+    # Original file untouched (atomic write means we never overwrote it)
+    assert cfg_path.read_text(encoding="utf-8") == original
+    # Tmp may exist; cleanup
+    monkeypatch.setattr("os.replace", real_replace)
+
+
+def test_serve_refuses_short_key(temp_db, monkeypatch):
+    """M1: serve() must refuse to start with a < 20-char shared_key."""
+    from src import bridge
+    h, _ = temp_db
+    app_ref = _make_app_ref(history=h)
+    app_ref.cfg["mobile"]["shared_key"] = "tiny"
+
+    def boom(*a, **kw):
+        raise AssertionError("serve() must not bind with weak key")
+    monkeypatch.setattr("werkzeug.serving.make_server", boom)
+
+    logged: list[str] = []
+    bridge.serve(app_ref, "127.0.0.1", 18766, log_fn=logged.append)
+    assert any("not started" in m.lower() for m in logged)

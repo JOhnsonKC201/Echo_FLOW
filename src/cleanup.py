@@ -162,9 +162,6 @@ class Cleaner:
         # Pluggable hooks set by main.py for the LLM-free "learned" provider.
         self._pattern_miner = None     # PatternMiner instance
         self._retriever = None         # Retriever instance (for cosine fallback)
-        # Per-call state set by clean(); reset on every invocation.
-        self._current_style: str = "default"
-        self._max_tokens_override: int | None = None
         # Process-lifetime counters for skip-rate observability.
         self._n_clean_calls: int = 0
         self._n_polish_skipped: int = 0
@@ -181,13 +178,15 @@ class Cleaner:
         self._pattern_miner = pattern_miner
         self._retriever = retriever
 
-    def clean_with(self, provider: str, text: str, style: str = "default", augmentation: str = "") -> str:
+    def clean_with(self, provider: str, text: str, style: str = "default", augmentation: str = "") -> tuple[str, bool]:
         """Run cleanup with a specific provider override (for A/B testing).
 
         Thread-safe-ish: mutates self.provider, but only callers from main.py's
         synchronous _do_dictation use this, plus the A/B shadow thread. For the
         per-style provider override used by prompt engineering, prefer the
         `provider_override` kwarg on clean() instead.
+
+        Returns (text, polish_skipped) — passes the skip bool through.
         """
         saved = self.provider
         self.provider = provider
@@ -316,9 +315,16 @@ class Cleaner:
     def clean(self, text: str, style: str = "default", augmentation: str = "",
               provider_override: str | None = None,
               max_tokens_override: int | None = None,
-              fallback_provider: str | None = None) -> str:
+              fallback_provider: str | None = None) -> tuple[str, bool]:
+        """Clean text and return (cleaned_text, polish_skipped).
+
+        polish_skipped is True iff the fast path skipped the LLM (already-clean
+        heuristic hit). Callers use this for control flow (e.g. A/B test gating)
+        instead of inferring from the skip-counter delta, which races under
+        concurrent bridge access.
+        """
         if not self.enabled or not text.strip():
-            return text
+            return text, False
         self._n_clean_calls += 1
         # Fast path: if raw text is already clean and we're not in prompt mode,
         # skip the LLM entirely. Saves 200-2000ms per dictation.
@@ -335,15 +341,18 @@ class Cleaner:
                 "polish: skipped LLM (already clean, %d chars) — skip-rate %.0f%% (%d/%d)",
                 len(text), ratio * 100, self._n_polish_skipped, total,
             )
-            return self._expand_snippets(_polish_text(text))
+            # M9: when the learned provider is selected, the skip path still
+            # needs to apply high-confidence pattern substitution so users
+            # get the benefit of their personal vocabulary corrections even
+            # when the input is "clean enough" to bypass the LLM.
+            base = text
+            if self.provider == "learned":
+                base = self._apply_learned_patterns(base)
+            return self._expand_snippets(_polish_text(base)), True
         prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
         if augmentation:
             prompt = prompt + augmentation
         provider = provider_override or self.provider
-        # Threaded state read by _via_* methods; safe because clean() is called
-        # from a single dictation thread and the A/B shadow uses clean_with().
-        self._current_style = style
-        self._max_tokens_override = max_tokens_override
 
         def _run_provider(name: str) -> str:
             # Local-only enforcement: any legacy cloud provider name in config
@@ -355,13 +364,13 @@ class Cleaner:
                 )
                 name = "ollama"
             if name == "ollama":
-                out = self._via_ollama(prompt, text)
+                out = self._via_ollama(prompt, text, max_tokens=max_tokens_override, style=style)
             elif name == "learned":
-                out = self._via_learned(text)
+                out = self._via_learned(text, style=style)
                 if out is None:
                     if self.cfg.get("learned", {}).get("fallback_to_ollama", True):
                         try:
-                            out = self._via_ollama(prompt, text)
+                            out = self._via_ollama(prompt, text, max_tokens=max_tokens_override, style=style)
                         except Exception as e:
                             _log.warning("learned→ollama fallback failed: %s", e)
                             return text
@@ -383,29 +392,31 @@ class Cleaner:
             return self._expand_snippets(out)
 
         try:
-            return _run_provider(provider)
+            return _run_provider(provider), False
         except Exception as primary_err:
             if not fallback_provider or fallback_provider == provider:
                 _log.error("provider error: %s; falling back to raw", primary_err)
                 notify.notify("Echo Flow", f"Cleanup failed ({type(primary_err).__name__}); pasted raw.", "error")
-                return text
+                return text, False
             _log.warning("primary provider %s failed (%s); retrying via %s",
                          provider, primary_err, fallback_provider)
             try:
-                return _run_provider(fallback_provider)
+                return _run_provider(fallback_provider), False
             except Exception as fb_err:
                 _log.error("fallback provider %s also failed: %s; pasted raw",
                            fallback_provider, fb_err)
                 notify.notify("Echo Flow", "Cleanup failed (both providers); pasted raw.", "error")
-                return text
+                return text, False
 
-    def _via_ollama(self, system: str, text: str) -> str:
+    def _via_ollama(self, system: str, text: str, *,
+                    max_tokens: int | None = None,
+                    style: str = "default") -> str:
         oc = self.cfg.get("ollama", {})
         url = f"{oc.get('base_url', 'http://localhost:11434').rstrip('/')}/api/chat"
         options: dict = {"temperature": 0.2}
-        # Honor max_tokens_override (used by prompt-engineering mode).
-        if self._max_tokens_override:
-            options["num_predict"] = int(self._max_tokens_override)
+        # Honor max_tokens override (used by prompt-engineering mode).
+        if max_tokens:
+            options["num_predict"] = int(max_tokens)
         timeout = float(oc.get("timeout_sec", 8.0))
         r = self._session.post(url, json={
             "model": oc.get("model", "qwen2.5:7b-instruct"),
@@ -432,18 +443,53 @@ class Cleaner:
         oc = self.cfg.get("ollama", {})
         url = f"{oc.get('base_url', 'http://localhost:11434').rstrip('/')}/api/chat"
         try:
-            self._session.post(url, json={
+            r = self._session.post(url, json={
                 "model": oc.get("model", "qwen2.5:7b-instruct"),
                 "stream": False,
                 "keep_alive": oc.get("keep_alive", "10m"),
                 "messages": [{"role": "user", "content": "."}],
                 "options": {"num_predict": 1, "temperature": 0.0},
             }, timeout=30.0)
+            r.raise_for_status()
             _log.info("ollama warmup: model %s loaded", oc.get("model"))
         except Exception as e:
             _log.warning("ollama warmup skipped: %s", e)
 
-    def _via_learned(self, text: str) -> str | None:
+    def _apply_learned_patterns(self, text: str) -> str:
+        """Apply high-confidence learned token substitutions. Pure function.
+
+        Returns possibly-modified text. Casing of the input token is preserved
+        (ALLCAPS → upper, Capitalized → cap, lower → lower). Shared between
+        _via_learned (Path B) and the skip-polish fast path (M9).
+        """
+        if self._pattern_miner is None:
+            return text
+        lc = self.cfg.get("learned", {})
+        min_conf = float(lc.get("min_pattern_confidence", 0.7))
+        try:
+            patterns = self._pattern_miner.confident_patterns(min_confidence=min_conf)
+        except Exception as e:
+            _log.warning("learned: pattern lookup error: %s", e)
+            return text
+        if not patterns:
+            return text
+        import re as _re
+        norm_patterns = {k.lower(): v for k, v in patterns.items()}
+
+        def _sub(match: "_re.Match[str]") -> str:
+            tok = match.group(0)
+            repl = norm_patterns.get(tok.lower())
+            if repl is None:
+                return tok
+            if tok.isupper() and len(tok) > 1:
+                return repl.upper()
+            if tok[:1].isupper():
+                return repl[:1].upper() + repl[1:]
+            return repl
+
+        return _re.sub(r"\b[\w']+\b", _sub, text)
+
+    def _via_learned(self, text: str, *, style: str = "default") -> str | None:
         """LLM-free cleanup using learned patterns + retrieved corrections.
 
         Returns the cleaned text, or None if no high-confidence fix found
@@ -451,7 +497,6 @@ class Cleaner:
         """
         lc = self.cfg.get("learned", {})
         min_sim = float(lc.get("min_similarity", 0.85))
-        min_conf = float(lc.get("min_pattern_confidence", 0.7))
 
         # Path A: exact past dictation match via embeddings → use its cleaned version.
         if self._retriever is not None:
@@ -466,33 +511,8 @@ class Cleaner:
                 _log.warning("learned: retriever error: %s", e)
 
         # Path B: token-level substitutions from learned_patterns.
-        applied = False
-        out = text
-        if self._pattern_miner is not None:
-            try:
-                patterns = self._pattern_miner.confident_patterns(min_confidence=min_conf)
-            except Exception as e:
-                _log.warning("learned: pattern lookup error: %s", e)
-                patterns = {}
-            if patterns:
-                import re as _re
-                # Normalize keys once so lookup is case-insensitive even if
-                # the miner emitted mixed-case patterns.
-                norm_patterns = {k.lower(): v for k, v in patterns.items()}
-                def _sub(match: "_re.Match[str]") -> str:
-                    tok = match.group(0)
-                    repl = norm_patterns.get(tok.lower())
-                    if repl is None:
-                        return tok
-                    # Preserve original casing: ALLCAPS → upper, Capitalized → cap.
-                    if tok.isupper() and len(tok) > 1:
-                        return repl.upper()
-                    if tok[:1].isupper():
-                        return repl[:1].upper() + repl[1:]
-                    return repl
-                out = _re.sub(r"\b[\w']+\b", _sub, out)
-                if out != text:
-                    applied = True
+        out = self._apply_learned_patterns(text)
+        applied = out != text
 
         # Path C: cheap, deterministic capitalization + punctuation polish.
         polished = _polish_text(out)

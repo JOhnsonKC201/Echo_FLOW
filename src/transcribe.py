@@ -24,16 +24,20 @@ class WhisperConfig:
 def _select_cuda_model() -> str:
     """Pick the largest Whisper model that fits remaining VRAM.
 
-    large-v3 is ~3 GB fp16; turbo is ~1.5 GB. The cleanup LLM (Ollama
-    qwen2.5:3b ~2 GB) loads lazily on first dictation, so we must reserve
-    headroom for it on top of PyTorch + OS overhead (~1 GB). Total reserve:
-    ~3 GB. Only upgrade to large-v3 when free VRAM >= 7 GB.
+    Real-world budget on an 8GB RTX 5060:
+      - large-v3 fp16:           ~3.0 GB
+      - qwen2.5:3b cleanup LLM:  ~2.5 GB (loads lazily; must reserve)
+      - PyTorch CUDA runtime:    ~1.0 GB
+      - Windows display + apps:  ~2.0 GB
+    Total live working set with large-v3 ≈ 8.5 GB. Anything less and
+    we OOM mid-dictation when Ollama pages in. Only upgrade to large-v3
+    when free VRAM >= 8.5 GB at startup; otherwise stay on turbo (~1.5 GB).
     """
     try:
         import torch
         free, _ = torch.cuda.mem_get_info()
         free_gb = free / (1024 ** 3)
-        if free_gb >= 7.0:
+        if free_gb >= 8.5:
             return "large-v3"
         return "large-v3-turbo"
     except Exception:
@@ -56,8 +60,8 @@ class Transcriber:
         model = cfg.model
         if model == "auto":
             # CPU: base balances accuracy (~85% WER) with ~1-2s latency.
-            # GPU: turbo by default; upgrade to large-v3 if there is real VRAM
-            # headroom (>=5 GB free after the cleanup LLM has loaded).
+            # GPU: turbo by default; upgrade to large-v3 only if there is real
+            # VRAM headroom (>=8.5 GB free, see _select_cuda_model for math).
             if device != "cuda":
                 model = "base"
             else:
@@ -77,10 +81,13 @@ class Transcriber:
         """
         if audio.size == 0:
             return "", "en", {"avg_logprob": None, "no_speech_prob": None, "compression_ratio": None}
+        # Short-clip optimization: beam_size=1 (greedy) saves 150-300ms on
+        # sub-3s dictations where the search rarely changes the top hypothesis.
+        beam_size = 1 if (len(audio) / sample_rate) < 3.0 else self.cfg.beam_size
         segments, info = self.model.transcribe(
             audio,
             language=self.cfg.language,
-            beam_size=self.cfg.beam_size,
+            beam_size=beam_size,
             vad_filter=self.cfg.vad_filter,
             condition_on_previous_text=False,
             initial_prompt=self.cfg.initial_prompt,

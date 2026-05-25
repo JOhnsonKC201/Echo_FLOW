@@ -23,7 +23,14 @@ Nothing leaves your LAN. If your Echo Flow is configured for fully local mode (`
    ```yaml
    mobile:
      enabled: true
+     # The defaults below are PC-only / loopback. To accept connections from
+     # your phone over Wi-Fi, you MUST opt in by switching both of these:
+     bind_address: "0.0.0.0"   # default "127.0.0.1" — only opt in on a trusted home network
+     advertise_mdns: true      # default false — mDNS broadcasts the bridge to every device on the LAN
    ```
+   **Security note:** the shipped defaults bind to loopback only and disable mDNS. This is deliberate — on hostile Wi-Fi (coffee shop, hotel, conference) a `0.0.0.0` + mDNS combo lets any nearby device probe the bridge. Only flip both knobs on a Wi-Fi network you control and trust.
+
+   **RAG isolation:** mobile dictations are logged with `source='mobile'` and excluded from the desktop's RAG few-shot pool by default. The desktop won't learn from anything the phone submits. To opt in (you trust your phone won't be compromised), set `mobile.trust_for_rag: true`.
 3. Launch Echo Flow. On first run the console prints a line like:
    ```
    Mobile bridge: http://192.168.1.42:8765  key=Yk3p2x…  (first run? allow Python through Windows Firewall)

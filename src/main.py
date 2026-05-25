@@ -21,6 +21,7 @@ for _k in BLOCKED_ENV:
         _log.warning(
             "%s is set but Echo Flow is local-only. Ignoring.", _k
         )
+        os.environ.pop(_k, None)
 
 import yaml
 from rich.console import Console
@@ -177,6 +178,10 @@ class App:
         self._record_thread: threading.Thread | None = None
         self._active = False
         self._paused = False
+        # M8: focused_title() involves a Win32 round-trip (~3-15ms in some
+        # configurations). Cache at hotkey-press time so the hot path between
+        # ASR and cleanup doesn't pay for it. Consumed + cleared per dictation.
+        self._press_title: str | None = None
         # Prompt Engineering mode: sticky toggle from tray, plus a one-shot
         # flag armed by an optional hotkey and consumed on the next dictation.
         self._pe_cfg = cfg.get("prompt_engineering", {"enabled": False})
@@ -273,17 +278,19 @@ class App:
             console.print(f"[yellow]Too short ({duration_ms}ms) — ignored.[/yellow]")
             return
         import numpy as np
-        rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+        # Recorder.stop() already returns float32; skip the redundant copy.
+        audio_f32 = audio if audio.dtype == np.float32 else audio.astype(np.float32)
+        rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
         if rms < 0.003:
             console.print(f"[yellow]Too quiet (RMS={rms:.4f}) — likely silence, ignored.[/yellow]")
             return
         if self.tray:
             self.tray.set_state("thinking")
         console.print(f"[dim]Captured {duration_ms} ms (RMS={rms:.3f}) — transcribing…[/dim]")
-        t0 = time.time()
+        t0 = time.perf_counter()
         with self._pipeline_lock:
             raw, lang, whisper_meta = self.transcriber.transcribe(audio, sr)
-        t1 = time.time()
+        t1 = time.perf_counter()
         console.print(f"[green]Raw ({lang}, {t1-t0:.2f}s):[/green] {raw}")
         _log.info("raw (%s, %.2fs): %s", lang, t1 - t0, raw)
         if not raw.strip():
@@ -299,7 +306,13 @@ class App:
             if self.tray: self.tray.set_state("ok")
             return
 
-        title = self.injector.focused_title()
+        # M8: prefer the title captured at hotkey-press time (no Win32 call
+        # on the hot path). Fall back to a live lookup if nothing was cached
+        # (e.g. mobile-bridge entry point that doesn't go through a hotkey).
+        title = self._press_title
+        self._press_title = None
+        if title is None:
+            title = self.injector.focused_title()
         style = self.cleaner.pick_style(title)
 
         # Prompt Engineering mode: tray-sticky toggle OR one-shot hotkey.
@@ -323,18 +336,16 @@ class App:
         provider_override = self._pe_cfg.get("provider") if use_prompt else None
         max_tokens_override = self._pe_cfg.get("max_output_tokens") if use_prompt else None
         fallback_provider = self._pe_cfg.get("fallback_provider") if use_prompt else None
-        _skipped_before = self.cleaner._n_polish_skipped
         # Pipeline lock: shared with mobile HTTP bridge to prevent concurrent
         # Whisper/Ollama hits on a single model instance.
         with self._pipeline_lock:
-            cleaned = self.cleaner.clean(
+            cleaned, polish_skipped = self.cleaner.clean(
                 raw, style=style, augmentation=augmentation,
                 provider_override=provider_override,
                 max_tokens_override=max_tokens_override,
                 fallback_provider=fallback_provider,
             )
-        t2 = time.time()
-        polish_skipped = self.cleaner._n_polish_skipped > _skipped_before
+        t2 = time.perf_counter()
         # Cache immediately so Ctrl+Shift+Win re-paste sees this dictation
         # even before the async DB write commits.
         self._last_cleaned_text = cleaned
@@ -349,7 +360,7 @@ class App:
             if alt and alt != primary:
                 def _shadow():
                     try:
-                        alt_text = self.cleaner.clean_with(alt, raw, style=style, augmentation=augmentation)
+                        alt_text, _ = self.cleaner.clean_with(alt, raw, style=style, augmentation=augmentation)
                         # Grade both outputs (same whisper_meta — only H/S/P differ).
                         prim_q = grade_mod.grade(raw, cleaned, whisper_meta,
                                                   retriever=self.retriever,
@@ -386,41 +397,15 @@ class App:
         console.print(f"[green]Cleaned ({style}, {t2-t1:.2f}s){learn_marker}:[/green] {cleaned}")
         _log.info("cleaned (%s, %.2fs)%s: %s", style, t2 - t1, learn_marker, cleaned)
 
-        # Offline self-grading: produces a 0-100 quality score per dictation.
-        # Skip in prompt mode — the rewrite intentionally diverges from raw,
-        # which would tank the semantic-coherence score and skew weights.
+        # Grading is deferred to _log_async below so it doesn't block paste.
+        # In prompt mode we still clear _last_quality up-front because the
+        # grading thread will skip it (rewrites legitimately diverge from raw).
         if use_prompt:
             self._last_quality = None
-        else:
-            try:
-                quality = grade_mod.grade(
-                    raw=raw, cleaned=cleaned, whisper_meta=whisper_meta,
-                    retriever=self.retriever, pattern_miner=self.pattern_miner,
-                    learner=self.learner, weights=self._grading_weights,
-                )
-                console.print(
-                    f"[cyan]Quality: {quality.overall:.0f} "
-                    f"(W:{quality.whisper_conf:.0f} H:{quality.no_hallucination:.0f} "
-                    f"S:{quality.semantic_coherence:.0f} P:{quality.pattern_coverage:.0f})"
-                    f" — {quality.explanation}[/cyan]"
-                )
-                if quality.overall < 50:
-                    wnotify.notify(
-                        "Echo Flow",
-                        f"Low-confidence dictation ({quality.overall:.0f}/100) — review?",
-                        "warning",
-                    )
-                self._last_quality = quality
-                self._recent_qualities.append(quality.overall)
-                if len(self._recent_qualities) > 50:
-                    self._recent_qualities = self._recent_qualities[-50:]
-            except Exception as e:
-                _log.warning("grading failed: %s", e)
-                self._last_quality = None
 
         # PASTE FIRST — user feels the speed.
         self.injector.inject(cleaned)
-        t3 = time.time()
+        t3 = time.perf_counter()
         if self.tray:
             self.tray.set_state("ok" if not self._paused else "paused")
         # End-to-end latency instrumentation. t_release is None for the
@@ -445,10 +430,35 @@ class App:
                 skip_marker,
             )
 
-        # THEN log + embed in background so it doesn't add to perceived latency.
+        # THEN log + embed + grade in background so they don't add to
+        # perceived latency. The tray polls _last_quality, so it's OK that
+        # the score lands a few hundred ms after the paste.
         if self.history:
             def _log_async():
                 try:
+                    # H5: grade off the hot path. Skip in prompt mode — the
+                    # rewrite intentionally diverges from raw, which would
+                    # tank the semantic-coherence score and skew the weights.
+                    if not use_prompt:
+                        try:
+                            quality = grade_mod.grade(
+                                raw=raw, cleaned=cleaned, whisper_meta=whisper_meta,
+                                retriever=self.retriever, pattern_miner=self.pattern_miner,
+                                learner=self.learner, weights=self._grading_weights,
+                            )
+                            if quality.overall < 50:
+                                wnotify.notify(
+                                    "Echo Flow",
+                                    f"Low-confidence dictation ({quality.overall:.0f}/100) — review?",
+                                    "warning",
+                                )
+                            self._last_quality = quality
+                            self._recent_qualities.append(quality.overall)
+                            if len(self._recent_qualities) > 50:
+                                self._recent_qualities = self._recent_qualities[-50:]
+                        except Exception as e:
+                            _log.warning("grading failed: %s", e)
+                            self._last_quality = None
                     emb_blob = None
                     if self.retriever:
                         vec = self.retriever.embed_text(raw)
@@ -515,6 +525,13 @@ class App:
         if self._active or self._paused:
             return
         self._active = True
+        # M8: capture focused window title NOW, before recording. This is the
+        # window the user intends to dictate into; capturing later (after ASR)
+        # races with focus changes and costs a Win32 round-trip on the hot path.
+        try:
+            self._press_title = self.injector.focused_title()
+        except Exception:
+            self._press_title = None
         _log.info("hotkey pressed: REC start")
         wsound.play("start", self.cfg.get("sound"))
         console.print("[bold red]● REC[/bold red]")
@@ -525,7 +542,7 @@ class App:
         if not self._active:
             return
         self._active = False
-        t_release = time.time()
+        t_release = time.perf_counter()
         audio = self.recorder.stop()
         _log.info("hotkey released: stop, captured %d samples", len(audio))
         wsound.play("stop", self.cfg.get("sound"))
@@ -553,6 +570,11 @@ class App:
         if self._active or self._paused:
             return
         self._active = True
+        # M8: cache focused title at press time (see on_press_hold).
+        try:
+            self._press_title = self.injector.focused_title()
+        except Exception:
+            self._press_title = None
         wsound.play("start", self.cfg.get("sound"))
         console.print("[bold red]● REC (auto-stop on silence)[/bold red]")
         if self.tray: self.tray.set_state("rec")

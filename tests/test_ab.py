@@ -13,8 +13,9 @@ def test_clean_with_overrides_provider_temporarily():
     assert c.provider == "none"
     # With provider="none", clean() returns the input unchanged — useful to
     # confirm the override path doesn't crash and restores the original.
-    out = c.clean_with("none", "hello")
+    out, skipped = c.clean_with("none", "hello")
     assert out == "hello"
+    assert skipped is False
     assert c.provider == "none"   # restored
 
 

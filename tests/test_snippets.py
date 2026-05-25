@@ -63,4 +63,5 @@ def test_clean_pipeline_with_provider_none_still_expands():
     c = _cleaner_with({"btw": "by the way"})
     # provider='none' means clean() returns text unmodified — no snippet pass.
     # Snippet expansion only happens on the LLM success path.
-    assert c.clean("btw test") == "btw test"
+    out, _skipped = c.clean("btw test")
+    assert out == "btw test"

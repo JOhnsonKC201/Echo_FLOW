@@ -11,13 +11,17 @@ fully offline. If they opted into Groq, the bridge inherits that choice.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import io
+import os
 import re
 import secrets
 import socket
+import threading
 import time
 import wave
+from collections import deque
 from functools import wraps
 from pathlib import Path
 
@@ -27,6 +31,23 @@ import yaml
 from . import log as wlog
 
 _log = wlog.get("bridge")
+
+# Minimum acceptable shared-key length. Anything shorter is rejected/regenerated
+# at load time — short keys are brute-forceable over LAN in minutes.
+_MIN_SHARED_KEY_LEN = 20
+
+# Pipeline lock acquire budget. Past this the request gets a 503 instead of
+# queueing indefinitely behind a slow desktop dictation (C3 — DoS prevention).
+_PIPELINE_LOCK_TIMEOUT_S = 2.0
+
+# Per-IP auth failure tracking (M1). Process-local; resets on restart.
+# {ip: deque[float]} of failure timestamps; {ip: float} of lockout expiry.
+_auth_fail_lock = threading.Lock()
+_auth_failures: dict[str, deque] = {}
+_auth_lockouts: dict[str, float] = {}
+_AUTH_FAIL_WINDOW_S = 60.0
+_AUTH_FAIL_THRESHOLD = 10
+_AUTH_LOCKOUT_S = 300.0  # 5 minutes
 
 
 # Mirrors the silence/hallucination guards in main._do_dictation so mobile
@@ -53,6 +74,12 @@ def _decode_wav(raw_bytes: bytes) -> tuple[np.ndarray, int]:
         sampwidth = w.getsampwidth()
         if sampwidth != 2:
             raise ValueError(f"expected 16-bit PCM, got {sampwidth*8}-bit")
+        # M3: reject pathological metadata that could cause downstream OOM /
+        # bogus duration math (e.g. sr=0 → div-by-zero, sr=10^9 → huge buffers).
+        if not (8000 <= sr <= 48000):
+            raise ValueError(f"sample rate {sr} out of range (8000..48000)")
+        if not (1 <= channels <= 2):
+            raise ValueError(f"channel count {channels} out of range (1..2)")
         frames = w.readframes(w.getnframes())
     pcm16 = np.frombuffer(frames, dtype=np.int16)
     if channels > 1:
@@ -72,6 +99,15 @@ def ensure_shared_key(cfg: dict, cfg_path: Path | str) -> str:
     """
     mobile = cfg.setdefault("mobile", {})
     key = mobile.get("shared_key", "") or ""
+    # M1: short keys are treated as missing and regenerated. This prevents a
+    # user from hand-setting `shared_key: "abc"` and ending up with a key that's
+    # brute-forceable over LAN.
+    if key and len(key) < _MIN_SHARED_KEY_LEN:
+        _log.warning(
+            "mobile.shared_key is shorter than %d chars; regenerating a strong key",
+            _MIN_SHARED_KEY_LEN,
+        )
+        key = ""
     if key:
         return key
     key = secrets.token_urlsafe(24)
@@ -79,8 +115,10 @@ def ensure_shared_key(cfg: dict, cfg_path: Path | str) -> str:
     try:
         with open(cfg_path, "r", encoding="utf-8") as f:
             text = f.read()
+        # M5: match double-quoted, single-quoted, and bare placeholder forms.
+        # Examples: shared_key: ""   |   shared_key: ''   |   shared_key:
         new_text, n = re.subn(
-            r'^(\s*shared_key:\s*)("")(\s*(?:#.*)?)$',
+            r'^(\s*shared_key:\s*)(""|\'\'|)(\s*(?:#.*)?)$',
             lambda m: f'{m.group(1)}"{key}"{m.group(3)}',
             text,
             count=1,
@@ -92,8 +130,13 @@ def ensure_shared_key(cfg: dict, cfg_path: Path | str) -> str:
             on_disk = yaml.safe_load(text) or {}
             on_disk.setdefault("mobile", {})["shared_key"] = key
             new_text = yaml.safe_dump(on_disk, sort_keys=False, default_flow_style=False)
-        with open(cfg_path, "w", encoding="utf-8") as f:
+        # M5: atomic write — write to .tmp then os.replace so a crash mid-write
+        # can't leave the user with a truncated config.yaml (which would wipe
+        # their entire Echo Flow configuration).
+        tmp_path = str(cfg_path) + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(new_text)
+        os.replace(tmp_path, cfg_path)
     except Exception as e:
         _log.warning("could not persist generated shared_key to %s: %s", cfg_path, e)
     return key
@@ -134,6 +177,45 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
     # The use case is bursty dictation, not file uploads.
     flask_app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
+    # C3: cap concurrent in-flight requests so a burst from a misbehaving phone
+    # can't pile up N threads all blocked on pipeline_lock. Single permit means
+    # the second concurrent request gets an immediate 429 instead of queueing.
+    request_semaphore = threading.Semaphore(1)
+
+    def _acquire_pipeline(timeout: float = _PIPELINE_LOCK_TIMEOUT_S) -> bool:
+        """Try to take the desktop-shared lock. Returns False on timeout."""
+        return pipeline_lock.acquire(timeout=timeout)
+
+    def _too_busy_response():
+        return jsonify({"error": "pipeline_busy"}), 503, {"Retry-After": "1"}
+
+    def _record_auth_failure(ip: str) -> None:
+        """M1: count failures per-IP and lock out abusive callers."""
+        now = time.time()
+        with _auth_fail_lock:
+            dq = _auth_failures.setdefault(ip, deque())
+            dq.append(now)
+            # Drop entries outside the rolling window
+            while dq and now - dq[0] > _AUTH_FAIL_WINDOW_S:
+                dq.popleft()
+            if len(dq) >= _AUTH_FAIL_THRESHOLD:
+                _auth_lockouts[ip] = now + _AUTH_LOCKOUT_S
+                dq.clear()
+                _log.warning(
+                    "auth: locking out ip=%s for %ds after %d failures",
+                    ip, int(_AUTH_LOCKOUT_S), _AUTH_FAIL_THRESHOLD,
+                )
+
+    def _is_locked_out(ip: str) -> bool:
+        with _auth_fail_lock:
+            exp = _auth_lockouts.get(ip)
+            if exp is None:
+                return False
+            if time.time() >= exp:
+                _auth_lockouts.pop(ip, None)
+                return False
+            return True
+
     def _augmentation_for(text: str, style: str) -> str:
         """Mirror src/main.py:255 — RAG few-shot for non-trivial inputs."""
         learner = getattr(app_ref, "learner", None)
@@ -148,15 +230,25 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
     def auth_required(fn):
         @wraps(fn)
         def wrapped(*a, **kw):
+            ip = request.remote_addr or "unknown"
+            # M1: per-IP lockout — short-circuit before doing the constant-time compare
+            if _is_locked_out(ip):
+                return jsonify({"error": "rate_limited"}), 429
             sent = request.headers.get("X-Echo-Key", "")
             if not sent or not hmac.compare_digest(sent, shared_key):
+                _log.warning("auth: failed key from ip=%s path=%s", ip, request.path)
+                _record_auth_failure(ip)
                 return jsonify({"error": "unauthorized"}), 401
             return fn(*a, **kw)
         return wrapped
 
     def _source_label() -> str:
-        src = request.args.get("source", "") or ""
-        src = src.strip()[:16]
+        # M6: sanitize the caller-supplied source label before it lands in
+        # window_title (which is read back into logs, tray UI, and the editor).
+        # Untrusted phone input must not be allowed to embed control chars,
+        # ANSI escapes, or formatting tokens.
+        raw_src = request.args.get("source", "") or ""
+        src = re.sub(r"[^A-Za-z0-9_-]", "", raw_src.strip())[:16]
         if not src:
             ua = (request.headers.get("User-Agent") or "").lower()
             if "iphone" in ua or "ios" in ua or "shortcut" in ua or "darwin" in ua:
@@ -195,6 +287,13 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
 
     @flask_app.get("/v1/health")
     def health():
+        # C2: unauthenticated callers only get a liveness boolean. Provider/phase
+        # detail leaks fingerprinting info (e.g. "ollama present" hints the user
+        # has an LLM running locally); only return it to authenticated callers.
+        sent = request.headers.get("X-Echo-Key", "")
+        authed = bool(sent) and hmac.compare_digest(sent, shared_key)
+        if not authed:
+            return jsonify({"ok": True})
         whisper_kind = type(getattr(app_ref, "transcriber", None)).__name__
         cleanup_provider = getattr(getattr(app_ref, "cleaner", None), "provider", None)
         phase_name = getattr(getattr(app_ref, "phase", None), "name", None)
@@ -217,8 +316,18 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         if not text:
             return jsonify({"text": "", "style": style})
         augmentation = _augmentation_for(text, style)
-        with pipeline_lock:
-            cleaned = app_ref.cleaner.clean(text, style=style, augmentation=augmentation)
+        # C3: semaphore caps concurrent in-flight; lock timeout prevents DoS.
+        if not request_semaphore.acquire(blocking=False):
+            return jsonify({"error": "busy"}), 429, {"Retry-After": "1"}
+        try:
+            if not _acquire_pipeline():
+                return _too_busy_response()
+            try:
+                cleaned, _polish_skipped = app_ref.cleaner.clean(text, style=style, augmentation=augmentation)
+            finally:
+                pipeline_lock.release()
+        finally:
+            request_semaphore.release()
         return jsonify({"text": cleaned, "style": style})
 
     @flask_app.post("/v1/transcribe")
@@ -232,8 +341,17 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         if skip:
             return jsonify(info)
         t0 = time.time()
-        with pipeline_lock:
-            raw, lang, _meta = app_ref.transcriber.transcribe(audio, sr)
+        if not request_semaphore.acquire(blocking=False):
+            return jsonify({"error": "busy"}), 429, {"Retry-After": "1"}
+        try:
+            if not _acquire_pipeline():
+                return _too_busy_response()
+            try:
+                raw, lang, _meta = app_ref.transcriber.transcribe(audio, sr)
+            finally:
+                pipeline_lock.release()
+        finally:
+            request_semaphore.release()
         ms = int((time.time() - t0) * 1000)
         return jsonify({"text": raw, "language": lang, "ms": ms})
 
@@ -251,22 +369,37 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         style = (request.args.get("style") or default_style or "casual").strip()
         window_title = _source_label()
 
-        t0 = time.time()
-        with pipeline_lock:
-            raw, lang, _meta = app_ref.transcriber.transcribe(audio, sr)
-        t1 = time.time()
+        # C3: serialize at the request boundary so multiple phones can't pile
+        # multiple threads onto the shared faster-whisper model.
+        if not request_semaphore.acquire(blocking=False):
+            return jsonify({"error": "busy"}), 429, {"Retry-After": "1"}
+        try:
+            t0 = time.time()
+            if not _acquire_pipeline():
+                return _too_busy_response()
+            try:
+                raw, lang, _meta = app_ref.transcriber.transcribe(audio, sr)
+            finally:
+                pipeline_lock.release()
+            t1 = time.time()
 
-        # Same hallucination filter as the desktop path (main.py:237).
-        raw_lower = raw.strip().lower()
-        if raw_lower in _HALLUCINATIONS and duration_ms < 2000:
-            return jsonify({"raw": raw, "cleaned": "", "reason": "hallucination_filtered", "ms": int((t1 - t0) * 1000)})
-        if not raw.strip():
-            return jsonify({"raw": "", "cleaned": "", "reason": "empty_transcription", "ms": int((t1 - t0) * 1000)})
+            # Same hallucination filter as the desktop path (main.py:237).
+            raw_lower = raw.strip().lower()
+            if raw_lower in _HALLUCINATIONS and duration_ms < 2000:
+                return jsonify({"raw": raw, "cleaned": "", "reason": "hallucination_filtered", "ms": int((t1 - t0) * 1000)})
+            if not raw.strip():
+                return jsonify({"raw": "", "cleaned": "", "reason": "empty_transcription", "ms": int((t1 - t0) * 1000)})
 
-        augmentation = _augmentation_for(raw, style)
-        with pipeline_lock:
-            cleaned = app_ref.cleaner.clean(raw, style=style, augmentation=augmentation)
-        t2 = time.time()
+            augmentation = _augmentation_for(raw, style)
+            if not _acquire_pipeline():
+                return _too_busy_response()
+            try:
+                cleaned, _polish_skipped = app_ref.cleaner.clean(raw, style=style, augmentation=augmentation)
+            finally:
+                pipeline_lock.release()
+            t2 = time.time()
+        finally:
+            request_semaphore.release()
 
         if allow_history_write and getattr(app_ref, "history", None) is not None:
             try:
@@ -284,6 +417,8 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
                             emb_model = retriever.model_name()
                     except Exception as e:
                         _log.warning("retriever embed failed: %s", e)
+                # C1: tag the row as mobile-sourced so RAG / Learner can
+                # exclude it from the desktop's few-shot pool by default.
                 app_ref.history.log(
                     window_title=window_title,
                     style=style,
@@ -293,6 +428,7 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
                     cleaned_text=cleaned,
                     embedding=emb_blob,
                     embedding_model=emb_model,
+                    source="mobile",
                 )
                 if getattr(app_ref, "learner", None) is not None:
                     app_ref.learner.invalidate_cache()
@@ -358,6 +494,22 @@ def serve(app_ref, host: str, port: int, log_fn=None) -> None:
         else:
             _log.error("mobile bridge not started: shared_key empty")
         return
+    # M1: belt-and-suspenders — ensure_shared_key already enforces this on
+    # autogen, but a user could hand-edit the config to a weak key after that.
+    if len(shared_key) < _MIN_SHARED_KEY_LEN:
+        msg = (
+            f"[red]Mobile bridge NOT started: shared_key is shorter than "
+            f"{_MIN_SHARED_KEY_LEN} chars and is brute-forceable.[/red] "
+            f"[dim]Clear mobile.shared_key in config.yaml and restart to autogenerate a strong one.[/dim]"
+        )
+        if log_fn:
+            log_fn(msg)
+        else:
+            _log.error(
+                "mobile bridge not started: shared_key shorter than %d chars",
+                _MIN_SHARED_KEY_LEN,
+            )
+        return
     flask_app = _make_app(app_ref, shared_key, default_style, allow_history_write)
 
     from werkzeug.serving import make_server
@@ -365,9 +517,13 @@ def serve(app_ref, host: str, port: int, log_fn=None) -> None:
     server = make_server(host, port, flask_app, threaded=True)
     _active_server = server
     ip = _local_ip_hint() if host in ("0.0.0.0", "") else host
+    # M4: never log the key (or a prefix of it). The sha256 fingerprint lets
+    # an operator verify "the key in my config is the one the server loaded"
+    # without giving anyone who sees a log file a head start on cracking it.
+    key_fp = hashlib.sha256(shared_key.encode("utf-8")).hexdigest()[:8]
     banner = (
         f"[green]Mobile bridge: http://{ip}:{port}[/green]  "
-        f"[dim]key={shared_key[:6]}…  (first run? allow Python through Windows Firewall)[/dim]"
+        f"[dim]key=*** (sha256:{key_fp})  (first run? allow Python through Windows Firewall)[/dim]"
     )
     if log_fn:
         log_fn(banner)

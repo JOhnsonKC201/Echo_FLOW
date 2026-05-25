@@ -36,6 +36,10 @@ class LearningConfig:
     max_examples: int = 6
     max_vocab_terms: int = 25
     min_example_chars: int = 12
+    # Mirrors RetrievalConfig.trust_mobile. When False (default), mobile-bridge
+    # dictations are excluded from few-shot examples and personal vocabulary so
+    # untrusted LAN traffic cannot pollute the desktop's learned prompts.
+    trust_mobile: bool = False
 
 
 class Learner:
@@ -51,12 +55,14 @@ class Learner:
         """Pull (raw, cleaned) pairs that differ enough to be instructive."""
         if not self.cfg.enabled:
             return []
+        source_filter = "" if self.cfg.trust_mobile else " AND source != 'mobile'"
         try:
             cur = self._conn().execute(
                 "SELECT raw_text, cleaned_text FROM dictations "
                 "WHERE style = ? AND length(raw_text) >= ? "
-                "AND raw_text != cleaned_text "
-                "ORDER BY ts DESC LIMIT ?",
+                "AND raw_text != cleaned_text"
+                + source_filter +
+                " ORDER BY ts DESC LIMIT ?",
                 (style, self.cfg.min_example_chars, limit * 3),
             )
             rows = cur.fetchall()
@@ -81,9 +87,12 @@ class Learner:
         # Cache for 60s to avoid re-scanning on every dictation
         if _vocab_cache is not None and (time.time() - _vocab_cache_ts) < 60:
             return _vocab_cache[:limit]
+        source_filter = "" if self.cfg.trust_mobile else " WHERE source != 'mobile'"
         try:
             cur = self._conn().execute(
-                "SELECT cleaned_text FROM dictations ORDER BY ts DESC LIMIT 500"
+                "SELECT cleaned_text FROM dictations"
+                + source_filter +
+                " ORDER BY ts DESC LIMIT 500"
             )
             texts = [row[0] or "" for row in cur.fetchall()]
         except Exception:

@@ -48,6 +48,10 @@ class History:
             # cleaned_text with a user correction — needed for calibration.
             if "original_cleaned" not in cols:
                 self.conn.execute("ALTER TABLE dictations ADD COLUMN original_cleaned TEXT")
+            # Source provenance — distinguishes trusted desktop dictations from
+            # mobile-bridge submissions (which must not poison RAG by default).
+            if "source" not in cols:
+                self.conn.execute("ALTER TABLE dictations ADD COLUMN source TEXT NOT NULL DEFAULT 'desktop'")
         except Exception as e:
             # Column migrations should never fail in practice (idempotent via PRAGMA check).
             # If they do, log it loudly so we don't end up with a half-migrated schema.
@@ -133,15 +137,16 @@ class History:
             embedding: bytes | None = None,
             embedding_model: str | None = None,
             quality_score: float | None = None,
-            quality_breakdown: str | None = None) -> int:
+            quality_breakdown: str | None = None,
+            source: str = "desktop") -> int:
         cur = self.conn.execute(
             "INSERT INTO dictations(ts, window_title, style, language, duration_ms, "
             "raw_text, cleaned_text, embedding, embedding_model, "
-            "quality_score, quality_breakdown, original_cleaned) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "quality_score, quality_breakdown, original_cleaned, source) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (time.time(), window_title, style, language, duration_ms,
              raw_text, cleaned_text, embedding, embedding_model,
-             quality_score, quality_breakdown, cleaned_text),
+             quality_score, quality_breakdown, cleaned_text, source),
         )
         self.conn.commit()
         return cur.lastrowid or 0
