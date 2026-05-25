@@ -14,6 +14,10 @@ import socket
 import sys
 from pathlib import Path
 
+from . import log as wlog
+
+_log = wlog.get("singleton")
+
 # Random high port — must match across all instances
 _LOCK_PORT = 47823
 _lock_socket: socket.socket | None = None
@@ -24,16 +28,16 @@ def _write_pid():
     try:
         _PID_FILE.parent.mkdir(parents=True, exist_ok=True)
         _PID_FILE.write_text(str(os.getpid()))
-    except Exception:
-        pass
+    except Exception as e:
+        _log.exception(f"Suppressed in _write_pid: {e}")
 
 
 def _clear_pid():
     try:
         if _PID_FILE.exists():
             _PID_FILE.unlink()
-    except Exception:
-        pass
+    except Exception as e:
+        _log.exception(f"Suppressed in _clear_pid: {e}")
 
 
 def acquire_or_exit() -> None:

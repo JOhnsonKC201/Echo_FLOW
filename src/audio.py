@@ -9,6 +9,10 @@ from dataclasses import dataclass
 import numpy as np
 import sounddevice as sd
 
+from . import log as wlog
+
+_log = wlog.get("audio")
+
 
 @dataclass
 class AudioConfig:
@@ -32,7 +36,8 @@ class Recorder:
             try:
                 from silero_vad import load_silero_vad
                 self._vad = load_silero_vad()
-            except Exception:
+            except Exception as e:
+                _log.exception(f"Suppressed in Recorder.__init__ (silero_vad load): {e}")
                 self._vad = None
 
     def _callback(self, indata, frames, time_info, status):
@@ -77,7 +82,8 @@ class Recorder:
         try:
             import torch
             vad = self._vad
-        except Exception:
+        except Exception as e:
+            _log.exception(f"Suppressed in record_until_silence (torch import): {e}")
             vad = None
 
         # Simple energy-based fallback if VAD missing

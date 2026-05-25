@@ -17,6 +17,10 @@ from dataclasses import dataclass
 
 import requests
 
+from . import log as wlog
+
+_log = wlog.get("phase")
+
 
 PHASE_BOOTSTRAP = "bootstrap"
 PHASE_HYBRID = "hybrid"
@@ -39,7 +43,8 @@ def _dictation_count(db_path: str) -> int:
         conn = sqlite3.connect(db_path)
         cur = conn.execute("SELECT COUNT(*) FROM dictations")
         return int(cur.fetchone()[0])
-    except Exception:
+    except Exception as e:
+        _log.exception(f"Suppressed in _dictation_count: {e}")
         return 0
 
 
@@ -47,7 +52,8 @@ def _ollama_alive(base_url: str) -> bool:
     try:
         r = requests.get(f"{base_url.rstrip('/')}/api/tags", timeout=1.0)
         return r.status_code == 200
-    except Exception:
+    except Exception as e:
+        _log.exception(f"Suppressed in _ollama_alive: {e}")
         return False
 
 
@@ -74,7 +80,8 @@ def _recent_avg_quality(db_path: str, n: int = 50) -> float | None:
         if len(rows) < max(5, n // 4):
             return None
         return sum(r[0] for r in rows) / len(rows)
-    except Exception:
+    except Exception as e:
+        _log.exception(f"Suppressed in _recent_avg_quality: {e}")
         return None
 
 
@@ -94,7 +101,8 @@ def _learned_pattern_count(db_path: str) -> int:
             "SELECT COUNT(*) FROM learned_patterns WHERE total >= 2 AND (success * 1.0 / total) >= 0.7"
         )
         return int(cur.fetchone()[0])
-    except Exception:
+    except Exception as e:
+        _log.exception(f"Suppressed in _learned_pattern_count: {e}")
         return 0
 
 
