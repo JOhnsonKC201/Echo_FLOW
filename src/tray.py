@@ -46,6 +46,8 @@ class TrayApp:
         on_quit: Callable[[], None],
         on_open_review_queue: Callable[[], None] | None = None,
         on_pin_last: Callable[[], None] | None = None,
+        on_toggle_prompt_mode: Callable[[], None] | None = None,
+        get_prompt_mode_state: Callable[[], bool] | None = None,
     ):
         self.get_status = get_status
         self.on_pause_toggle = on_pause_toggle
@@ -54,6 +56,8 @@ class TrayApp:
         self.on_open_graph = on_open_graph
         self.on_open_review_queue = on_open_review_queue
         self.on_pin_last = on_pin_last
+        self.on_toggle_prompt_mode = on_toggle_prompt_mode
+        self.get_prompt_mode_state = get_prompt_mode_state
         self.on_quit = on_quit
         self._icon: pystray.Icon | None = None
         self._state = "ok"
@@ -80,6 +84,13 @@ class TrayApp:
             pystray.MenuItem(self._status_text, None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(self._pause_label, lambda i, item: self._safe(self.on_pause_toggle)),
+            pystray.MenuItem(
+                "🪄  Prompt Engineering Mode",
+                lambda i, item: self._safe(self.on_toggle_prompt_mode),
+                checked=lambda _it: bool(self.get_prompt_mode_state())
+                    if self.get_prompt_mode_state else False,
+                visible=lambda _it: self.on_toggle_prompt_mode is not None,
+            ),
             pystray.MenuItem("✏  Edit last dictation",
                              lambda i, item: self._safe(self.on_edit_last)),
             pystray.MenuItem("📋  Review queue (worst first)",
