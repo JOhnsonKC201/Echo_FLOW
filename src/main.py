@@ -489,6 +489,11 @@ class App:
             style = "prompt"
             self._prompt_oneshot = False  # consume the one-shot arm
             console.print("[magenta]🪄 Prompt Engineering mode active for this dictation.[/magenta]")
+            wnotify.notify(
+                "Echo Flow",
+                "Prompt-Engineering mode armed — your next dictation will be rewritten via Groq.",
+                "info",
+            )
 
         # Skip RAG augmentation for short inputs (no benefit) AND for prompt
         # mode (past cleanup examples derail the rewrite).
@@ -664,6 +669,12 @@ class App:
             if trailing_cmd == "enter":
                 self.injector.send_key("enter")
                 _log.info("trailing-command: enter fired")
+            if use_prompt:
+                wnotify.notify(
+                    "Echo Flow",
+                    "Prompt rewritten via Groq → pasted.",
+                    "info",
+                )
         t3 = time.perf_counter()
         if self.tray:
             self.tray.set_state("ok" if not self._paused else "paused")

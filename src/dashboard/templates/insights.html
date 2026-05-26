@@ -10,7 +10,8 @@
   .wf-tabs   { display:flex; gap:22px; margin: 6px 0 22px;
                border-bottom: 1px solid var(--border); }
   .wf-tab    { padding: 8px 0; font-size: 13px; font-weight:500; color: var(--muted);
-               cursor:pointer; border-bottom: 2px solid transparent; margin-bottom:-1px; }
+               cursor:pointer; border-bottom: 2px solid transparent; margin-bottom:-1px;
+               text-decoration: none; }
   .wf-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 
   .wf-grid-top { display:grid; grid-template-columns: 1fr 1fr 1.4fr; gap:14px;
@@ -94,9 +95,13 @@
 </div>
 
 <div class="wf-tabs">
-  <div class="wf-tab active">Your Usage</div>
+  <a class="wf-tab{% if tab == 'usage' %} active{% endif %}"
+     href="/insights?source={{ source or 'desktop' }}">Your Usage</a>
+  <a class="wf-tab{% if tab == 'voice' %} active{% endif %}"
+     href="/insights/voice">Your Voice</a>
 </div>
 
+{% if tab == 'usage' %}
 {# ===== Top row: 3 hero tiles ===== #}
 <div class="wf-grid-top">
 
@@ -247,5 +252,75 @@
     </svg>
   </div>
 {% endif %}
+{% endif %}{# end if tab == 'usage' #}
 
+{% if tab == 'voice' %}
+{# ---------- Your Voice tab ---------- #}
+{% if voice %}
+<div class="wf-grid-top">
+  <div class="wf-card">
+    <div class="wf-hero-num">{{ voice.pace.median_wpm }}</div>
+    <div class="wf-hero-lbl">Speaking pace · median WPM</div>
+    <div class="wf-context">{{ voice.pace.n }} dictations · last {{ voice.days }}d</div>
+  </div>
+  <div class="wf-card">
+    <div class="wf-hero-num">{{ voice.filler.ratio_pct }}%</div>
+    <div class="wf-hero-lbl">Filler ratio</div>
+    <div class="wf-context">{{ voice.filler.count }} of {{ voice.filler.total_words }} words</div>
+  </div>
+  <div class="wf-card">
+    <div class="wf-hero-num">{{ voice.vocabulary.diversity_pct }}%</div>
+    <div class="wf-hero-lbl">Vocabulary diversity</div>
+    <div class="wf-context">{{ voice.vocabulary.unique }} unique / {{ voice.vocabulary.total }} total</div>
+  </div>
+</div>
+
+<div class="wf-grid-bot">
+  <div class="wf-card">
+    <div class="wf-heat-head">
+      <div style="font-size:18px;font-weight:600;">Pace distribution</div>
+      <div class="wf-heat-longest">WPM buckets</div>
+    </div>
+    {% set peak = voice.pace.buckets | map(attribute='count') | max %}
+    {% if peak and peak > 0 %}
+      <div class="wf-apps">
+        {% for b in voice.pace.buckets %}
+          <div class="wf-app">
+            <div class="wf-app-pct{% if b.count == 0 %} dim{% endif %}">{{ b.count }}</div>
+            <div class="wf-app-lbl">{{ b.label }}</div>
+            <div class="wf-app-cnt">{{ ((b.count / peak) * 100) | round | int }}%</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="wf-empty">Not enough dictations yet to chart pace.</div>
+    {% endif %}
+  </div>
+
+  <div class="wf-card">
+    <div class="wf-heat-head">
+      <div style="font-size:18px;font-weight:600;">Most-used phrases</div>
+      <div class="wf-heat-longest">Top bigrams</div>
+    </div>
+    {% if voice.phrases %}
+      <div class="wf-apps">
+        {% for p in voice.phrases %}
+          <div class="wf-app">
+            <div class="wf-app-pct">{{ loop.index }}</div>
+            <div class="wf-app-lbl" style="text-transform:none;">{{ p.phrase }}</div>
+            <div class="wf-app-cnt">{{ p.count }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="wf-empty">No phrases yet — keep dictating.</div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="wf-card">
+  <div class="wf-empty">No voice data yet — dictate a few times and check back.</div>
+</div>
+{% endif %}
+{% endif %}{# end if tab == 'voice' #}
 {% endblock %}

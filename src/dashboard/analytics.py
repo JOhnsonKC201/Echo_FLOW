@@ -356,17 +356,142 @@ def quality_trend(
     return rows
 
 
-def insights_payload(conn: sqlite3.Connection) -> dict:
-    """One call for the Insights route."""
+def insights_payload(conn: sqlite3.Connection, *, include_mobile: bool = False) -> dict:
+    """One call for the Insights route.
+
+    `include_mobile` follows the same convention as the lower-level helpers:
+    False (default) shows the desktop user's stats; True folds in mobile
+    bridge entries. Used by the Outcomes "Desktop / Mobile / All" toggle.
+    """
     return {
-        "wpm": current_wpm(conn),
-        "total_words": total_words(conn),
-        "streak": day_streak(conn),
-        "fixes": fixes_made(conn),
-        "heatmap": streak_heatmap(conn),
-        "apps": app_usage_breakdown(conn),
-        "trend": quality_trend(conn),
+        "wpm": current_wpm(conn, include_mobile=include_mobile),
+        "total_words": total_words(conn, include_mobile=include_mobile),
+        "streak": day_streak(conn, include_mobile=include_mobile),
+        "fixes": fixes_made(conn, include_mobile=include_mobile),
+        "heatmap": streak_heatmap(conn, include_mobile=include_mobile),
+        "apps": app_usage_breakdown(conn, include_mobile=include_mobile),
+        "trend": quality_trend(conn, include_mobile=include_mobile),
     }
+
+
+# -- Voice tab payload (PR-F) ----------------------------------------------
+
+_FILLER_WORDS = frozenset({
+    "um", "uh", "like", "actually", "basically", "literally",
+})
+# Bigrams kept separately so they can be matched without losing single-word
+# context. "you know" needs to match the two-word sequence.
+_FILLER_BIGRAMS = frozenset({("you", "know")})
+
+
+def _tokenize_lower(text: str) -> list[str]:
+    """Lowercase word-token split. Strips punctuation; keeps apostrophes."""
+    import re
+    return re.findall(r"[A-Za-z']+", (text or "").lower())
+
+
+def _wpm_buckets(rates: list[float]) -> list[dict]:
+    """Histogram with fixed buckets so the chart axis is stable across users."""
+    edges = [0, 60, 80, 100, 120, 140, 160, 180, 220]
+    labels = ["<60", "60-79", "80-99", "100-119", "120-139",
+              "140-159", "160-179", "180-219", "220+"]
+    counts = [0] * len(labels)
+    for r in rates:
+        placed = False
+        for i in range(len(edges) - 1):
+            if edges[i] <= r < edges[i + 1]:
+                counts[i] += 1
+                placed = True
+                break
+        if not placed:
+            counts[-1] += 1
+    return [{"label": labels[i], "count": counts[i]} for i in range(len(labels))]
+
+
+def voice_payload(conn: sqlite3.Connection, *, days: int = 30) -> dict:
+    """Stats for the "Your Voice" tab: pace, filler ratio, vocab, top bigrams.
+
+    All computed from the last `days` of desktop dictations (mobile excluded —
+    voice quality is a function of the user's mic+room, and the phone path
+    masks both).
+    """
+    since = _now_ts() - (days * 86400)
+    cur = conn.execute(
+        "SELECT cleaned_text, duration_ms FROM dictations "
+        "WHERE ts >= ? AND cleaned_text IS NOT NULL AND source = 'desktop'",
+        (since,),
+    )
+
+    rates: list[float] = []
+    all_tokens: list[str] = []
+    filler_count = 0
+    bigram_counts: dict[tuple[str, str], int] = defaultdict(int)
+
+    for text, dur_ms in cur:
+        toks = _tokenize_lower(text)
+        if not toks:
+            continue
+        # WPM per dictation (same floor as current_wpm to suppress noise).
+        if dur_ms and dur_ms > 0:
+            seconds = dur_ms / 1000.0
+            if seconds >= _MIN_DURATION_S_FOR_WPM:
+                rates.append(len(toks) / (seconds / 60.0))
+        # Filler-word count: single words.
+        for t in toks:
+            if t in _FILLER_WORDS:
+                filler_count += 1
+        # Filler bigrams.
+        for i in range(len(toks) - 1):
+            pair = (toks[i], toks[i + 1])
+            if pair in _FILLER_BIGRAMS:
+                filler_count += 1
+            # All bigrams for "most-used phrases" (skip if either token is a
+            # stopword-y filler so the chart shows meaning, not "of the").
+            if pair[0] in _STOPWORDS or pair[1] in _STOPWORDS:
+                continue
+            bigram_counts[pair] += 1
+        all_tokens.extend(toks)
+
+    total = len(all_tokens)
+    unique = len(set(all_tokens))
+    filler_ratio = (filler_count / total) if total else 0.0
+    vocab_diversity = (unique / total) if total else 0.0
+
+    top_bigrams = sorted(bigram_counts.items(), key=lambda kv: kv[1], reverse=True)[:10]
+    phrases = [{"phrase": f"{a} {b}", "count": c} for (a, b), c in top_bigrams]
+
+    return {
+        "pace": {
+            "median_wpm": int(round(sorted(rates)[len(rates) // 2])) if rates else 0,
+            "buckets": _wpm_buckets(rates),
+            "n": len(rates),
+        },
+        "filler": {
+            "count": filler_count,
+            "total_words": total,
+            "ratio": filler_ratio,
+            "ratio_pct": round(filler_ratio * 100, 2),
+        },
+        "vocabulary": {
+            "unique": unique,
+            "total": total,
+            "diversity_pct": round(vocab_diversity * 100, 1),
+        },
+        "phrases": phrases,
+        "days": days,
+    }
+
+
+# Tiny stopword list — just enough to keep "of the" off the chart without
+# dragging in NLTK. Order-insensitive.
+_STOPWORDS = frozenset({
+    "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "at",
+    "for", "with", "by", "is", "was", "are", "were", "be", "been", "it",
+    "i", "you", "he", "she", "we", "they", "this", "that", "these", "those",
+    "my", "your", "his", "her", "our", "their", "as", "if", "so", "do",
+    "did", "does", "have", "has", "had", "will", "would", "can", "could",
+    "should", "from", "not", "no", "yes",
+})
 
 
 def home_payload(

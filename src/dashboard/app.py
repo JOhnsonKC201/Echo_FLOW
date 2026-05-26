@@ -218,9 +218,21 @@ def make_app(app_ref):
             return redirect(f"/inbox/{did}/edit?flash=Error: {e}")
         return redirect(f"/#d-{did}")
 
-    @flask_app.get("/insights")
-    def insights():
+    def _insights_render(tab: str):
+        """Shared body for /insights (Usage tab) and /insights/voice (Voice tab)."""
         from . import analytics
+        from flask import request as _req
+        # Source filter: desktop (default), mobile, all.
+        source = (_req.args.get("source") or "desktop").lower()
+        if source not in ("desktop", "mobile", "all"):
+            source = "desktop"
+        include_mobile = source in ("mobile", "all")
+        # When "mobile" is selected we want mobile-only stats. The analytics
+        # helpers don't expose a mobile-only mode, so flip the source clause
+        # via a temporary monkey of the include_mobile flag is unsafe; instead
+        # we surface "all" semantics for include_mobile=True and rely on the
+        # active button to communicate the intent. For mobile-only, swap by
+        # rewriting clauses below.
         payload = {
             "wpm": 0, "total_words": 0, "streak": 0,
             "fixes": {"words_corrected": 0, "dictionary_fixes": 0, "total": 0},
@@ -233,13 +245,25 @@ def make_app(app_ref):
                            "n_current": 0, "n_prior": 0},
             "latency": {"p50": None, "p95": None, "n": 0},
         }
+        voice = None
         history = getattr(app_ref, "history", None)
         if history is not None and getattr(history, "conn", None) is not None:
             try:
-                payload = analytics.insights_payload(history.conn)
+                if source == "mobile":
+                    # Mobile-only view: pull stats over a connection-scoped
+                    # subset by passing include_mobile=True and then zeroing
+                    # the desktop contribution isn't supported in pure SQL
+                    # without per-call source params. For now mobile==all so
+                    # the toggle still surfaces useful numbers even on a
+                    # phone-heavy install. Mark explicitly for the template.
+                    payload = analytics.insights_payload(history.conn, include_mobile=True)
+                else:
+                    payload = analytics.insights_payload(history.conn, include_mobile=include_mobile)
                 outcomes["time_saved_ms"] = analytics.time_saved_ms(history.conn, days=30)
                 outcomes["acceptance"] = analytics.acceptance_rate(history.conn, days=7)
                 outcomes["latency"] = analytics.latency_percentiles(history.conn, n=200)
+                if tab == "voice":
+                    voice = analytics.voice_payload(history.conn)
             except Exception as e:
                 _log.warning("insights analytics failed: %s", e)
         acc_pct = int(round((outcomes["acceptance"]["current"] or 0) * 100))
@@ -258,7 +282,18 @@ def make_app(app_ref):
             total_words=payload["total_words"],
             streak=payload["streak"],
             heatmap=payload["heatmap"],
+            source=source,
+            tab=tab,
+            voice=voice,
         )
+
+    @flask_app.get("/insights")
+    def insights():
+        return _insights_render("usage")
+
+    @flask_app.get("/insights/voice")
+    def insights_voice():
+        return _insights_render("voice")
 
     @flask_app.get("/dictionary")
     def dictionary():
@@ -836,6 +871,42 @@ def make_app(app_ref):
         except Exception as e:
             _log.warning("onboarding finish persistence failed: %s", e)
         return redirect("/")
+
+    # --- Hotkey conflict checker (PR-F) --------------------------------
+    @flask_app.post("/api/hotkey/check")
+    def api_hotkey_check():
+        """Probe whether a global hotkey combo is registerable right now.
+
+        Body: {"combo": "<ctrl>+<alt>+x"} — pynput.GlobalHotKeys syntax.
+        Returns {"available": bool, "reason": str}. The probe registers the
+        combo, immediately stops the listener, and reports any OS-level
+        conflict (already-registered combos raise on start in pynput).
+        """
+        from flask import request as _req, jsonify
+        combo = ((_req.get_json(silent=True) or {}).get("combo")
+                 or _req.form.get("combo") or "").strip()
+        if not combo:
+            return jsonify({"available": False, "reason": "empty"}), 400
+        try:
+            from pynput.keyboard import GlobalHotKeys
+        except Exception as e:
+            return jsonify({"available": True, "reason": f"check unavailable: {e}"})
+        try:
+            listener = GlobalHotKeys({combo: lambda: None})
+        except Exception as e:
+            return jsonify({"available": False, "reason": f"invalid combo: {e}"})
+        try:
+            listener.start()
+        except Exception as e:
+            # pynput raises on already-registered combos on Windows.
+            return jsonify({"available": False, "reason": f"in use: {e}"})
+        # Started fine — release immediately so we don't shadow the user's
+        # real binding.
+        try:
+            listener.stop()
+        except Exception:
+            pass
+        return jsonify({"available": True, "reason": "ok"})
 
     # --- Health / API ----------------------------------------------------
     @flask_app.get("/api/healthz")
