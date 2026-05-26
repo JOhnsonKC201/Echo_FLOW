@@ -59,6 +59,13 @@ class History:
             # mobile-bridge submissions (which must not poison RAG by default).
             if "source" not in cols:
                 self.conn.execute("ALTER TABLE dictations ADD COLUMN source TEXT NOT NULL DEFAULT 'desktop'")
+            # Senior-rewrite additive columns (2026-05-26):
+            # user_rating — NULL untouched, 1 approved, -1 marked bad (Inbox).
+            # latency_ms — end-to-end release→paste, populated by main._do_dictation.
+            if "user_rating" not in cols:
+                self.conn.execute("ALTER TABLE dictations ADD COLUMN user_rating INTEGER")
+            if "latency_ms" not in cols:
+                self.conn.execute("ALTER TABLE dictations ADD COLUMN latency_ms INTEGER")
             # Dashboard-managed collections (added 2026-05-25). These shadow
             # the older config.yaml-based snippets so the UI is the source of
             # truth. Empty tables = fall back to config defaults.
@@ -91,6 +98,21 @@ class History:
             """)
             self.conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_notifications_ts ON notifications(ts)"
+            )
+            # Command Mode log (Phase 13's dispatch site appends here).
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS command_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts REAL NOT NULL,
+                    body TEXT NOT NULL,
+                    action_type TEXT NOT NULL,
+                    action_value TEXT NOT NULL,
+                    label TEXT,
+                    ok INTEGER NOT NULL DEFAULT 1
+                )
+            """)
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_cmdlog_ts ON command_log(ts)"
             )
         except Exception as e:
             # Column migrations should never fail in practice (idempotent via PRAGMA check).
@@ -178,18 +200,54 @@ class History:
             embedding_model: str | None = None,
             quality_score: float | None = None,
             quality_breakdown: str | None = None,
-            source: str = "desktop") -> int:
+            source: str = "desktop",
+            latency_ms: int | None = None) -> int:
         cur = self.conn.execute(
             "INSERT INTO dictations(ts, window_title, style, language, duration_ms, "
             "raw_text, cleaned_text, embedding, embedding_model, "
-            "quality_score, quality_breakdown, original_cleaned, source) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "quality_score, quality_breakdown, original_cleaned, source, latency_ms) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (time.time(), window_title, style, language, duration_ms,
              raw_text, cleaned_text, embedding, embedding_model,
-             quality_score, quality_breakdown, cleaned_text, source),
+             quality_score, quality_breakdown, cleaned_text, source, latency_ms),
         )
         self.conn.commit()
         return cur.lastrowid or 0
+
+    def rate_dictation(self, dictation_id: int, rating: int | None) -> bool:
+        """Set user_rating to 1 (approved), -1 (bad), or NULL (cleared).
+        Returns True if a row was updated."""
+        if rating is not None and rating not in (1, -1):
+            raise ValueError("rating must be 1, -1, or None")
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE dictations SET user_rating = ? WHERE id = ?",
+                (rating, int(dictation_id)),
+            )
+        return cur.rowcount > 0
+
+    def log_command(self, *, body: str, action_type: str, action_value: str,
+                    label: str | None = None, ok: bool = True) -> int:
+        """Append a row to command_log. Best-effort — caller swallows errors."""
+        cur = self.conn.execute(
+            "INSERT INTO command_log(ts, body, action_type, action_value, label, ok) "
+            "VALUES (?,?,?,?,?,?)",
+            (time.time(), body or "", action_type, action_value, label, 1 if ok else 0),
+        )
+        self.conn.commit()
+        return cur.lastrowid or 0
+
+    def recent_commands(self, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, ts, body, action_type, action_value, label, ok "
+            "FROM command_log ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [
+            {"id": r[0], "ts": r[1], "body": r[2], "action_type": r[3],
+             "action_value": r[4], "label": r[5], "ok": bool(r[6])}
+            for r in rows
+        ]
 
     # --- Notes ---
 

@@ -586,11 +586,27 @@ class App:
                           else self.injector.send_hotkey(action_value))
                     _log.info("voice command: %s (%s %s) ok=%s",
                               label, action_type, action_value, ok)
+                    if self.history is not None:
+                        try:
+                            self.history.log_command(
+                                body=body, action_type=action_type,
+                                action_value=action_value, label=label, ok=ok,
+                            )
+                        except Exception as e:
+                            _log.warning("log_command failed: %s", e)
                     if self.tray:
                         self.tray.set_state("ok" if not self._paused else "paused")
                     return
                 else:
                     wnotify.notify("Echo Flow", f"Unknown voice command: {body[:40]}", "warning")
+                    if self.history is not None:
+                        try:
+                            self.history.log_command(
+                                body=body, action_type="unknown",
+                                action_value="", label=None, ok=False,
+                            )
+                        except Exception as e:
+                            _log.warning("log_command failed: %s", e)
                     if self.tray:
                         self.tray.set_state("ok" if not self._paused else "paused")
                     return
@@ -640,7 +656,9 @@ class App:
         # End-to-end latency instrumentation. t_release is None for the
         # toggle/silence path; in that case skip the e2e number.
         skip_marker = " [polish-skipped]" if polish_skipped else ""
+        latency_e2e_ms: int | None = None
         if t_release is not None:
+            latency_e2e_ms = int((t3 - t_release) * 1000)
             _log.info(
                 "latency: release→asr=%.0fms asr=%.0fms polish=%.0fms inject=%.0fms e2e=%.0fms%s",
                 (t0 - t_release) * 1000,
@@ -702,6 +720,7 @@ class App:
                         duration_ms=duration_ms, raw_text=raw, cleaned_text=cleaned,
                         embedding=emb_blob, embedding_model=model_name,
                         quality_score=q_score, quality_breakdown=q_breakdown,
+                        latency_ms=latency_e2e_ms,
                     )
                     if self.learner:
                         self.learner.invalidate_cache()
