@@ -221,16 +221,33 @@ def make_app(app_ref):
             "heatmap": {"days": [], "weeks": 14, "max": 0},
             "apps": [], "trend": [],
         }
+        outcomes = {
+            "time_saved_ms": 0,
+            "acceptance": {"current": 0.0, "prior": 0.0, "delta_pp": 0.0,
+                           "n_current": 0, "n_prior": 0},
+            "latency": {"p50": None, "p95": None, "n": 0},
+        }
         history = getattr(app_ref, "history", None)
         if history is not None and getattr(history, "conn", None) is not None:
             try:
                 payload = analytics.insights_payload(history.conn)
+                outcomes["time_saved_ms"] = analytics.time_saved_ms(history.conn, days=30)
+                outcomes["acceptance"] = analytics.acceptance_rate(history.conn, days=7)
+                outcomes["latency"] = analytics.latency_percentiles(history.conn, n=200)
             except Exception as e:
                 _log.warning("insights analytics failed: %s", e)
+        acc_pct = int(round((outcomes["acceptance"]["current"] or 0) * 100))
         return render_template(
             "insights.html", sections=SECTIONS, active="insights",
             theme=dcfg.get("theme", "dark"),
-            **payload,
+            time_saved_human=analytics.humanize_ms(outcomes["time_saved_ms"]),
+            baseline_wpm=40,
+            acceptance=outcomes["acceptance"],
+            acceptance_pct=acc_pct,
+            latency=outcomes["latency"],
+            trend=payload["trend"],
+            apps=payload["apps"],
+            fixes=payload["fixes"],
         )
 
     @flask_app.get("/dictionary")

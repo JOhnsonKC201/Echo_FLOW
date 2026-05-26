@@ -1,30 +1,79 @@
 {% extends "base.html" %}
-{% block title %}Insights — Echo Flow{% endblock %}
+{% block title %}Outcomes — Echo Flow{% endblock %}
 {% block content %}
-<h1 class="welcome">Insights</h1>
+<h1 class="welcome">Outcomes</h1>
+<div class="muted small" style="margin: 4px 0 14px;">Signal, not vanity. All numbers computed locally.</div>
 
 <div class="insights-tiles">
   <div class="tile">
-    <div class="tile-value">{{ wpm }}</div>
-    <div class="tile-label">words per minute <span class="muted">(7-day avg)</span></div>
+    <div class="tile-label">Time saved · 30d</div>
+    <div class="tile-value num">{{ time_saved_human }}</div>
+    <div class="tile-sub">vs. typing at {{ baseline_wpm }} WPM</div>
   </div>
+
   <div class="tile">
-    <div class="tile-value">{{ "{:,}".format(fixes.total) }}</div>
-    <div class="tile-label">fixes made by Echo</div>
+    <div class="tile-label">Acceptance · 7d</div>
+    <div class="tile-value num">{{ acceptance_pct }}<span class="muted small">%</span></div>
     <div class="tile-sub">
-      {{ "{:,}".format(fixes.words_corrected) }} words corrected
-      · {{ "{:,}".format(fixes.dictionary_fixes) }} dictionary fixes
+      {{ acceptance.n_current }} dictation{{ '' if acceptance.n_current == 1 else 's' }}
+      {% if acceptance.n_prior %}
+        ·
+        {% if acceptance.delta_pp >= 0 %}
+          <span class="tile-delta">↑ {{ acceptance.delta_pp | round(1) }} pp</span>
+        {% else %}
+          <span class="tile-delta down">↓ {{ (acceptance.delta_pp * -1) | round(1) }} pp</span>
+        {% endif %}
+        vs. previous 7d
+      {% endif %}
     </div>
   </div>
+
   <div class="tile">
-    <div class="tile-value">{{ "{:,}".format(total_words) }}</div>
-    <div class="tile-label">total words dictated</div>
+    <div class="tile-label">Latency p95 · last {{ latency.n }}</div>
+    {% if latency.p95 %}
+      <div class="tile-value num">{{ latency.p95 }}<span class="muted small"> ms</span></div>
+      <div class="tile-sub">p50 <span class="num">{{ latency.p50 }} ms</span></div>
+    {% else %}
+      <div class="tile-value num muted">—</div>
+      <div class="tile-sub">no latency data yet</div>
+    {% endif %}
   </div>
 </div>
 
 <div class="insights-row">
   <div class="card insight-card">
-    <h2>Desktop usage <span class="muted small">last 30 days</span></h2>
+    <h2>Quality trajectory <span class="muted small">last {{ trend|length }} dictations</span></h2>
+    {% if trend and trend|length >= 2 %}
+      {% set w = 600 %}
+      {% set h = 56 %}
+      {% set n = trend|length %}
+      {% set first = trend[0] | round | int %}
+      {% set last = trend[-1] | round | int %}
+      <div class="muted small" style="margin-bottom: 6px;">
+        <span class="num">{{ first }}</span>
+        →
+        <span class="num" style="color: var(--text); font-weight: 600;">{{ last }}</span>
+        {% set delta = last - first %}
+        {% if delta > 0 %}
+          <span class="tile-delta">(↑ {{ delta }})</span>
+        {% elif delta < 0 %}
+          <span class="tile-delta down">(↓ {{ delta * -1 }})</span>
+        {% endif %}
+      </div>
+      <svg class="spark" viewBox="0 0 {{ w }} {{ h }}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+        <polyline class="spark-line" points="
+          {%- for q in trend -%}
+            {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - (q / 100.0) * h }}{{ ' ' }}
+          {%- endfor -%}
+        "/>
+      </svg>
+    {% else %}
+      <div class="muted small">Not enough graded dictations yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="card insight-card">
+    <h2>App usage <span class="muted small">last 30 days</span></h2>
     {% if apps %}
       <ul class="usage-list">
         {% for row in apps %}
@@ -33,9 +82,9 @@
               <div class="usage-bar" style="width: {{ (row.pct * 100) | round(1) }}%;"></div>
             </div>
             <div class="usage-meta">
-              <span class="usage-pct">{{ (row.pct * 100) | round }}%</span>
+              <span class="usage-pct num">{{ (row.pct * 100) | round | int }}%</span>
               <span class="usage-label">{{ row.label }}</span>
-              <span class="muted small">{{ "{:,}".format(row.count) }} dictations</span>
+              <span class="muted small num">{{ row.count }}</span>
             </div>
           </li>
         {% endfor %}
@@ -44,55 +93,17 @@
       <div class="muted small">Not enough usage yet to chart.</div>
     {% endif %}
   </div>
+</div>
 
-  <div class="card insight-card">
-    <h2>{{ streak }} day{{ '' if streak == 1 else 's' }} streak <span class="muted small">14 weeks</span></h2>
-    <svg class="heatmap" viewBox="0 0 {{ heatmap.weeks * 14 + 30 }} 110" xmlns="http://www.w3.org/2000/svg">
-      <!-- Weekday labels -->
-      {% set wd = ["Mon","","Wed","","Fri","",""] %}
-      {% for label in wd %}
-        {% if label %}
-          <text x="0" y="{{ loop.index0 * 14 + 22 }}" class="hm-axis">{{ label }}</text>
-        {% endif %}
-      {% endfor %}
-      <!-- Day squares -->
-      {% for d in heatmap.days %}
-        {% set col = loop.index0 // 7 %}
-        {% set row = loop.index0 % 7 %}
-        <rect x="{{ 28 + col * 14 }}" y="{{ 12 + row * 14 }}" width="11" height="11" rx="2"
-              class="hm-cell hm-l{{ d.level }}">
-          <title>{{ d.date }}: {{ d.count }} dictation{{ '' if d.count == 1 else 's' }}</title>
-        </rect>
-      {% endfor %}
-    </svg>
-    <div class="hm-legend">
-      <span class="muted small">Less</span>
-      <span class="hm-swatch hm-l0"></span>
-      <span class="hm-swatch hm-l1"></span>
-      <span class="hm-swatch hm-l2"></span>
-      <span class="hm-swatch hm-l3"></span>
-      <span class="hm-swatch hm-l4"></span>
-      <span class="muted small">More</span>
-    </div>
+<div class="card insight-card">
+  <h2>Fixes the model made <span class="muted small">{{ fixes.total }} total</span></h2>
+  <div class="usage-meta">
+    <span class="usage-label">Words corrected</span>
+    <span class="num" style="margin-left: auto;">{{ fixes.words_corrected }}</span>
+  </div>
+  <div class="usage-meta" style="margin-top: 6px;">
+    <span class="usage-label">Dictionary fixes</span>
+    <span class="num" style="margin-left: auto;">{{ fixes.dictionary_fixes }}</span>
   </div>
 </div>
-
-{% if trend %}
-<div class="card insight-card">
-  <h2>Quality trend <span class="muted small">last {{ trend|length }} dictations</span></h2>
-  {% set w = 600 %}
-  {% set h = 80 %}
-  {% set n = trend|length %}
-  <svg class="spark" viewBox="0 0 {{ w }} {{ h }}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-    <line x1="0" y1="{{ h - 25 * h / 100 }}" x2="{{ w }}" y2="{{ h - 25 * h / 100 }}" class="spark-grid"/>
-    <line x1="0" y1="{{ h - 50 * h / 100 }}" x2="{{ w }}" y2="{{ h - 50 * h / 100 }}" class="spark-grid"/>
-    <line x1="0" y1="{{ h - 75 * h / 100 }}" x2="{{ w }}" y2="{{ h - 75 * h / 100 }}" class="spark-grid"/>
-    <polyline class="spark-line" points="
-      {%- for q in trend -%}
-        {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - (q / 100.0) * h }}{{ ' ' }}
-      {%- endfor -%}
-    "/>
-  </svg>
-</div>
-{% endif %}
 {% endblock %}

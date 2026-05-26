@@ -157,19 +157,26 @@ def _client(history):
 
 
 def test_insights_route_renders_with_real_data(tmp_path):
+    # PR-D reshape: /insights is now the Outcomes surface. Tiles cover
+    # time saved, acceptance rate, latency p95; the heatmap is gone.
     h = _h(tmp_path)
     now = dt.datetime.now().timestamp()
-    _seed(h, ts=now, raw="hi", cleaned="Hi.", quality=80, window_title="Code")
+    # Need ≥2 graded dictations to draw the trajectory sparkline.
+    _seed(h, ts=now - 60, raw="hi", cleaned="Hi.", quality=78, window_title="Code")
+    _seed(h, ts=now, raw="hello", cleaned="Hello.", quality=92, window_title="Code")
     r = _client(h).get("/insights", headers={"Host": "127.0.0.1:8766"})
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "Insights" in body
-    assert "fixes made by Echo" in body
-    assert "Desktop usage" in body
-    # Heatmap SVG present
-    assert "hm-cell" in body
-    # Quality trend sparkline rendered when quality data exists
+    assert "Outcomes" in body
+    assert "Time saved" in body
+    assert "Acceptance" in body
+    assert "Latency p95" in body
+    assert "App usage" in body
+    assert "Fixes the model made" in body
+    # Quality trajectory sparkline rendered when quality data exists.
     assert "spark-line" in body
+    # Heatmap was explicitly dropped.
+    assert "hm-cell" not in body
 
 
 def test_insights_route_empty_state(tmp_path):
