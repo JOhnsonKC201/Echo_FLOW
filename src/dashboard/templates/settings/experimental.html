@@ -13,12 +13,23 @@
       </label>
       <label class="check">
         <input type="checkbox" name="command_mode" value="1" {% if values.command_mode %}checked{% endif %}>
-        <span>Full Command Mode (voice commands without dictating) — <em>Phase 13</em></span>
+        <span>Full Command Mode (voice commands without dictating)</span>
+      </label>
+      <label>
+        <span>Command prefix word</span>
+        <input type="text" name="command_prefix" value="{{ values.command_prefix }}" placeholder="computer">
       </label>
       <div class="actions">
         <button type="submit" class="btn primary">Save</button>
       </div>
-      <p class="muted">These toggles persist to config.yaml but the features themselves ship in later phases.</p>
     </form>
+
+    {% if supported_commands %}
+      <h3>Supported voice commands</h3>
+      <p class="muted">Prefix any dictation with the prefix word to trigger one of these. Unrecognized commands are dropped with a warning toast — voice can never fire arbitrary keystrokes.</p>
+      <ul class="cmd-list">
+        {% for label in supported_commands %}<li>{{ label }}</li>{% endfor %}
+      </ul>
+    {% endif %}
   </div>
 {% endblock %}

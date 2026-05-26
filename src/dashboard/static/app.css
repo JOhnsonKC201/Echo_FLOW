@@ -284,3 +284,7 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .onboard-steps h3 { margin: 0 0 4px; font-size: 14px; color: var(--text); }
 .onboard-steps p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .onboard-steps kbd { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text); }
+
+/* Phase 13 — Command Mode list */
+.cmd-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.cmd-list li { padding: 4px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--text); }

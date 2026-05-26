@@ -568,6 +568,33 @@ class App:
         # Scratchpad routing: when a scratchpad is armed via dashboard, append
         # cleaned text to its body instead of pasting into the focused window.
         # Falls through to normal inject on any failure.
+        # Phase 13: Command Mode. If experimental.command_mode is on and the
+        # dictation starts with the prefix word (default "computer"), classify
+        # the remainder as a voice command and fire its allowlisted action.
+        # Always returns BEFORE inject — commands never leave a paste behind.
+        exp_cfg = self.cfg.get("experimental", {}) or {}
+        if exp_cfg.get("command_mode"):
+            from . import commands as _commands
+            prefix = exp_cfg.get("command_prefix", "computer")
+            body = _commands.strip_prefix(cleaned, prefix)
+            if body is not None:
+                result = _commands.classify(body)
+                if result is not None:
+                    action_type, action_value, label = result
+                    ok = (self.injector.send_key(action_value)
+                          if action_type == "key"
+                          else self.injector.send_hotkey(action_value))
+                    _log.info("voice command: %s (%s %s) ok=%s",
+                              label, action_type, action_value, ok)
+                    if self.tray:
+                        self.tray.set_state("ok" if not self._paused else "paused")
+                    return
+                else:
+                    wnotify.notify("Echo Flow", f"Unknown voice command: {body[:40]}", "warning")
+                    if self.tray:
+                        self.tray.set_state("ok" if not self._paused else "paused")
+                    return
+
         pad_target = getattr(self, "_scratchpad_target_id", None)
         if pad_target and self.history is not None:
             try:

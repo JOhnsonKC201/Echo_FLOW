@@ -158,22 +158,26 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
     # ---- Experimental ------------------------------------------------------
     @flask_app.get("/settings/experimental")
     def settings_experimental():
+        from .. import commands as _cmds
         cfg = app_ref.cfg
         exp = cfg.get("experimental", {}) or {}
         return _render("experimental", values={
             "press_enter_command": bool(exp.get("press_enter_command", False)),
             "command_mode": bool(exp.get("command_mode", False)),
-        })
+            "command_prefix": exp.get("command_prefix", "computer"),
+        }, supported_commands=_cmds.list_supported())
 
     @flask_app.post("/settings/experimental/save")
     def settings_experimental_save():
         f = request.form
+        prefix = (f.get("command_prefix", "") or "computer").strip() or "computer"
         # `experimental:` block may not exist in config.yaml on older installs;
         # we attempt the write and surface the error rather than silently
         # creating a new block (config_writer is scalar-only by design).
         errs = _save_scalars(app_ref, [
             ("experimental.press_enter_command", _checkbox(f, "press_enter_command")),
             ("experimental.command_mode", _checkbox(f, "command_mode")),
+            ("experimental.command_prefix", prefix),
         ], log)
         if errs:
             return redirect(

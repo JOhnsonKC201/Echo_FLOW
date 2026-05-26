@@ -158,6 +158,7 @@ dashboard:
 experimental:
   press_enter_command: false   # Phase 12 — "press enter" / "send it" trailing trigger
   command_mode: false          # Phase 13 — full voice command mode
+  command_prefix: "computer"   # Phase 13 — dictations starting with this word are interpreted as commands
 
 logging:
   level: "INFO"

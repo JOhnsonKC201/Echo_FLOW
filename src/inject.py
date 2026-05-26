@@ -78,3 +78,22 @@ class Injector:
             return True
         except Exception:
             return False
+
+    def send_hotkey(self, combo: str) -> bool:
+        """Fire a key combo like "ctrl+c" or "ctrl+shift+t". Phase 13.
+
+        Caller must allowlist the combo upstream — this method does no
+        policy enforcement (consistent with send_key).
+        """
+        if not combo:
+            return False
+        parts = [p.strip().lower() for p in combo.split("+") if p.strip()]
+        if not parts:
+            return False
+        try:
+            import pyautogui
+            time.sleep(0.05)
+            pyautogui.hotkey(*parts)
+            return True
+        except Exception:
+            return False
