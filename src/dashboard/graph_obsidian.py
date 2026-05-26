@@ -154,6 +154,22 @@ _HTML = r"""<!doctype html>
   .stats { position:fixed; left:12px; bottom:10px; color:#64748b; font-size:10.5px;
            letter-spacing:.02em; }
 
+  /* Minimap (bottom-right) — same glass treatment as .panel */
+  .minimap { position:fixed; right:12px; bottom:12px; width:180px; height:120px;
+             background:rgba(20,22,28,.85); backdrop-filter:blur(8px);
+             border:1px solid #2a2e38; border-radius:8px; overflow:hidden;
+             cursor:crosshair; }
+  .minimap svg { width:100%; height:100%; display:block; }
+  .minimap .mm-dot { fill:#cbd5e1; opacity:.55; }
+  .minimap .mm-view { fill:rgba(167,139,250,.14); stroke:#a78bfa;
+                      stroke-width:1px; cursor:grab; }
+  .minimap .mm-view:active { cursor:grabbing; }
+
+  /* Cluster hulls — soft tinted blobs behind dictation clusters */
+  .hulls path { stroke:none; pointer-events:none;
+                transition: opacity .2s ease; }
+  .hulls.off  { display:none; }
+
   /* Side detail panel (shown when a node is clicked/pinned) */
   .detail { position:fixed; right:12px; top:56px; width:300px; max-height:75vh;
             background:rgba(20,22,28,.93); backdrop-filter:blur(10px);
@@ -187,8 +203,16 @@ _HTML = r"""<!doctype html>
   <button id="m-dict">Dictations</button>
   <button id="m-conc">Concepts</button>
   <button id="m-note">Notes</button>
+  <button id="m-hulls" class="active" title="Toggle cluster hulls">Hulls</button>
   <input id="search" placeholder="Search…" />
   <button id="fit" class="icon" title="Fit to view">⤢</button>
+</div>
+
+<div class="minimap" id="minimap">
+  <svg id="mm" viewBox="0 0 180 120" preserveAspectRatio="none">
+    <g id="mm-dots"></g>
+    <rect id="mm-view" class="mm-view" x="0" y="0" width="180" height="120"></rect>
+  </svg>
 </div>
 
 <div class="stats" id="stats"></div>
@@ -228,8 +252,57 @@ const W = () => window.innerWidth, H = () => window.innerHeight;
 // Zoom/pan container (zoom behavior attached lower, after fitToView is defined).
 const root = svg.append('g');
 
+const hullLayer = root.append('g').attr('class','hulls');
 const linkLayer = root.append('g').attr('class','links');
 const nodeLayer = root.append('g').attr('class','nodes');
+
+// Smooth closed-curve generator for cluster hull paths.
+const hullLine = d3.line().curve(d3.curveBasisClosed);
+let hullsOn = true;
+let hullGroups = []; // [{cluster, members:[node,...], color}]
+function rebuildHullGroups() {
+  const by = new Map();
+  for (const n of nodes) {
+    if (n.group !== 'dictation') continue;
+    const c = (n.cluster|0);
+    if (c < 0) continue;
+    if (!by.has(c)) by.set(c, []);
+    by.get(c).push(n);
+  }
+  hullGroups = [];
+  for (const [c, members] of by) {
+    if (members.length < 3) continue;
+    const color = CLUSTER_COLORS[(c % CLUSTER_COLORS.length + CLUSTER_COLORS.length) % CLUSTER_COLORS.length];
+    hullGroups.push({cluster: c, members, color});
+  }
+}
+function updateHulls() {
+  const sel = hullLayer.selectAll('path').data(hullGroups, d => d.cluster);
+  sel.exit().remove();
+  const enter = sel.enter().append('path')
+    .attr('fill', d => d.color)
+    .attr('fill-opacity', 0.08);
+  enter.merge(sel)
+    .attr('fill', d => d.color)
+    .attr('d', d => {
+      const pts = d.members
+        .filter(m => m.x != null && m.y != null)
+        .map(m => [m.x, m.y]);
+      if (pts.length < 3) return null;
+      const hull = d3.polygonHull(pts);
+      if (!hull) return null;
+      // Expand hull outward slightly so it pads the nodes.
+      const cx = d3.mean(hull, p => p[0]);
+      const cy = d3.mean(hull, p => p[1]);
+      const pad = 28;
+      const padded = hull.map(([x, y]) => {
+        const dx = x - cx, dy = y - cy;
+        const len = Math.hypot(dx, dy) || 1;
+        return [x + (dx / len) * pad, y + (dy / len) * pad];
+      });
+      return hullLine(padded);
+    });
+}
 
 let nodes = [], links = [], adjacency = new Map(), nodeById = new Map();
 let currentMode = 'all';
@@ -259,6 +332,7 @@ function applyMode(mode) {
   // Perf: default to labels-hidden for large graphs; show on hover/zoom-in.
   document.body.classList.toggle('labels-hidden', nodes.length > 500);
 
+  rebuildHullGroups();
   render();
   document.getElementById('stats').textContent =
     `${nodes.length} nodes · ${links.length} edges`;
@@ -310,6 +384,8 @@ function render() {
       linkAll.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
              .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
       nodeAll.attr('transform', d => `translate(${d.x},${d.y})`);
+      updateHulls();
+      updateMinimap();
     })
     .on('end', fitToView);
 }
@@ -323,6 +399,7 @@ const zoomBehavior = d3.zoom().scaleExtent([0.15, 6])
     // Auto-hide threshold scales with graph size.
     const threshold = nodes.length > 500 ? 1.4 : (nodes.length > 200 ? 0.9 : 0.55);
     document.body.classList.toggle('labels-hidden', currentZoom < threshold);
+    updateMinimap();
   });
 svg.call(zoomBehavior);
 // Click on empty canvas → unpin
@@ -416,9 +493,10 @@ function panTo(n, scale) {
 }
 
 // Mode buttons
-for (const [id, m] of [['m-all','all'],['m-dict','dict'],['m-conc','conc'],['m-note','note']]) {
+const MODE_BTNS = [['m-all','all'],['m-dict','dict'],['m-conc','conc'],['m-note','note']];
+for (const [id, m] of MODE_BTNS) {
   document.getElementById(id).onclick = () => {
-    document.querySelectorAll('.panel button').forEach(b => b.classList.remove('active'));
+    MODE_BTNS.forEach(([bid]) => document.getElementById(bid).classList.remove('active'));
     document.getElementById(id).classList.add('active');
     applyMode(m);
   };
@@ -465,6 +543,101 @@ document.getElementById('fit').onclick = () => fitToView();
 window.addEventListener('resize', () => {
   if (sim) sim.force('center', d3.forceCenter(W()/2, H()/2)).alpha(.3).restart();
 });
+
+// --- Hulls toggle ------------------------------------------------------
+const hullsBtn = document.getElementById('m-hulls');
+hullsBtn.onclick = (e) => {
+  e.stopPropagation();
+  hullsOn = !hullsOn;
+  hullsBtn.classList.toggle('active', hullsOn);
+  hullLayer.classed('off', !hullsOn);
+};
+
+// --- Minimap -----------------------------------------------------------
+const MM_W = 180, MM_H = 120, MM_PAD = 6;
+const mmSvg = d3.select('#mm');
+const mmDots = d3.select('#mm-dots');
+const mmView = d3.select('#mm-view');
+let mmTransform = {sx: 1, sy: 1, tx: 0, ty: 0}; // graph→minimap mapping
+
+function computeMinimapTransform() {
+  if (!nodes.length) return;
+  const xs = nodes.map(n => n.x).filter(v => v != null);
+  const ys = nodes.map(n => n.y).filter(v => v != null);
+  if (!xs.length) return;
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const w = (x1 - x0) || 1, h = (y1 - y0) || 1;
+  const s = Math.min((MM_W - MM_PAD * 2) / w, (MM_H - MM_PAD * 2) / h);
+  const tx = MM_PAD + (MM_W - MM_PAD * 2 - w * s) / 2 - x0 * s;
+  const ty = MM_PAD + (MM_H - MM_PAD * 2 - h * s) / 2 - y0 * s;
+  mmTransform = {sx: s, sy: s, tx, ty};
+}
+
+function updateMinimap() {
+  computeMinimapTransform();
+  const {sx, sy, tx, ty} = mmTransform;
+  const dots = mmDots.selectAll('circle').data(nodes, d => d.id);
+  dots.exit().remove();
+  const enter = dots.enter().append('circle')
+    .attr('class', 'mm-dot')
+    .attr('r', 1.5);
+  enter.merge(dots)
+    .attr('cx', d => (d.x || 0) * sx + tx)
+    .attr('cy', d => (d.y || 0) * sy + ty);
+
+  // Viewport rect: invert the current zoom transform to find which graph-space
+  // box is visible, then project that box into minimap space.
+  const t = d3.zoomTransform(svg.node());
+  const gx0 = (-t.x) / t.k;
+  const gy0 = (-t.y) / t.k;
+  const gx1 = gx0 + W() / t.k;
+  const gy1 = gy0 + H() / t.k;
+  const vx = gx0 * sx + tx;
+  const vy = gy0 * sy + ty;
+  const vw = (gx1 - gx0) * sx;
+  const vh = (gy1 - gy0) * sy;
+  mmView.attr('x', vx).attr('y', vy).attr('width', vw).attr('height', vh);
+}
+
+// Convert a minimap click point (in minimap viewBox coords) into a graph
+// coordinate, then center the main view on it without changing zoom.
+function panToMinimapPoint(mx, my) {
+  const {sx, sy, tx, ty} = mmTransform;
+  if (!sx) return;
+  const gx = (mx - tx) / sx;
+  const gy = (my - ty) / sy;
+  const t = d3.zoomTransform(svg.node());
+  const k = t.k;
+  const newTx = W() / 2 - k * gx;
+  const newTy = H() / 2 - k * gy;
+  svg.transition().duration(180).call(
+    zoomBehavior.transform,
+    d3.zoomIdentity.translate(newTx, newTy).scale(k));
+}
+
+// Map a pointer event on the minimap into its viewBox coords.
+function mmPointer(event) {
+  const rect = document.getElementById('minimap').getBoundingClientRect();
+  const mx = ((event.clientX - rect.left) / rect.width) * MM_W;
+  const my = ((event.clientY - rect.top) / rect.height) * MM_H;
+  return [mx, my];
+}
+
+// Click anywhere on the minimap → pan
+mmSvg.on('click', (e) => {
+  e.stopPropagation();
+  const [mx, my] = mmPointer(e);
+  panToMinimapPoint(mx, my);
+});
+
+// Drag the viewport rect → pan continuously
+mmView.call(d3.drag()
+  .on('start', (e) => { e.sourceEvent.stopPropagation(); })
+  .on('drag',  (e) => {
+    const [mx, my] = mmPointer(e.sourceEvent);
+    panToMinimapPoint(mx, my);
+  }));
 
 applyMode('all');
 </script>
