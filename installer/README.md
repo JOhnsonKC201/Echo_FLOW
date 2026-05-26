@@ -1,65 +1,90 @@
-# Echo Flow Installer
+# Echo Flow — Windows Distribution
 
-Builds `EchoFlow-Setup.exe` — a per-user Windows installer with Start Menu
-shortcut, optional desktop shortcut, optional auto-launch on login, and a
-clean uninstaller. No admin rights required for end-users.
+Echo Flow ships as **two** installable artifacts. End users should grab the
+**daemon installer** — it's the full product. The dashboard-only installer
+exists for users who already run the daemon some other way (dev checkout,
+`run_silent.vbs`, etc.) and just want the visual shell.
 
-## Prerequisites
+| Installer                                  | What it contains                                   | Who it's for                          |
+|--------------------------------------------|----------------------------------------------------|---------------------------------------|
+| `EchoFlow-Daemon-Setup-<ver>.exe`          | Daemon + embedded dashboard + Flask + ML stack     | **Most users.** Real install.         |
+| `EchoFlow-Setup-<ver>.exe`                 | Dashboard shell only (`app.py` PyInstaller bundle) | Devs / users running the daemon raw   |
 
-1. **Build the app first** — either:
-   - PyInstaller: `python -m PyInstaller EchoFlow.spec --noconfirm`
-     -> `dist\EchoFlow\` (default `SourceDir` in the .iss)
-   - Nuitka: `.\build_nuitka.ps1`
-     -> `dist_nuitka\app.dist\` (uncomment the alt `SourceDir` line)
+Both installers are **per-user** (no admin required), install under
+`%LOCALAPPDATA%\Programs\EchoFlow`, and store runtime data under
+`%LOCALAPPDATA%\EchoFlow\`.
 
-2. **Install Inno Setup 6** (one-time):
-   - Download from https://jrsoftware.org/isdl.php
-   - Run `innosetup-6.x.x.exe` and accept defaults.
-   - This installs `iscc.exe` (the command-line compiler) at
-     `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`.
+---
 
-## Build the installer
+## Build prerequisites
+
+- Python 3.11+ with the project's `.venv` activated and `requirements.txt`
+  installed.
+- `pyinstaller` in the venv.
+- [Inno Setup 6](https://jrsoftware.org/isdl.php) on PATH (`iscc.exe`).
+- Optional: Windows 10/11 SDK for `signtool.exe` (only needed if signing).
+
+## Building both `.exe`s
 
 From the repo root:
 
 ```powershell
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\EchoFlow.iss
+.\.venv\Scripts\Activate.ps1
+.\build_all.ps1
 ```
 
-Or, if Inno Setup is on PATH:
+This runs PyInstaller twice in sequence and reports per-stage timing:
+
+1. `EchoFlow.spec`         -> `dist\EchoFlow\EchoFlow.exe` (dashboard shell)
+2. `EchoFlow-Daemon.spec`  -> `dist\EchoFlow-Daemon\EchoFlow-Daemon.exe`
+
+Flags:
+
+- `-Clean`           — pass `--clean` through to PyInstaller.
+- `-SkipDashboard`   — only rebuild the daemon.
+- `-SkipDaemon`      — only rebuild the dashboard shell.
+
+## Building the installers
 
 ```powershell
-iscc installer\EchoFlow.iss
+iscc installer\EchoFlow.iss          # dashboard-only installer
+iscc installer\EchoFlow-Daemon.iss   # full-product installer (recommended)
 ```
 
-Output: `installer\Output\EchoFlow-Setup.exe` (single file, ~30-50MB).
+Outputs land in `installer\Output\`.
 
-## What the installer does
+## What the daemon installer wires up
 
-- Installs to `%LOCALAPPDATA%\EchoFlow` (no admin, no UAC).
-- Adds Start Menu entry under `Echo Flow`.
-- Offers checkboxes for:
-  - **Desktop shortcut** (unchecked by default)
-  - **Launch on sign-in** (unchecked by default; writes
-    `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Echo Flow`)
-- Registers an uninstaller in Add/Remove Programs.
-- Cleans up `logs\` and `__pycache__\` on uninstall.
+- Per-user install at `%LOCALAPPDATA%\Programs\EchoFlow`.
+- Optional **Auto-start on login** task — writes
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\EchoFlow` pointing
+  at `EchoFlow-Daemon.exe` (this replaces the dev-grade `run_silent.vbs`
+  flow once the user is on the bundled exe).
+- Optional **Launch now** task — starts the daemon when setup finishes.
+- Optional Start Menu and Desktop shortcuts.
+- Uninstall handler that stops a running daemon via PowerShell
+  `Stop-Process` before deleting files (so files aren't locked).
+- User data under `%LOCALAPPDATA%\EchoFlow\` is **not** removed on
+  uninstall.
 
-## Switching between PyInstaller and Nuitka output
+## ⚠️ Before the daemon build is useful
 
-Edit the `SourceDir` define block near the top of `EchoFlow.iss`:
-
-```inno
-#define SourceDir       "..\dist\EchoFlow"          ; PyInstaller
-; #define SourceDir     "..\dist_nuitka\app.dist"   ; Nuitka
-```
-
-## Version bumps
-
-Edit `MyAppVersion` in `EchoFlow.iss`. The `AppId` GUID must stay constant
-across versions so upgrades replace the existing install cleanly.
+`src/main.py` must resolve its user-data dir to `%LOCALAPPDATA%\EchoFlow\`
+when running under PyInstaller (i.e. `sys.frozen == True`). The dashboard
+shell (`app.py`) already does this; the daemon needs the same patch
+applied manually. Without it, the frozen daemon will try to write
+`config.yaml` and `history.db` next to the bundled `.exe` and fail on a
+non-writable install location.
 
 ## Code signing
 
-See `SIGNING.md` for cheap certificate options and how to wire `signtool`
-into the Inno Setup build.
+See [`SIGNING.md`](./SIGNING.md) and [`sign.ps1`](./sign.ps1). Short
+version:
+
+```powershell
+.\build_all.ps1
+.\installer\sign.ps1 -PfxPath cert.pfx -PfxPassword '...'
+iscc installer\EchoFlow.iss
+iscc installer\EchoFlow-Daemon.iss
+.\installer\sign.ps1 -PfxPath cert.pfx -PfxPassword '...'
+```
