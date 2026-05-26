@@ -390,15 +390,21 @@ class Cleaner:
         provider = provider_override or self.provider
 
         def _run_provider(name: str) -> str:
-            # Local-only enforcement: any legacy cloud provider name in config
-            # is silently rewritten to the local Ollama path.
-            if name in ("groq", "anthropic", "openai"):
+            # Local-only enforcement, with a deliberate carve-out: Prompt-
+            # Engineering mode (style == "prompt", armed via Ctrl+Shift+Alt
+            # and dispatched with an explicit provider_override) is allowed
+            # to call a cloud provider. Regular cleanup stays local.
+            pe_allowed = (style == "prompt" and provider_override is not None)
+            if name in ("anthropic", "openai") or (name == "groq" and not pe_allowed):
                 _log.warning(
-                    "cleanup.provider=%s is a legacy cloud provider; Echo Flow "
-                    "is local-only. Routing to ollama instead.", name,
+                    "cleanup.provider=%s is a cloud provider; Echo Flow "
+                    "is local-only outside Prompt-Engineering mode. "
+                    "Routing to ollama instead.", name,
                 )
                 name = "ollama"
-            if name == "ollama":
+            if name == "groq":
+                out = self._via_groq(prompt, text, max_tokens=max_tokens_override)
+            elif name == "ollama":
                 out = self._via_ollama(prompt, text, max_tokens=max_tokens_override, style=style)
             elif name == "learned":
                 out = self._via_learned(text, style=style)
@@ -465,6 +471,44 @@ class Cleaner:
         }, timeout=timeout)
         r.raise_for_status()
         return r.json()["message"]["content"].strip()
+
+    def _via_groq(self, system: str, text: str, *,
+                  max_tokens: int | None = None) -> str:
+        """Cloud path — used only for Prompt-Engineering mode.
+
+        Reads GROQ_API_KEY from env. Model and timeout come from cleanup.groq
+        in config.yaml (sensible defaults applied).
+        """
+        import os
+        api_key = os.environ.get("GROQ_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "GROQ_API_KEY env var is empty; cannot call Groq. "
+                "Set it via setx or in your shell, then restart the daemon."
+            )
+        gc = self.cfg.get("groq", {}) or {}
+        url = gc.get("base_url", "https://api.groq.com/openai/v1/chat/completions")
+        model = gc.get("model", "llama-3.3-70b-versatile")
+        timeout = float(gc.get("timeout_sec", 12.0))
+        r = self._session.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": text},
+                ],
+                "temperature": 0.3,
+                "max_tokens": int(max_tokens) if max_tokens else 700,
+            },
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"].strip()
 
     def warmup(self) -> None:
         """Preload the Ollama model so the first dictation isn't slow.

@@ -22,6 +22,42 @@ from pathlib import Path
 _STATE_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "dashboard_window.json"
 
 
+_SPLASH_HTML = """<!doctype html>
+<html><head><meta charset='utf-8'><title>Echo Flow</title>
+<style>
+  html,body{margin:0;height:100%;background:#0d1014;color:#e7e9ee;
+    font:500 13px/1.4 'Inter','Segoe UI',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;overflow:hidden;}
+  .wrap{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:18px;}
+  .logo{font:600 28px/1 'JetBrains Mono',ui-monospace,Consolas,monospace;
+    color:#3eaf6f;letter-spacing:-0.02em;}
+  .name{font-size:14px;font-weight:600;letter-spacing:0.02em;}
+  .dots{display:flex;gap:6px;margin-top:4px;}
+  .dots span{width:6px;height:6px;border-radius:50%;background:#3eaf6f;
+    opacity:.25;animation:p 1.2s infinite ease-in-out;}
+  .dots span:nth-child(2){animation-delay:.15s}
+  .dots span:nth-child(3){animation-delay:.3s}
+  @keyframes p{0%,80%,100%{opacity:.25;transform:scale(.85)}
+                40%{opacity:1;transform:scale(1)}}
+</style></head><body><div class='wrap'>
+  <div class='logo'>&#9646;&#9646;&#9647;</div>
+  <div class='name'>Echo Flow</div>
+  <div class='dots'><span></span><span></span><span></span></div>
+</div></body></html>"""
+
+
+def _primary_screen_size() -> tuple[int, int]:
+    """Best-effort primary monitor size (Windows-only). Falls back to 1920x1080."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.SetProcessDPIAware()
+        return int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
+    except Exception:
+        return 1920, 1080
+
+
 def _load_window_state() -> dict:
     """Return persisted {width, height, x, y} (best-effort)."""
     try:
@@ -120,20 +156,34 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         state = _load_window_state()
-        # We deliberately do NOT restore x/y — see _save_window_state docstring.
-        kwargs = dict(
-            width=int(state.get("width", 1280)),
-            height=int(state.get("height", 820)),
+        width = int(state.get("width", 1280))
+        height = int(state.get("height", 820))
+        # Center on the primary monitor each launch — restoring a saved x/y
+        # strands the window off-screen when an external monitor unplugs.
+        sw, sh = _primary_screen_size()
+        x = max(0, (sw - width) // 2)
+        y = max(0, (sh - height) // 2)
+        # Inline splash paints on the first frame so there is no white flash
+        # while the dashboard's heavier templates render.
+        win = webview.create_window(
+            "Echo Flow",
+            html=_SPLASH_HTML,
+            width=width, height=height, x=x, y=y,
             min_size=(900, 600),
+            background_color="#0d1014",
             text_select=True,
         )
-        win = webview.create_window("Echo Flow", url, **kwargs)
-        # Persist size/position on close (best-effort).
         try:
             win.events.closing += lambda: _save_window_state(win)
         except Exception:
             pass
-        webview.start()
+        # Swap from splash → real dashboard once webview is up.
+        def _swap_to_dashboard():
+            try:
+                win.load_url(url)
+            except Exception:
+                pass
+        webview.start(func=_swap_to_dashboard)
     except Exception as e:
         # WebView2 runtime missing or similar — graceful fallback.
         print(f"echoflow-dashboard: PyWebView failed ({e}); opening in browser.",

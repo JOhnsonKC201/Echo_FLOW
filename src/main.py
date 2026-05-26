@@ -45,7 +45,15 @@ from .viewer import render_history
 from .graph import render_graph
 
 
-console = Console()
+console = Console(legacy_windows=False)
+# Force UTF-8 on the underlying stdio so any direct print() of em-dashes,
+# arrows, or box-drawing chars doesn't crash the daemon on Windows cp1252
+# consoles (a recurring class of bug — see _announce's except clauses).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 
 # Rich markup tags (e.g. "[cyan]...[/cyan]") look ugly in the log file.
@@ -60,7 +68,13 @@ def _announce(msg: str, level: str = "info") -> None:
     Use for startup events and user-visible milestones — anything you'd want to
     see in a post-mortem when the daemon was running headless.
     """
-    console.print(msg)
+    try:
+        console.print(msg)
+    except UnicodeEncodeError:
+        # Windows legacy console (cp1252) can't render certain glyphs (→, ✓,
+        # etc.) when the daemon is launched without IO redirection. Swallow
+        # so a logged arrow doesn't kill the whole daemon.
+        pass
     plain = _RICH_TAGS.sub("", msg).strip()
     if not plain:
         return
@@ -988,12 +1002,17 @@ class App:
 
     def run(self):
         combo = self.cfg["hotkey"]["combo"]
-        console.print(Panel.fit(
-            f"[bold]Echo Flow[/bold] — ready\n"
-            f"Hotkey: [cyan]{combo}[/cyan]  mode: [cyan]{self._mode}[/cyan]\n"
-            f"Tray icon ↗ in system tray for status, pause, edit, history, quit.",
-            border_style="green",
-        ))
+        try:
+            console.print(Panel.fit(
+                f"[bold]Echo Flow[/bold] — ready\n"
+                f"Hotkey: [cyan]{combo}[/cyan]  mode: [cyan]{self._mode}[/cyan]\n"
+                f"Tray icon ↗ in system tray for status, pause, edit, history, quit.",
+                border_style="green",
+            ))
+        except UnicodeEncodeError:
+            # Windows legacy console (cp1252) can't render —/↗; the daemon
+            # logs the same info to wispr.log via the _log.info call below.
+            pass
         _log.info("Echo Flow ready (hotkey=%s mode=%s)", combo, self._mode)
 
         # Tray icon in its own thread
@@ -1076,6 +1095,20 @@ class App:
                 ).start()
             except Exception as e:
                 _log.warning("dashboard failed to start: %s", e)
+
+        # Global hotkey for "Open Dashboard" — pops the pywebview window from
+        # anywhere without needing a tray click. Independent listener so it
+        # doesn't perturb the dictation hotkey or the transform registry.
+        open_combo = dash_cfg.get("open_hotkey", "<ctrl>+<alt>+<space>")
+        if open_combo:
+            try:
+                from pynput import keyboard as _kb
+                self._dashboard_hotkey_listener = _kb.GlobalHotKeys(
+                    {open_combo: self.tray_open_dashboard})
+                self._dashboard_hotkey_listener.start()
+                _log.info("dashboard open hotkey: %s", open_combo)
+            except Exception as e:
+                _log.warning("dashboard open hotkey %r failed: %s", open_combo, e)
 
         # Secondary listener: re-paste last dictation on Ctrl+Win (or whatever
         # paste_last_combo is configured to). Runs in its own thread so it

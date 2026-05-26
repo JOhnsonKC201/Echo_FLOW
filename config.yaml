@@ -64,6 +64,12 @@ cleanup:
     model: "qwen2.5:3b-instruct-q4_K_M"   # 3B Q4 (~2 GB VRAM) — leaves headroom for Whisper on an 8 GB RTX 5060. Previously qwen3.5:latest (6.5 GB).
     timeout_sec: 8.0        # tight cleanup timeout; fallback chain catches stalls
     keep_alive: "10m"       # how long Ollama keeps the model resident after a call
+  # Cloud — used ONLY by Prompt-Engineering mode (Ctrl+Shift+Alt). Regular
+  # dictation never calls Groq. Reads GROQ_API_KEY from the environment.
+  groq:
+    base_url: "https://api.groq.com/openai/v1/chat/completions"
+    model: "llama-3.3-70b-versatile"   # fast + capable for PE rewrites
+    timeout_sec: 12.0
   # "learned" provider: LLM-free cleanup. Applies vocab + high-confidence learned patterns only.
   learned:
     min_similarity: 0.85           # cosine threshold for retrieving a past correction as a fix
@@ -111,8 +117,8 @@ cleanup:
 # short spoken ideas to Claude Code / ChatGPT.
 prompt_engineering:
   enabled: true
-  provider: "ollama"             # local-only: ollama
-  fallback_provider: "ollama"    # invoked only if primary raises
+  provider: "groq"               # PE mode allowed to use cloud (Groq). Regular dictation stays local.
+  fallback_provider: "ollama"    # invoked only if Groq raises (no key, rate-limit, network)
   oneshot_combo: "ctrl+shift+alt"  # arm prompt mode for the NEXT dictation only; "" to disable
   audience: "claude-code"        # claude-code | chatgpt | generic — picks system-prompt variant
   max_output_tokens: 700         # room for richer polish on complex multi-component dictations without inviting PRD-style padding
@@ -150,6 +156,7 @@ dashboard:
   port: 8766                  # Auto-fallback to 8767..8770 if busy.
   theme: light               # dark | light
   open_window_on_start: false # daemon starts the server; window opens on demand.
+  open_hotkey: "<ctrl>+<cmd>"  # Global hotkey to open the dashboard window (Ctrl+Win). Set "" to disable.
   onboarded: true            # Phase 11 first-run tour gate; flips true after /onboarding/finish.
 
 # Experimental features (off by default). Surfaced in the dashboard's

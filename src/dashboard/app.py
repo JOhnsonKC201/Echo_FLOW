@@ -254,6 +254,10 @@ def make_app(app_ref):
             trend=payload["trend"],
             apps=payload["apps"],
             fixes=payload["fixes"],
+            wpm=payload["wpm"],
+            total_words=payload["total_words"],
+            streak=payload["streak"],
+            heatmap=payload["heatmap"],
         )
 
     @flask_app.get("/dictionary")

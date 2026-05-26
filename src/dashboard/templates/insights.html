@@ -1,109 +1,251 @@
 {% extends "base.html" %}
 {% block title %}Outcomes — Echo Flow{% endblock %}
 {% block content %}
-<h1 class="welcome">Outcomes</h1>
-<div class="muted small" style="margin: 4px 0 14px;">Signal, not vanity. All numbers computed locally.</div>
 
-<div class="insights-tiles">
-  <div class="tile">
-    <div class="tile-label">Time saved · 30d</div>
-    <div class="tile-value num">{{ time_saved_human }}</div>
-    <div class="tile-sub">vs. typing at {{ baseline_wpm }} WPM</div>
-  </div>
+<style>
+  /* Wispr-style insights — scoped to this page so it can't leak. */
+  .wf-header { display:flex; align-items:baseline; justify-content:space-between;
+               margin: 4px 0 18px; }
+  .wf-title  { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .wf-tabs   { display:flex; gap:22px; margin: 6px 0 22px;
+               border-bottom: 1px solid var(--border); }
+  .wf-tab    { padding: 8px 0; font-size: 13px; font-weight:500; color: var(--muted);
+               cursor:pointer; border-bottom: 2px solid transparent; margin-bottom:-1px; }
+  .wf-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 
-  <div class="tile">
-    <div class="tile-label">Acceptance · 7d</div>
-    <div class="tile-value num">{{ acceptance_pct }}<span class="muted small">%</span></div>
-    <div class="tile-sub">
-      {{ acceptance.n_current }} dictation{{ '' if acceptance.n_current == 1 else 's' }}
-      {% if acceptance.n_prior %}
-        ·
-        {% if acceptance.delta_pp >= 0 %}
-          <span class="tile-delta">↑ {{ acceptance.delta_pp | round(1) }} pp</span>
-        {% else %}
-          <span class="tile-delta down">↓ {{ (acceptance.delta_pp * -1) | round(1) }} pp</span>
-        {% endif %}
-        vs. previous 7d
-      {% endif %}
+  .wf-grid-top { display:grid; grid-template-columns: 1fr 1fr 1.4fr; gap:14px;
+                 margin-bottom: 16px; }
+  .wf-grid-bot { display:grid; grid-template-columns: 1fr 1.3fr; gap:14px; }
+
+  .wf-card { background: var(--panel); border:1px solid var(--border);
+             border-radius: 14px; padding: 18px 20px; }
+  .wf-hero-num { font-size: 36px; font-weight: 600; line-height:1; letter-spacing:-0.02em; }
+  .wf-hero-lbl { margin-top: 8px; font-size: 11px; font-weight:600;
+                 letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .wf-divider  { height:1px; background: var(--border); margin: 14px 0; }
+
+  /* WPM gauge — semicircle arc */
+  .wf-gauge { display:flex; flex-direction:column; align-items:center;
+              gap: 4px; margin-top: 14px; }
+  .wf-gauge svg { display:block; }
+  .wf-gauge-track  { stroke: var(--panel-2); stroke-width: 14; fill: none; }
+  .wf-gauge-fill   { stroke: var(--accent);  stroke-width: 14; fill: none;
+                     stroke-linecap: round;
+                     transition: stroke-dashoffset .6s ease; }
+  .wf-gauge-cap    { font-size: 11px; color: var(--muted); margin-top: -38px; }
+  .wf-gauge-val    { font-size: 18px; font-weight: 600; margin-top:-2px; }
+
+  /* Fixes breakdown rows */
+  .wf-row { display:flex; align-items:center; justify-content:space-between;
+            padding: 6px 0; font-size: 13px; }
+  .wf-row + .wf-row { border-top: 1px solid var(--border); }
+  .wf-row .lbl { color: var(--text); }
+  .wf-row .val { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Source toggle (Desktop / Mobile) */
+  .wf-source { display:flex; gap:6px; margin-top: 14px;
+               background: var(--panel-2); border-radius: 10px; padding: 4px; }
+  .wf-source button { flex:1; background: transparent; border:0; color: var(--muted);
+                      font-size: 12px; font-weight: 600; padding: 7px 10px;
+                      border-radius: 7px; cursor:pointer; }
+  .wf-source button.active { background: var(--accent); color: #06241a; }
+
+  /* Big number context line */
+  .wf-context { color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 10px; }
+
+  /* Apps usage list */
+  .wf-apps { display:flex; flex-direction:column; gap: 10px; margin-top: 12px; }
+  .wf-app  { display:grid; grid-template-columns: 56px 1fr auto;
+             gap: 12px; align-items:center; }
+  .wf-app-pct  { background: var(--accent); color: #06241a;
+                 padding: 4px 0; text-align:center;
+                 border-radius: 6px; font-size: 11px; font-weight: 700;
+                 font-variant-numeric: tabular-nums; }
+  .wf-app-pct.dim { background: var(--panel-2); color: var(--muted); }
+  .wf-app-lbl { font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em;
+                text-transform: uppercase; color: var(--text); }
+  .wf-app-cnt { font-size: 11px; color: var(--muted);
+                font-variant-numeric: tabular-nums; }
+
+  /* Heatmap */
+  .wf-heat-head { display:flex; align-items:baseline; justify-content:space-between;
+                  margin-bottom: 14px; }
+  .wf-heat-streak { font-size: 22px; font-weight:600; }
+  .wf-heat-streak small { font-size: 12px; font-weight:500; color: var(--muted);
+                          margin-left: 6px; }
+  .wf-heat-longest { font-size: 11px; font-weight: 600; letter-spacing:.06em;
+                     text-transform: uppercase; color: var(--muted); }
+  .wf-heat-grid { display:grid; grid-auto-flow: column;
+                  grid-template-rows: repeat(7, 14px);
+                  gap: 3px; overflow-x: auto; padding-bottom: 4px; }
+  .wf-cell { width:14px; height:14px; border-radius:3px; background: var(--panel-2); }
+  .wf-cell.l1 { background: #b6dbc9; }
+  .wf-cell.l2 { background: #6dbb96; }
+  .wf-cell.l3 { background: #2e9268; }
+  .wf-cell.l4 { background: var(--accent); }
+  .wf-heat-legend { display:flex; align-items:center; gap: 6px;
+                    margin-top: 10px; font-size: 11px; color: var(--muted); }
+
+  .wf-empty { color: var(--muted); font-size: 12.5px; padding: 10px 0; }
+</style>
+
+<div class="wf-header">
+  <div class="wf-title">Outcomes</div>
+</div>
+
+<div class="wf-tabs">
+  <div class="wf-tab active">Your Usage</div>
+</div>
+
+{# ===== Top row: 3 hero tiles ===== #}
+<div class="wf-grid-top">
+
+  {# --- WPM with gauge --- #}
+  <div class="wf-card">
+    <div class="wf-hero-num">{{ wpm or 0 }}</div>
+    <div class="wf-hero-lbl">Words per minute</div>
+    {% set wpm_target = 200 %}
+    {% set wpm_val = wpm or 0 %}
+    {% set wpm_frac = (wpm_val / wpm_target) if wpm_val < wpm_target else 1.0 %}
+    {# Arc geometry: r=72, semicircle from (28,100) to (172,100), length = pi*r = 226 #}
+    <div class="wf-gauge">
+      <svg width="200" height="120" viewBox="0 0 200 120">
+        <path class="wf-gauge-track" d="M 28 100 A 72 72 0 0 1 172 100" />
+        <path class="wf-gauge-fill"  d="M 28 100 A 72 72 0 0 1 172 100"
+              stroke-dasharray="226" stroke-dashoffset="{{ 226 * (1 - wpm_frac) }}" />
+      </svg>
+      <div class="wf-gauge-cap">vs. typing baseline {{ baseline_wpm }} WPM</div>
+      <div class="wf-gauge-val">
+        {% if wpm_val == 0 %}—
+        {% elif wpm_val >= 150 %}Top tier
+        {% elif wpm_val >= baseline_wpm * 2 %}Fast
+        {% elif wpm_val >= baseline_wpm %}On pace
+        {% else %}Building up{% endif %}
+      </div>
     </div>
   </div>
 
-  <div class="tile">
-    <div class="tile-label">Latency p95 · last {{ latency.n }}</div>
-    {% if latency.p95 %}
-      <div class="tile-value num">{{ latency.p95 }}<span class="muted small"> ms</span></div>
-      <div class="tile-sub">p50 <span class="num">{{ latency.p50 }} ms</span></div>
-    {% else %}
-      <div class="tile-value num muted">—</div>
-      <div class="tile-sub">no latency data yet</div>
-    {% endif %}
+  {# --- Fixes made --- #}
+  <div class="wf-card">
+    <div class="wf-hero-num">{{ "{:,}".format(fixes.total or 0) }}</div>
+    <div class="wf-hero-lbl">Fixes made by Echo</div>
+    <div class="wf-divider"></div>
+    <div class="wf-row">
+      <span class="lbl">Words corrected</span>
+      <span class="val">{{ "{:,}".format(fixes.words_corrected or 0) }}</span>
+    </div>
+    <div class="wf-row">
+      <span class="lbl">Dictionary fixes</span>
+      <span class="val">{{ "{:,}".format(fixes.dictionary_fixes or 0) }}</span>
+    </div>
+  </div>
+
+  {# --- Total words dictated --- #}
+  <div class="wf-card">
+    <div class="wf-hero-num">{{ "{:,}".format(total_words or 0) }}</div>
+    <div class="wf-hero-lbl">Total words dictated</div>
+    <div class="wf-divider"></div>
+    <div class="wf-context">
+      {% if total_words and total_words >= 50000 %}
+        You've written a novella — {{ ((total_words or 0) // 50000) }}× over.
+      {% elif total_words and total_words >= 10000 %}
+        That's an instruction manual.
+      {% elif total_words and total_words >= 2000 %}
+        That's a long-form essay.
+      {% elif total_words and total_words > 0 %}
+        Keep going — milestones unlock at 2k, 10k, 50k words.
+      {% else %}
+        Dictate to see your words add up.
+      {% endif %}
+    </div>
+    <div class="wf-source">
+      <button class="active">⌨ Desktop</button>
+      <button>📱 Mobile</button>
+    </div>
   </div>
 </div>
 
-<div class="insights-row">
-  <div class="card insight-card">
-    <h2>Quality trajectory <span class="muted small">last {{ trend|length }} dictations</span></h2>
-    {% if trend and trend|length >= 2 %}
-      {% set w = 600 %}
-      {% set h = 56 %}
-      {% set n = trend|length %}
-      {% set first = trend[0] | round | int %}
-      {% set last = trend[-1] | round | int %}
-      <div class="muted small" style="margin-bottom: 6px;">
-        <span class="num">{{ first }}</span>
-        →
-        <span class="num" style="color: var(--text); font-weight: 600;">{{ last }}</span>
-        {% set delta = last - first %}
-        {% if delta > 0 %}
-          <span class="tile-delta">(↑ {{ delta }})</span>
-        {% elif delta < 0 %}
-          <span class="tile-delta down">(↓ {{ delta * -1 }})</span>
-        {% endif %}
-      </div>
-      <svg class="spark" viewBox="0 0 {{ w }} {{ h }}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
-        <polyline class="spark-line" points="
-          {%- for q in trend -%}
-            {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - (q / 100.0) * h }}{{ ' ' }}
-          {%- endfor -%}
-        "/>
-      </svg>
-    {% else %}
-      <div class="muted small">Not enough graded dictations yet.</div>
-    {% endif %}
-  </div>
+{# ===== Bottom row: usage + streak ===== #}
+<div class="wf-grid-bot">
 
-  <div class="card insight-card">
-    <h2>App usage <span class="muted small">last 30 days</span></h2>
+  {# --- Desktop usage breakdown --- #}
+  <div class="wf-card">
+    <div class="wf-heat-head">
+      <div style="font-size:18px;font-weight:600;">Desktop usage</div>
+      <div class="wf-heat-longest">Total apps · {{ apps|length }}</div>
+    </div>
     {% if apps %}
-      <ul class="usage-list">
-        {% for row in apps %}
-          <li>
-            <div class="usage-bar-wrap">
-              <div class="usage-bar" style="width: {{ (row.pct * 100) | round(1) }}%;"></div>
+      <div class="wf-apps">
+        {% for row in apps[:7] %}
+          <div class="wf-app">
+            <div class="wf-app-pct{% if (row.pct * 100) < 5 %} dim{% endif %}">
+              {{ (row.pct * 100) | round | int }}%
             </div>
-            <div class="usage-meta">
-              <span class="usage-pct num">{{ (row.pct * 100) | round | int }}%</span>
-              <span class="usage-label">{{ row.label }}</span>
-              <span class="muted small num">{{ row.count }}</span>
-            </div>
-          </li>
+            <div class="wf-app-lbl">{{ row.label }}</div>
+            <div class="wf-app-cnt">{{ row.count }}</div>
+          </div>
         {% endfor %}
-      </ul>
+      </div>
     {% else %}
-      <div class="muted small">Not enough usage yet to chart.</div>
+      <div class="wf-empty">Not enough usage to chart yet.</div>
+    {% endif %}
+  </div>
+
+  {# --- Streak heatmap --- #}
+  <div class="wf-card">
+    <div class="wf-heat-head">
+      <div class="wf-heat-streak">
+        {{ streak or 0 }} <small>day{{ '' if streak == 1 else 's' }} streak</small>
+      </div>
+      <div class="wf-heat-longest">
+        Peak · {{ heatmap.max or 0 }} per day
+      </div>
+    </div>
+    {% if heatmap.days %}
+      <div class="wf-heat-grid"
+           style="grid-template-rows: repeat(7, 14px);">
+        {% for d in heatmap.days %}
+          <div class="wf-cell l{{ d.level }}"
+               style="grid-row: {{ d.weekday + 1 }};"
+               title="{{ d.date }} · {{ d.count }} dictation{{ '' if d.count == 1 else 's' }}"></div>
+        {% endfor %}
+      </div>
+      <div class="wf-heat-legend">
+        Less
+        <span class="wf-cell l0"></span><span class="wf-cell l1"></span>
+        <span class="wf-cell l2"></span><span class="wf-cell l3"></span>
+        <span class="wf-cell l4"></span>
+        More
+      </div>
+    {% else %}
+      <div class="wf-empty">Heatmap will fill in as you dictate.</div>
     {% endif %}
   </div>
 </div>
 
-<div class="card insight-card">
-  <h2>Fixes the model made <span class="muted small">{{ fixes.total }} total</span></h2>
-  <div class="usage-meta">
-    <span class="usage-label">Words corrected</span>
-    <span class="num" style="margin-left: auto;">{{ fixes.words_corrected }}</span>
+{# ===== Quality trajectory — kept compact below the hero ===== #}
+{% if trend and trend|length >= 2 %}
+  <div class="wf-card" style="margin-top:14px;">
+    <div class="wf-heat-head">
+      <div style="font-size:14px;font-weight:600;">Quality trajectory</div>
+      <div class="wf-heat-longest">Last {{ trend|length }} dictations</div>
+    </div>
+    {% set w = 800 %}{% set h = 60 %}{% set n = trend|length %}
+    {% set first = trend[0] | round | int %}{% set last = trend[-1] | round | int %}
+    <div class="wf-context" style="margin: 0 0 8px;">
+      Q <strong>{{ first }}</strong> → <strong style="color:var(--text)">{{ last }}</strong>
+      {% set delta = last - first %}
+      {% if delta > 0 %}<span style="color:var(--accent)">↑ {{ delta }}</span>
+      {% elif delta < 0 %}<span style="color:#d97777">↓ {{ delta * -1 }}</span>{% endif %}
+    </div>
+    <svg viewBox="0 0 {{ w }} {{ h }}" preserveAspectRatio="none"
+         style="width:100%; height:60px;">
+      <polyline fill="none" stroke="var(--accent)" stroke-width="1.8"
+                points="{%- for q in trend -%}
+                  {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - (q / 100.0) * h }}{{ ' ' }}
+                {%- endfor -%}"/>
+    </svg>
   </div>
-  <div class="usage-meta" style="margin-top: 6px;">
-    <span class="usage-label">Dictionary fixes</span>
-    <span class="num" style="margin-left: auto;">{{ fixes.dictionary_fixes }}</span>
-  </div>
-</div>
+{% endif %}
+
 {% endblock %}
