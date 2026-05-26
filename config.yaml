@@ -150,6 +150,7 @@ dashboard:
   port: 8766                  # Auto-fallback to 8767..8770 if busy.
   theme: "dark"               # dark | light
   open_window_on_start: false # daemon starts the server; window opens on demand.
+  onboarded: false            # Phase 11 first-run tour gate; flips true after /onboarding/finish.
 
 # Experimental features (off by default). Surfaced in the dashboard's
 # Settings → Experimental panel. These ship in later phases; toggling

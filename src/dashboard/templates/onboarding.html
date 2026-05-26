@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Welcome — Echo Flow{% endblock %}
+{% block content %}
+  <div class="card onboarding">
+    <h2>Welcome to Echo Flow</h2>
+    <p class="sub">A 30-second tour. Local-only. Nothing leaves your machine.</p>
+
+    <ol class="onboard-steps">
+      <li>
+        <h3>Push-to-talk</h3>
+        <p>Hold <kbd>Ctrl</kbd>+<kbd>Shift</kbd> anywhere. Speak. Release to paste cleaned text into the focused window. Change the binding in <a href="/settings/general">Settings → General</a>.</p>
+      </li>
+      <li>
+        <h3>Make it yours</h3>
+        <p>Add jargon and names in <a href="/dictionary">Dictionary</a> so Whisper stops mishearing them. Shortcodes live in <a href="/snippets">Snippets</a>.</p>
+      </li>
+      <li>
+        <h3>Watch it learn</h3>
+        <p>Every correction you make becomes a few-shot example. <a href="/insights">Insights</a> shows fixes over time and your most-corrected apps.</p>
+      </li>
+      <li>
+        <h3>Long-form? Use Scratchpad</h3>
+        <p>Open <a href="/scratchpad">Scratchpad</a>, click <b>Dictate here</b>, then talk — the dictation appends to the doc instead of pasting into a window.</p>
+      </li>
+    </ol>
+
+    <form method="post" action="/onboarding/finish" class="actions">
+      <button type="submit" class="btn primary">Got it — take me to the dashboard</button>
+    </form>
+  </div>
+{% endblock %}

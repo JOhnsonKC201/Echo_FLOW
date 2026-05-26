@@ -103,6 +103,11 @@ def make_app(app_ref):
     @flask_app.get("/")
     def home():
         from . import analytics
+        from flask import redirect
+        # First-run onboarding gate. Default True so existing installs (no
+        # onboarded key in config) skip the tour.
+        if not dcfg.get("onboarded", True):
+            return redirect("/onboarding")
         payload = {"stats": {"total_words": 0, "wpm": 0, "streak": 0}, "groups": []}
         history = getattr(app_ref, "history", None)
         if history is not None and getattr(history, "conn", None) is not None:
@@ -591,6 +596,43 @@ def make_app(app_ref):
         except Exception as e:
             _log.warning("unread count failed: %s", e)
             return jsonify({"unread": 0})
+
+    # --- Theme toggle (Phase 11) ----------------------------------------
+    @flask_app.post("/api/theme")
+    def api_theme():
+        """Flip dashboard.theme between dark and light. Persists via config_writer."""
+        from . import config_writer as _cw
+        from flask import request as _req, jsonify
+        want = (_req.form.get("theme") or _req.args.get("theme") or "").strip()
+        if want not in ("dark", "light"):
+            cur = dcfg.get("theme", "dark")
+            want = "light" if cur == "dark" else "dark"
+        try:
+            _cw.set_scalar(app_ref.cfg_path, "dashboard.theme", want)
+            dcfg["theme"] = want  # mirror so subsequent renders pick it up
+            return jsonify({"ok": True, "theme": want})
+        except Exception as e:
+            _log.warning("theme toggle failed: %s", e)
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    # --- Onboarding (Phase 11) ------------------------------------------
+    @flask_app.get("/onboarding")
+    def onboarding():
+        return render_template(
+            "onboarding.html", sections=SECTIONS, active="home",
+            theme=dcfg.get("theme", "dark"),
+        )
+
+    @flask_app.post("/onboarding/finish")
+    def onboarding_finish():
+        from . import config_writer as _cw
+        from flask import redirect
+        try:
+            _cw.set_scalar(app_ref.cfg_path, "dashboard.onboarded", True)
+            dcfg["onboarded"] = True
+        except Exception as e:
+            _log.warning("onboarding finish failed: %s", e)
+        return redirect("/")
 
     # --- Health / API ----------------------------------------------------
     @flask_app.get("/api/healthz")

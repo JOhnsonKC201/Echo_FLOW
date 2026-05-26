@@ -272,3 +272,15 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .upload-row { display: flex; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
 .file-pick { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .file-pick input[type=file] { color: var(--muted); font-size: 12px; }
+
+/* Phase 11 — Theme toggle + onboarding */
+.theme-toggle { background: transparent; border: 1px solid var(--border); color: var(--muted); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.theme-toggle:hover { color: var(--text); border-color: var(--accent); }
+.theme-icon { font-size: 16px; line-height: 1; }
+.onboarding { max-width: 720px; }
+.onboard-steps { list-style: none; counter-reset: step; padding: 0; margin: 14px 0; display: flex; flex-direction: column; gap: 14px; }
+.onboard-steps li { counter-increment: step; padding: 14px 18px 14px 56px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; position: relative; }
+.onboard-steps li::before { content: counter(step); position: absolute; left: 18px; top: 14px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #08110b; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.onboard-steps h3 { margin: 0 0 4px; font-size: 14px; color: var(--text); }
+.onboard-steps p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.onboard-steps kbd { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text); }

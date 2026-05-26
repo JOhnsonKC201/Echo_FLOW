@@ -12,10 +12,41 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 import urllib.request
 from pathlib import Path
+
+
+_STATE_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "dashboard_window.json"
+
+
+def _load_window_state() -> dict:
+    """Return persisted {width, height, x, y} (best-effort)."""
+    try:
+        if _STATE_FILE.exists():
+            data = json.loads(_STATE_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_window_state(window) -> None:
+    """Snapshot the current window geometry. Called on close."""
+    try:
+        state = {
+            "width": int(getattr(window, "width", 0)) or 1280,
+            "height": int(getattr(window, "height", 0)) or 820,
+            "x": int(getattr(window, "x", 0)),
+            "y": int(getattr(window, "y", 0)),
+        }
+        _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _STATE_FILE.write_text(json.dumps(state), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _wait_for_server(url: str, timeout_s: float = 8.0) -> bool:
@@ -73,14 +104,22 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        webview.create_window(
-            "Echo Flow",
-            url,
-            width=1280,
-            height=820,
+        state = _load_window_state()
+        kwargs = dict(
+            width=int(state.get("width", 1280)),
+            height=int(state.get("height", 820)),
             min_size=(900, 600),
             text_select=True,
         )
+        if "x" in state and "y" in state:
+            kwargs["x"] = int(state["x"])
+            kwargs["y"] = int(state["y"])
+        win = webview.create_window("Echo Flow", url, **kwargs)
+        # Persist size/position on close (best-effort).
+        try:
+            win.events.closing += lambda: _save_window_state(win)
+        except Exception:
+            pass
         webview.start()
     except Exception as e:
         # WebView2 runtime missing or similar — graceful fallback.

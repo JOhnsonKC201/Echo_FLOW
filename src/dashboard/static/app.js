@@ -35,9 +35,24 @@ async function refreshBell() {
   } catch { /* swallow; Phase 0 has no endpoint */ }
 }
 
+async function toggleTheme() {
+  try {
+    const r = await fetch("/api/theme", { method: "POST" });
+    if (!r.ok) return;
+    const { theme } = await r.json();
+    if (theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      const icon = document.querySelector(".theme-icon");
+      if (icon) icon.textContent = theme === "light" ? "☀" : "☾";
+    }
+  } catch { /* swallow */ }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   refreshBell();
   setInterval(refreshBell, 5000);
+  const tb = document.getElementById("theme-toggle");
+  if (tb) tb.addEventListener("click", toggleTheme);
 });
 
 window.EF = { $, $$, escapeHtml, fetchJson };

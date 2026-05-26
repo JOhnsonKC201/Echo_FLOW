@@ -27,6 +27,9 @@
 <header class="topbar">
   <div class="crumb">{{ active|capitalize }}</div>
   <div class="topbar-actions">
+    <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light theme" type="button">
+      <span class="theme-icon">{% if theme == 'light' %}☀{% else %}☾{% endif %}</span>
+    </button>
     <a class="bell" href="/notifications" title="Notifications">
       <span class="bell-glyph">🔔</span>
       <span class="bell-badge" id="bell-badge" hidden>0</span>
