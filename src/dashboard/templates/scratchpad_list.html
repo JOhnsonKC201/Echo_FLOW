@@ -1,14 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Scratchpad — Echo Flow{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Scratchpad</h2>
-    <div class="sub">Long-form saved dictations as named documents.</div>
-    <div class="placeholder">
-      <div>
-        <div class="ph-title">Scratchpad — Phase 7</div>
-        <div class="ph-body">Named documents you can dictate into and edit later. New scratchpads table; auto-title from first sentence.</div>
-      </div>
-    </div>
-  </div>
+<h1 class="welcome">Scratchpad</h1>
+<div class="muted small" style="margin-bottom: 14px;">
+  Long-form documents you can dictate into and edit later.
+  {% if target_id %}<strong>Dictation is currently routing into scratchpad #{{ target_id }}.</strong>{% endif %}
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <h2>New scratchpad</h2>
+  <form method="post" action="/scratchpad/new" class="row-form">
+    <input type="text" name="title" placeholder="Title (optional — auto-generated from first sentence)" maxlength="120">
+    <button type="submit" class="primary">Create</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All scratchpads <span class="muted small">{{ items|length }} total</span></h2>
+  {% if items %}
+    <ul class="pad-list">
+      {% for p in items %}
+        <li>
+          <a class="pad-title" href="/scratchpad/{{ p.id }}">{{ p.title }}</a>
+          <div class="pad-preview">{{ (p.body[:120] + '…') if p.body|length > 120 else p.body }}</div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="muted small">No scratchpads yet. Create one above, or dictate normally first then convert.</div>
+  {% endif %}
+</div>
 {% endblock %}

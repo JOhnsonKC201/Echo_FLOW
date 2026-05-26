@@ -223,3 +223,9 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .transform-prompt { color: var(--muted); font-size: 13px; line-height: 1.5; white-space: pre-wrap; background: var(--bg); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px; }
 .transform-hotkey { margin-top: 4px; }
 .pill.warn { background: rgba(230, 162, 60, 0.12); color: var(--warn); }
+
+.pad-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.pad-list li { padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+.pad-title { display: block; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.pad-title:hover { color: var(--accent); }
+.pad-preview { color: var(--muted); font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow: hidden; max-height: 36px; }

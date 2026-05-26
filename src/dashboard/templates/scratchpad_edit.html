@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ pad.title }} — Echo Flow{% endblock %}
+{% block content %}
+<div style="margin-bottom: 10px;"><a href="/scratchpad" class="muted small">← all scratchpads</a></div>
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="/scratchpad/save">
+    <input type="hidden" name="id" value="{{ pad.id }}">
+    <input type="text" name="title" value="{{ pad.title }}" maxlength="120"
+           style="width: 100%; font-size: 18px; font-weight: 600; padding: 10px 12px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); margin-bottom: 12px;">
+    <textarea name="body" rows="18" style="font-family: ui-sans-serif, system-ui, sans-serif;">{{ pad.body }}</textarea>
+    <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+  <form method="post" action="/scratchpad/target" class="inline" style="margin-top: 10px;">
+    <input type="hidden" name="id" value="{{ pad.id }}">
+    <input type="hidden" name="back" value="/scratchpad/{{ pad.id }}">
+    <button type="submit" class="btn">
+      {% if is_target %}■ Stop dictating into this pad{% else %}● Dictate into this pad{% endif %}
+    </button>
+  </form>
+  <form method="post" action="/scratchpad/delete" class="inline" style="float: right;">
+    <input type="hidden" name="id" value="{{ pad.id }}">
+    <button type="submit" class="link-danger">Delete</button>
+  </form>
+</div>
+{% endblock %}

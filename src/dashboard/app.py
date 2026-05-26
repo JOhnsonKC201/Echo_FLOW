@@ -412,10 +412,105 @@ def make_app(app_ref):
 
     @flask_app.get("/scratchpad")
     def scratchpad():
+        from . import scratchpad as _sp
+        from flask import request as _req
+        items = []
+        history = getattr(app_ref, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                items = _sp.list_scratchpads(history.conn)
+            except Exception as e:
+                _log.warning("scratchpad list failed: %s", e)
+        target_id = getattr(app_ref, "_scratchpad_target_id", None)
         return render_template(
             "scratchpad_list.html", sections=SECTIONS, active="scratchpad",
             theme=dcfg.get("theme", "dark"),
+            items=items, flash=_req.args.get("flash", ""),
+            target_id=target_id,
         )
+
+    @flask_app.get("/scratchpad/<int:pad_id>")
+    def scratchpad_edit(pad_id: int):
+        from . import scratchpad as _sp
+        from flask import abort, request as _req
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            abort(404)
+        pad = _sp.get_scratchpad(history.conn, pad_id)
+        if pad is None:
+            abort(404)
+        target_id = getattr(app_ref, "_scratchpad_target_id", None)
+        return render_template(
+            "scratchpad_edit.html", sections=SECTIONS, active="scratchpad",
+            theme=dcfg.get("theme", "dark"),
+            pad=pad, flash=_req.args.get("flash", ""),
+            is_target=(target_id == pad_id),
+        )
+
+    @flask_app.post("/scratchpad/new")
+    def scratchpad_new():
+        from . import scratchpad as _sp
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/scratchpad?flash=History disabled.")
+        title = _req.form.get("title", "").strip()
+        pad_id = _sp.create_scratchpad(history.conn, title=title or "Untitled")
+        return redirect(f"/scratchpad/{pad_id}")
+
+    @flask_app.post("/scratchpad/save")
+    def scratchpad_save():
+        from . import scratchpad as _sp
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/scratchpad?flash=History disabled.")
+        pid = int(_req.form.get("id", "0"))
+        title = _req.form.get("title", "")
+        body = _req.form.get("body", "")
+        if _sp.save_scratchpad(history.conn, pid, title=title, body=body):
+            return redirect(f"/scratchpad/{pid}?flash=Saved.")
+        return redirect("/scratchpad?flash=Not found.")
+
+    @flask_app.post("/scratchpad/delete")
+    def scratchpad_delete():
+        from . import scratchpad as _sp
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/scratchpad?flash=History disabled.")
+        pid = int(_req.form.get("id", "0"))
+        # If we just deleted the target, clear the arming.
+        if getattr(app_ref, "_scratchpad_target_id", None) == pid:
+            try:
+                app_ref._scratchpad_target_id = None
+            except Exception:
+                pass
+        if _sp.delete_scratchpad(history.conn, pid):
+            return redirect("/scratchpad?flash=Deleted.")
+        return redirect("/scratchpad?flash=Not found.")
+
+    @flask_app.post("/scratchpad/target")
+    def scratchpad_target():
+        """Arm a scratchpad to receive the next dictation (toggle: same id clears)."""
+        from flask import request as _req, redirect
+        pid_raw = _req.form.get("id", "0")
+        try:
+            pid = int(pid_raw)
+        except ValueError:
+            pid = 0
+        try:
+            current = getattr(app_ref, "_scratchpad_target_id", None)
+            if pid <= 0 or current == pid:
+                app_ref._scratchpad_target_id = None
+                msg = "Stopped dictating into scratchpad."
+            else:
+                app_ref._scratchpad_target_id = pid
+                msg = f"Next dictations will append to scratchpad #{pid}."
+        except Exception as e:
+            msg = f"Error: {e}"
+        back = _req.form.get("back", "/scratchpad")
+        return redirect(f"{back}?flash={msg}")
 
     @flask_app.get("/settings/general")
     def settings_general():

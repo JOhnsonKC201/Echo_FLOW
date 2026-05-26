@@ -239,6 +239,10 @@ class App:
         # Dashboard-armed transform consumed on the next dictation; reset after use.
         self._armed_transform: dict | None = None
         self._transform_hotkey_listener = None
+        # Dashboard-armed scratchpad target. When non-None, the next
+        # dictations append to that scratchpad's body instead of injecting
+        # into the focused window. Cleared explicitly via the UI.
+        self._scratchpad_target_id: int | None = None
         # Self-grading state
         self._grading_weights = grade_mod.load_weights(hc["db_path"]) if self.history else None
         self._recent_qualities: list[float] = []
@@ -561,8 +565,24 @@ class App:
         if use_prompt:
             self._last_quality = None
 
-        # PASTE FIRST — user feels the speed.
-        self.injector.inject(cleaned)
+        # Scratchpad routing: when a scratchpad is armed via dashboard, append
+        # cleaned text to its body instead of pasting into the focused window.
+        # Falls through to normal inject on any failure.
+        pad_target = getattr(self, "_scratchpad_target_id", None)
+        if pad_target and self.history is not None:
+            try:
+                from .dashboard import scratchpad as _spad
+                ok = _spad.append_to_scratchpad(self.history.conn, pad_target, cleaned)
+                if ok:
+                    console.print(f"[cyan]→ appended to scratchpad #{pad_target}[/cyan]")
+                else:
+                    self.injector.inject(cleaned)
+            except Exception as e:
+                _log.warning("scratchpad append failed: %s — falling back to inject", e)
+                self.injector.inject(cleaned)
+        else:
+            # PASTE FIRST — user feels the speed.
+            self.injector.inject(cleaned)
         t3 = time.perf_counter()
         if self.tray:
             self.tray.set_state("ok" if not self._paused else "paused")
