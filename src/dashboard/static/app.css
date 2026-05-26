@@ -267,3 +267,8 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .notif-body { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: pre-wrap; }
 .bell-badge { background: var(--accent); color: #08110b; border-radius: 10px; font-size: 10px; padding: 1px 6px; min-width: 16px; text-align: center; }
 .empty { color: var(--muted); font-size: 13px; padding: 18px 0; text-align: center; }
+
+/* Phase 10 — Bulk import file upload */
+.upload-row { display: flex; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
+.file-pick { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.file-pick input[type=file] { color: var(--muted); font-size: 12px; }

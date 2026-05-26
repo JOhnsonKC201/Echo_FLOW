@@ -48,9 +48,15 @@
   <div class="muted small" style="margin-bottom: 8px;">
     One per line: <code>code = expansion</code> or <code>code -&gt; expansion</code>.
   </div>
-  <form method="post" action="/snippets/import">
+  <form method="post" action="/snippets/import" enctype="multipart/form-data">
     <textarea name="bulk" rows="6" placeholder="btw = by the way&#10;fyi -> for your information&#10;lgtm = looks good to me"></textarea>
-    <div style="margin-top: 10px;"><button type="submit" class="primary">Import</button></div>
+    <div class="upload-row">
+      <label class="file-pick">
+        <input type="file" name="file" accept=".txt,.csv,text/plain,text/csv">
+        <span>Or upload .txt / .csv (CSV: <code>code,expansion</code> per line)</span>
+      </label>
+      <button type="submit" class="primary">Import</button>
+    </div>
   </form>
 </div>
 {% endblock %}

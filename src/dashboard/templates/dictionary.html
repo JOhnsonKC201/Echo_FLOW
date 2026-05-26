@@ -40,9 +40,15 @@
   <div class="muted small" style="margin-bottom: 8px;">
     Paste a list — comma-separated or one per line. Duplicates are ignored.
   </div>
-  <form method="post" action="/dictionary/import">
+  <form method="post" action="/dictionary/import" enctype="multipart/form-data">
     <textarea name="bulk" rows="6" placeholder="FastAPI&#10;Supabase&#10;node2vec&#10;PostgreSQL"></textarea>
-    <div style="margin-top: 10px;"><button type="submit" class="primary">Import</button></div>
+    <div class="upload-row">
+      <label class="file-pick">
+        <input type="file" name="file" accept=".txt,.csv,text/plain,text/csv">
+        <span>Or upload .txt / .csv</span>
+      </label>
+      <button type="submit" class="primary">Import</button>
+    </div>
   </form>
 </div>
 {% endblock %}

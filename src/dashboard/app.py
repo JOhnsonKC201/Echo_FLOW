@@ -203,12 +203,18 @@ def make_app(app_ref):
     @flask_app.post("/dictionary/import")
     def dictionary_import():
         from . import vocabulary as _vocab
+        from . import bulk_import as _bulk
         from flask import request as _req, redirect
-        raw = _req.form.get("bulk", "")
+        paste = _req.form.get("bulk", "")
+        upload = _bulk.read_upload(_req.files.get("file"))
+        raw = _bulk.merge_text(paste, upload)
         history = getattr(app_ref, "history", None)
         msg = ""
         if history is None or getattr(history, "conn", None) is None:
             msg = "History disabled — cannot import."
+        elif not raw.strip():
+            msg = "Nothing to import — paste or upload some terms first."
+            return redirect(f"/dictionary?flash={msg}")
         else:
             try:
                 result = _vocab.bulk_import(history.conn, raw)
@@ -269,11 +275,19 @@ def make_app(app_ref):
     @flask_app.post("/snippets/import")
     def snippets_import():
         from . import snippets as _sn
+        from . import bulk_import as _bulk
         from flask import request as _req, redirect
-        raw = _req.form.get("bulk", "")
+        paste = _req.form.get("bulk", "")
+        upload = _bulk.read_upload(_req.files.get("file"))
+        raw = _bulk.merge_text(paste, upload)
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
             return redirect("/snippets?flash=History disabled — cannot import.")
+        if not raw.strip():
+            return redirect("/snippets?flash=Nothing to import — paste or upload some snippets first.")
+        # CSV files use `code,expansion` per line; coerce to the parser's
+        # native format. Mixed input (some `=`, some `,`) is also supported.
+        raw = _bulk.csv_to_snippet_lines(raw)
         r = _sn.bulk_import(history.conn, raw)
         _maybe_reload_config(app_ref)
         msg = (f"Imported {r['added']} new, updated {r['updated']}, "
