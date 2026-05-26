@@ -19,12 +19,22 @@ _log = wlog.get("notify")
 _tray_icon = None
 _last_msg: tuple[str, float] = ("", 0.0)
 _lock = threading.Lock()
+_sink = None  # optional callable(level, title, body) — Phase 9 inbox hook
 
 
 def set_tray(icon) -> None:
     """Wire in the pystray.Icon from TrayApp so notifications anchor to it."""
     global _tray_icon
     _tray_icon = icon
+
+
+def set_sink(fn) -> None:
+    """Register a persistent-log sink. Called for every (rate-limit-passed)
+    notify() invocation. Errors in the sink are swallowed — the toast path
+    must never depend on the inbox being healthy.
+    """
+    global _sink
+    _sink = fn
 
 
 def _winsdk_toast(title: str, message: str) -> bool:
@@ -64,6 +74,13 @@ def notify(title: str, message: str, level: str = "info") -> None:
         if key == last_key and (time.time() - last_t) < 5.0:
             return   # rate-limited duplicate
         _last_msg = (key, time.time())
+
+    # Sink first — survives even if every toast backend below fails.
+    if _sink is not None:
+        try:
+            _sink(level, title, message)
+        except Exception as e:
+            _log.debug("notify sink failed: %s", e)
 
     def _do():
         # Try pystray first

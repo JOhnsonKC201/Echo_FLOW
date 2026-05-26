@@ -944,6 +944,18 @@ class App:
         )
         threading.Thread(target=self.tray.run, daemon=True).start()
         # Give pystray a moment to create its icon, then wire it into notify
+        # Phase 9: persist every notify() call to the inbox so the dashboard's
+        # bell badge has a durable log. Sink is best-effort — toasts must work
+        # even if history is disabled.
+        if getattr(self, "history", None) is not None and getattr(self.history, "conn", None) is not None:
+            from .dashboard import notifications as _nf_inbox
+            def _sink(level, title, body):
+                try:
+                    _nf_inbox.insert(self.history.conn, level, title, body)
+                except Exception:
+                    pass
+            wnotify.set_sink(_sink)
+
         def _wire_notify():
             time.sleep(1.0)
             wnotify.set_tray(getattr(self.tray, "_icon", None))

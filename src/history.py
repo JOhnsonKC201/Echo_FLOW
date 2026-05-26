@@ -77,6 +77,21 @@ class History:
                     added_at REAL NOT NULL
                 )
             """)
+            # Notifications inbox (Phase 9). Every notify.notify() call is
+            # appended here so the dashboard's bell badge has a persistent log.
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts REAL NOT NULL,
+                    level TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    read_at REAL
+                )
+            """)
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_notifications_ts ON notifications(ts)"
+            )
         except Exception as e:
             # Column migrations should never fail in practice (idempotent via PRAGMA check).
             # If they do, log it loudly so we don't end up with a half-migrated schema.

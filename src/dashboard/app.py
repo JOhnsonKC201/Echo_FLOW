@@ -518,10 +518,65 @@ def make_app(app_ref):
 
     @flask_app.get("/notifications")
     def notifications():
+        from . import notifications as _nf
+        from flask import request as _req
+        import datetime as _dt
+        items = []
+        history = getattr(app_ref, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                raw = _nf.list_recent(history.conn)
+                for r in raw:
+                    ts = r.get("ts") or 0
+                    try:
+                        r["ts_human"] = _dt.datetime.fromtimestamp(ts).strftime("%b %d, %H:%M")
+                    except Exception:
+                        r["ts_human"] = ""
+                    items.append(r)
+            except Exception as e:
+                _log.warning("notifications list failed: %s", e)
         return render_template(
             "notifications.html", sections=SECTIONS, active="notifications",
             theme=dcfg.get("theme", "dark"),
+            items=items, flash=_req.args.get("flash", ""),
         )
+
+    @flask_app.post("/notifications/mark-read")
+    def notifications_mark_read():
+        from . import notifications as _nf
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/notifications?flash=History disabled.")
+        try:
+            nid = int(_req.form.get("id", "0"))
+        except ValueError:
+            nid = 0
+        _nf.mark_read(history.conn, nid)
+        return redirect("/notifications")
+
+    @flask_app.post("/notifications/mark-all-read")
+    def notifications_mark_all_read():
+        from . import notifications as _nf
+        from flask import redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/notifications?flash=History disabled.")
+        n = _nf.mark_all_read(history.conn)
+        return redirect(f"/notifications?flash=Marked {n} read.")
+
+    @flask_app.get("/api/notifications/unread.json")
+    def notifications_unread_json():
+        from . import notifications as _nf
+        from flask import jsonify
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return jsonify({"unread": 0})
+        try:
+            return jsonify({"unread": _nf.unread_count(history.conn)})
+        except Exception as e:
+            _log.warning("unread count failed: %s", e)
+            return jsonify({"unread": 0})
 
     # --- Health / API ----------------------------------------------------
     @flask_app.get("/api/healthz")

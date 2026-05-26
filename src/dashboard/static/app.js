@@ -22,13 +22,14 @@ async function refreshBell() {
   if (!el) return;
   try {
     // Endpoint added in Phase 9; tolerate 404 in Phase 0.
-    const r = await fetch("/api/notifications/unread_count");
+    const r = await fetch("/api/notifications/unread.json");
     if (!r.ok) return;
-    const { count } = await r.json();
-    if (count > 0) {
-      el.textContent = String(count);
+    const { unread } = await r.json();
+    if (unread > 0) {
+      el.textContent = String(unread);
       el.hidden = false;
     } else {
+      el.textContent = "0";
       el.hidden = true;
     }
   } catch { /* swallow; Phase 0 has no endpoint */ }

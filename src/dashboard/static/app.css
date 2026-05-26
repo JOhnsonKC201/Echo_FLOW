@@ -250,3 +250,20 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .kv li { display: flex; justify-content: space-between; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
 .kv .k { color: var(--muted); }
 .kv .v { color: var(--text); }
+
+/* Phase 9 — Notifications inbox */
+.card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.card-header h2 { margin: 0; }
+.inline { display: inline; }
+.notif-list { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.notif { padding: 12px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+.notif.unread { border-left: 3px solid var(--accent); }
+.notif-meta { display: flex; gap: 10px; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.notif-level { padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: .5px; }
+.lvl-info { background: rgba(80,150,255,.15); color: #89b9ff; }
+.lvl-warning { background: rgba(255,180,0,.15); color: #ffc864; }
+.lvl-error { background: rgba(255,80,80,.18); color: #ff8a8a; }
+.notif-title { font-weight: 600; color: var(--text); }
+.notif-body { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: pre-wrap; }
+.bell-badge { background: var(--accent); color: #08110b; border-radius: 10px; font-size: 10px; padding: 1px 6px; min-width: 16px; text-align: center; }
+.empty { color: var(--muted); font-size: 13px; padding: 18px 0; text-align: center; }
