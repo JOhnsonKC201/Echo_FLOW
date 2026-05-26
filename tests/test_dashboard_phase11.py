@@ -74,15 +74,17 @@ def test_load_window_state_malformed_falls_back(monkeypatch, tmp_path):
 
 # --- Theme toggle ----------------------------------------------------------
 
-def test_theme_toggle_flips_dark_to_light(tmp_path):
+def test_theme_toggle_flips_default_to_opposite(tmp_path):
     client, app_ref = _client(tmp_path)
-    # Default starts dark; toggling without an explicit value should flip.
+    # Default is whatever config.yaml ships with; toggling flips it.
+    start = (app_ref.cfg.get("dashboard") or {}).get("theme", "dark")
+    opposite = "dark" if start == "light" else "light"
     r = client.post("/api/theme", headers=HOST)
     assert r.status_code == 200
     data = json.loads(r.data)
-    assert data["ok"] is True and data["theme"] == "light"
+    assert data["ok"] is True and data["theme"] == opposite
     reparsed = yaml.safe_load(app_ref.cfg_path.read_text(encoding="utf-8"))
-    assert reparsed["dashboard"]["theme"] == "light"
+    assert reparsed["dashboard"]["theme"] == opposite
 
 
 def test_theme_toggle_explicit_value(tmp_path):
