@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Graph — Echo Flow{% endblock %}
+{% block content %}
+<div class="graph-wrap">
+  <iframe src="/graph/raw" title="Knowledge graph" class="graph-frame"></iframe>
+</div>
+<style>
+  .graph-wrap { position: absolute; inset: 56px 0 0 220px; }
+  .graph-frame { width: 100%; height: 100%; border: 0; background: #0b0c0f; }
+</style>
+{% endblock %}

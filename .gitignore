@@ -21,3 +21,7 @@ logs/*
 Thumbs.db
 .idea/
 .vscode/
+build/
+dist/
+.claude/
+*.spec.bak

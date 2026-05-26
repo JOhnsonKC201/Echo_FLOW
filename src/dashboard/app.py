@@ -44,6 +44,7 @@ def _maybe_reload_config(app_ref) -> None:
 SECTIONS = [
     ("home", "Home", "/", "home.html"),
     ("insights", "Outcomes", "/insights", "insights.html"),
+    ("graph", "Graph", "/graph", "graph.html"),
     ("dictionary", "Dictionary", "/dictionary", "dictionary.html"),
     ("snippets", "Snippets", "/snippets", "snippets.html"),
     ("style", "Style", "/style", "style.html"),
@@ -837,5 +838,53 @@ def make_app(app_ref):
     def healthz():
         from flask import jsonify
         return jsonify({"ok": True})
+
+    # --- Knowledge graph -------------------------------------------------
+    # /graph     — dashboard-wrapped view (iframe shell, preserves sidebar)
+    # /graph/raw — self-contained D3 HTML produced by graph_obsidian.render
+    # Cached by db mtime; lock prevents duplicate expensive renders under
+    # concurrent first-page-loads on the threaded Werkzeug server.
+    import threading as _threading
+    _graph_cache: dict = {"mtime": None, "html": None}
+    _graph_cache_lock = _threading.Lock()
+
+    @flask_app.get("/graph")
+    def graph_view():
+        return render_template(
+            "graph.html",
+            sections=SECTIONS,
+            active="graph",
+            theme=dcfg.get("theme", "dark"),
+        )
+
+    @flask_app.get("/graph/raw")
+    def graph_raw():
+        from flask import Response, request as _req
+        from . import graph_obsidian
+
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return Response("<h1>History disabled</h1>", mimetype="text/html")
+
+        db_path = str((Path.cwd() / app_ref.cfg.get("history", {})
+                       .get("db_path", "data/history.db")).resolve())
+        try:
+            mtime = Path(db_path).stat().st_mtime
+        except OSError:
+            mtime = None
+
+        force = _req.args.get("refresh") == "1"
+        with _graph_cache_lock:
+            if not force and _graph_cache["html"] and _graph_cache["mtime"] == mtime:
+                return Response(_graph_cache["html"], mimetype="text/html")
+            try:
+                html = graph_obsidian.render(db_path)
+            except Exception as e:
+                _log.warning("graph render failed: %s", e)
+                return Response(f"<h1>Graph render failed</h1><pre>{e}</pre>",
+                                mimetype="text/html")
+            _graph_cache["mtime"] = mtime
+            _graph_cache["html"] = html
+        return Response(html, mimetype="text/html")
 
     return flask_app

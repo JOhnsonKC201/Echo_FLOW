@@ -29,9 +29,13 @@ from pathlib import Path
 
 if getattr(sys, "frozen", False):
     # PyInstaller one-folder: bundled data sits next to the .exe in _MEIPASS for
-    # read-only resources; user data (config.yaml, history.db) lives next to .exe.
+    # read-only resources; user data (config.yaml, history.db, window state)
+    # lives in %LOCALAPPDATA%\EchoFlow so the app works when installed under
+    # Program Files (where the install dir is read-only for non-admin users).
     BUNDLE = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
-    REPO = Path(sys.executable).parent
+    REPO = Path(os.environ.get("LOCALAPPDATA",
+                               str(Path.home() / "AppData" / "Local"))) / "EchoFlow"
+    REPO.mkdir(parents=True, exist_ok=True)
     # Make bundled `src/` importable.
     sys.path.insert(0, str(BUNDLE))
 else:
@@ -49,6 +53,16 @@ from werkzeug.serving import make_server
 from src.dashboard.app import make_app
 from src.dashboard.server import pick_port, write_port_file
 from src.history import History
+
+
+def _safe_print(msg: str) -> None:
+    """print() crashes in console=False PyInstaller builds because sys.stdout is None.
+    Route through stderr (which is also stubbed in --windowed mode, but the
+    try/except keeps the app alive either way)."""
+    try:
+        sys.stderr.write(msg + "\n")
+    except Exception:
+        pass
 
 
 DEFAULT_HOTKEY = "<ctrl>+<alt>+<space>"
@@ -270,8 +284,8 @@ class DesktopApp:
                 {self.hotkey: self.toggle_window})
             self.hotkey_listener.start()
         except Exception as e:
-            print(f"[hotkey] failed to register {self.hotkey!r}: {e}; "
-                  f"falling back to {DEFAULT_HOTKEY}")
+            _safe_print(f"[hotkey] failed to register {self.hotkey!r}: {e}; "
+                        f"falling back to {DEFAULT_HOTKEY}")
             if self.hotkey != DEFAULT_HOTKEY:
                 try:
                     self.hotkey = DEFAULT_HOTKEY
@@ -279,10 +293,13 @@ class DesktopApp:
                         {self.hotkey: self.toggle_window})
                     self.hotkey_listener.start()
                 except Exception as e2:
-                    print(f"[hotkey] fallback also failed: {e2}")
+                    _safe_print(f"[hotkey] fallback also failed: {e2}")
 
     # ---------- Lifecycle ----------
     def quit(self):
+        # Idempotent — tray Quit, window close, and finally-block all funnel here.
+        if self._quitting:
+            return
         self._quitting = True
         try:
             if self.hotkey_listener:
@@ -296,6 +313,9 @@ class DesktopApp:
             pass
         try:
             if self.tray:
+                # Hide first so the icon disappears immediately and stop() is
+                # less likely to deadlock against the pump thread.
+                self.tray.visible = False
                 self.tray.stop()
         except Exception:
             pass
