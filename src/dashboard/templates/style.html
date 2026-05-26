@@ -1,14 +1,52 @@
 {% extends "base.html" %}
 {% block title %}Style — Echo Flow{% endblock %}
 {% block content %}
+<h1 class="welcome">Style</h1>
+<div class="muted small" style="margin-bottom: 14px;">
+  Which cleanup style fires for each app, based on the focused window title.
+  First matching profile wins. Leave matchers empty for the catch-all profile.
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<form method="post" action="/style/save">
   <div class="card">
-    <h2>Style</h2>
-    <div class="sub">Per-app-context cleanup styles. Auto Cleanup master toggle.</div>
-    <div class="placeholder">
-      <div>
-        <div class="ph-title">Style — Phase 5</div>
-        <div class="ph-body">Tabs for Personal / Work / Email / Code / Other. Edit the window-title matchers that drive cleanup.pick_style.</div>
+    <h2>Profiles <span class="muted small">{{ profiles|length }} configured</span></h2>
+    {% for p in profiles %}
+      <div class="style-row">
+        <label>
+          <div class="muted small">Style</div>
+          <select name="style">
+            {% for s in valid_styles %}
+              <option value="{{ s }}" {% if s == p.style %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="grow">
+          <div class="muted small">Window-title matchers <span class="muted">(comma- or newline-separated; empty = catch-all)</span></div>
+          <textarea name="matchers" rows="2">{{ p.matchers|join(', ') }}</textarea>
+        </label>
       </div>
-    </div>
+    {% endfor %}
+    {# Empty extras so users can add new profiles. #}
+    {% for _ in range(2) %}
+      <div class="style-row">
+        <label>
+          <div class="muted small">Style</div>
+          <select name="style">
+            <option value=""></option>
+            {% for s in valid_styles %}
+              <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="grow">
+          <div class="muted small">Window-title matchers</div>
+          <textarea name="matchers" rows="2" placeholder="Code, Cursor, PyCharm"></textarea>
+        </label>
+      </div>
+    {% endfor %}
   </div>
+  <button type="submit" class="primary">Save profiles</button>
+</form>
 {% endblock %}

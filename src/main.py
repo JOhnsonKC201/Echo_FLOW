@@ -172,6 +172,13 @@ class App:
                 )
             except Exception as e:
                 _log.warning("snippet provider wiring failed: %s", e)
+            try:
+                from .dashboard import style_profiles as _sp
+                self.cleaner.set_style_provider(
+                    lambda title, h=self.history: _sp.pick_style(h.conn, title, config_default="")
+                )
+            except Exception as e:
+                _log.warning("style provider wiring failed: %s", e)
 
         # Bias the Whisper decoder with the user's custom vocabulary so
         # proper nouns + technical terms are heard correctly the first time.

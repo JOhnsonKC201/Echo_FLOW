@@ -206,3 +206,11 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .kv-table th, .kv-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 .kv-table th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
 .kv-table code { background: var(--panel-2); padding: 2px 6px; border-radius: 4px; }
+.style-row { display: grid; grid-template-columns: 200px 1fr; gap: 14px; align-items: start; padding: 12px 0; border-top: 1px solid var(--border); }
+.style-row:first-of-type { border-top: none; }
+.style-row label { display: block; }
+.style-row select, .style-row textarea {
+  width: 100%; padding: 8px 10px; border-radius: 8px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); font-size: 13px;
+}
+.style-row .grow { min-width: 0; }

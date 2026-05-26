@@ -272,10 +272,48 @@ def make_app(app_ref):
 
     @flask_app.get("/style")
     def style():
+        from . import style_profiles as _sp
+        from flask import request as _req
+        profiles = []
+        history = getattr(app_ref, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                profiles = _sp.list_profiles(history.conn)
+                if not profiles:
+                    # Seed from config defaults so the table isn't blank on first open.
+                    cleanup_cfg = app_ref.cfg.get("cleanup", {}) or {}
+                    _sp.seed_from_config(history.conn, cleanup_cfg.get("profiles") or [])
+                    profiles = _sp.list_profiles(history.conn)
+            except Exception as e:
+                _log.warning("style list failed: %s", e)
         return render_template(
             "style.html", sections=SECTIONS, active="style",
             theme=dcfg.get("theme", "dark"),
+            profiles=profiles,
+            valid_styles=("default", "code", "casual", "email", "prompt"),
+            flash=_req.args.get("flash", ""),
         )
+
+    @flask_app.post("/style/save")
+    def style_save():
+        from . import style_profiles as _sp
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/style?flash=History disabled — cannot save.")
+        # Form: parallel arrays style[] and matchers[] (one matcher line per profile).
+        styles = _req.form.getlist("style")
+        matchers_raw = _req.form.getlist("matchers")
+        new_profiles = []
+        for s, m in zip(styles, matchers_raw):
+            matchers = [piece.strip() for piece in m.replace(",", "\n").splitlines() if piece.strip()]
+            new_profiles.append({"style": s, "matchers": matchers})
+        try:
+            _sp.replace_all(history.conn, new_profiles)
+            _maybe_reload_config(app_ref)
+            return redirect("/style?flash=Profiles saved.")
+        except ValueError as e:
+            return redirect(f"/style?flash={e}")
 
     @flask_app.get("/transforms")
     def transforms():

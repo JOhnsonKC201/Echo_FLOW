@@ -195,6 +195,15 @@ class Cleaner:
         finally:
             self.provider = saved
 
+    def set_style_provider(self, provider) -> None:
+        """Inject a callable (window_title: str) -> style: str.
+
+        When set, pick_style delegates to provider() before falling back
+        to the cfg-driven profile matching. Provider returning empty
+        string or raising falls back to cfg behavior.
+        """
+        self._style_provider = provider
+
     def set_snippets_provider(self, provider) -> None:
         """Inject a callable returning the live snippets mapping.
 
@@ -249,6 +258,14 @@ class Cleaner:
         return pattern.sub(_sub, text)
 
     def pick_style(self, window_title: str) -> str:
+        provider = getattr(self, "_style_provider", None)
+        if callable(provider):
+            try:
+                picked = provider(window_title or "")
+                if picked:
+                    return picked
+            except Exception:
+                pass
         title = (window_title or "").lower()
         for prof in self.profiles:
             matches = prof.get("match", [])
