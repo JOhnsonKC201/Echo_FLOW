@@ -113,7 +113,10 @@ def test_theme_button_rendered_in_base(tmp_path):
 # --- Onboarding ------------------------------------------------------------
 
 def test_first_run_redirects_to_onboarding(tmp_path):
-    client, _ = _client(tmp_path)
+    # Explicitly set first-run state — don't depend on the on-disk config.yaml's
+    # current value of dashboard.onboarded.
+    client, app_ref = _client(tmp_path)
+    app_ref.cfg["dashboard"]["onboarded"] = False
     r = client.get("/", headers=HOST, follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["Location"].endswith("/onboarding")
