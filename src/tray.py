@@ -49,6 +49,7 @@ class TrayApp:
         on_toggle_prompt_mode: Callable[[], None] | None = None,
         get_prompt_mode_state: Callable[[], bool] | None = None,
         on_open_dashboard: Callable[[], None] | None = None,
+        dashboard_hotkey_label: str | None = None,
     ):
         self.get_status = get_status
         self.on_pause_toggle = on_pause_toggle
@@ -60,6 +61,7 @@ class TrayApp:
         self.on_toggle_prompt_mode = on_toggle_prompt_mode
         self.get_prompt_mode_state = get_prompt_mode_state
         self.on_open_dashboard = on_open_dashboard
+        self.dashboard_hotkey_label = dashboard_hotkey_label
         self.on_quit = on_quit
         self._icon: pystray.Icon | None = None
         self._state = "ok"
@@ -101,9 +103,12 @@ class TrayApp:
             pystray.MenuItem("📌  Pin last dictation",
                              lambda i, item: self._safe(self.on_pin_last),
                              visible=lambda _it: self.on_pin_last is not None),
-            pystray.MenuItem("🪟  Open Dashboard",
-                             lambda i, item: self._safe(self.on_open_dashboard),
-                             visible=lambda _it: self.on_open_dashboard is not None),
+            pystray.MenuItem(
+                lambda _it: (f"🪟  Open Dashboard ({self.dashboard_hotkey_label})"
+                             if self.dashboard_hotkey_label
+                             else "🪟  Open Dashboard"),
+                lambda i, item: self._safe(self.on_open_dashboard),
+                visible=lambda _it: self.on_open_dashboard is not None),
             pystray.MenuItem("📊  Open history viewer",
                              lambda i, item: self._safe(self.on_open_history)),
             pystray.MenuItem("🕸  Open knowledge graph",

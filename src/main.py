@@ -105,10 +105,37 @@ def _transform_combo_to_pynput(combo: str) -> str | None:
     return "+".join(out)
 
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+# User-data root. In dev (running from source) this is the repo. When frozen
+# by PyInstaller the executable lives somewhere read-only (e.g. Program Files
+# or %LOCALAPPDATA%\EchoFlow installed by Inno Setup), and user-writable state
+# — config.yaml, data/, logs — must live in %LOCALAPPDATA%\EchoFlow.
+if getattr(sys, "frozen", False):
+    USER_ROOT = Path(os.environ.get(
+        "LOCALAPPDATA", str(Path.home() / "AppData" / "Local")
+    )) / "EchoFlow"
+    USER_ROOT.mkdir(parents=True, exist_ok=True)
+    # Read-only bundled resources sit in _MEIPASS.
+    BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+else:
+    USER_ROOT = Path(__file__).resolve().parent.parent
+    BUNDLE_ROOT = USER_ROOT
+
+CONFIG_PATH = USER_ROOT / "config.yaml"
 
 
 def load_config() -> dict:
+    # First-run on a frozen install: seed user config from the bundled default.
+    if not CONFIG_PATH.exists() and (BUNDLE_ROOT / "config.yaml").exists():
+        import shutil
+        shutil.copy(BUNDLE_ROOT / "config.yaml", CONFIG_PATH)
+    # Frozen builds: chdir to user root so all relative paths in cfg
+    # (history.db_path, data/dashboard.port, data/wispr.log, …) land in the
+    # user-writable dir instead of next to the read-only .exe.
+    if getattr(sys, "frozen", False):
+        try:
+            os.chdir(USER_ROOT)
+        except Exception:
+            pass
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -912,6 +939,27 @@ class App:
         db = self.cfg["history"]["db_path"]
         threading.Thread(target=render_graph, args=(db,), daemon=True).start()
 
+    @staticmethod
+    def _format_hotkey_label(combo: str) -> str:
+        """'<ctrl>+<cmd>' → 'Ctrl + Win' for tray display. Empty if unset."""
+        if not combo:
+            return ""
+        parts = combo.replace("<", "").replace(">", "").split("+")
+        pretty = []
+        for p in parts:
+            low = p.lower()
+            if low == "cmd":
+                pretty.append("Win")
+            elif low == "ctrl":
+                pretty.append("Ctrl")
+            elif low == "alt":
+                pretty.append("Alt")
+            elif low == "shift":
+                pretty.append("Shift")
+            else:
+                pretty.append(p.upper() if len(p) == 1 else p.title())
+        return " + ".join(pretty)
+
     def tray_open_dashboard(self):
         """Launch the PyWebView dashboard window in a detached subprocess.
 
@@ -1034,6 +1082,8 @@ class App:
             on_open_history=self.tray_open_history,
             on_open_graph=self.tray_open_graph,
             on_open_dashboard=self.tray_open_dashboard,
+            dashboard_hotkey_label=self._format_hotkey_label(
+                self.cfg.get("dashboard", {}).get("open_hotkey", "")),
             on_open_review_queue=self.tray_open_review_queue,
             on_pin_last=self.tray_pin_last,
             on_toggle_prompt_mode=self.tray_toggle_prompt_mode
