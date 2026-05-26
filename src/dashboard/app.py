@@ -102,27 +102,115 @@ def make_app(app_ref):
     # --- Section routes --------------------------------------------------
     @flask_app.get("/")
     def home():
-        from . import analytics
-        from flask import redirect
+        from . import analytics, inbox
+        from flask import redirect, request as _req
         # First-run onboarding gate. Default True so existing installs (no
         # onboarded key in config) skip the tour.
         if not dcfg.get("onboarded", True):
             return redirect("/onboarding")
-        payload = {"stats": {"total_words": 0, "wpm": 0, "streak": 0}, "groups": []}
+        items: list = []
+        today = {"count": 0, "time_saved_ms": 0,
+                 "acceptance": {"current": 0.0, "delta_pp": 0.0, "n_current": 0},
+                 "latency": {"p50": None, "p95": None, "n": 0}}
         history = getattr(app_ref, "history", None)
         if history is not None and getattr(history, "conn", None) is not None:
             try:
-                payload = analytics.home_payload(history.conn)
+                rows = inbox.inbox_rows(history.conn, n=15)
+                for r in rows:
+                    r["ts_human"] = inbox.format_ts(r["ts"])
+                    r["has_diff"] = inbox.has_diff(r["raw_text"], r["cleaned_text"])
+                    r["diff"] = inbox.render_diff(r["raw_text"], r["cleaned_text"]) if r["has_diff"] else []
+                    items.append(r)
+                today = analytics.today_summary(history.conn)
             except Exception as e:
-                _log.warning("home analytics failed: %s", e)
+                _log.warning("home inbox failed: %s", e)
+        acc_pct = int(round((today["acceptance"]["current"] or 0) * 100))
         return render_template(
             "home.html",
             sections=SECTIONS,
             active="home",
             theme=dcfg.get("theme", "dark"),
-            stats=payload["stats"],
-            groups=payload["groups"],
+            items=items,
+            today=today,
+            time_saved_today=analytics.humanize_ms(today["time_saved_ms"]),
+            acceptance_pct=acc_pct,
+            flash=_req.args.get("flash", ""),
         )
+
+    @flask_app.post("/inbox/rate")
+    def inbox_rate():
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/?flash=History disabled.")
+        try:
+            did = int(_req.form.get("id", "0"))
+        except ValueError:
+            did = 0
+        raw_rating = (_req.form.get("rating", "") or "").strip()
+        rating: int | None
+        if raw_rating == "":
+            rating = None
+        else:
+            try:
+                rating = int(raw_rating)
+            except ValueError:
+                return redirect("/?flash=Bad rating value.")
+            if rating not in (1, -1):
+                return redirect("/?flash=Rating must be 1, -1, or empty.")
+        if did <= 0:
+            return redirect("/?flash=Bad dictation id.")
+        try:
+            history.rate_dictation(did, rating)
+        except Exception as e:
+            _log.warning("rate_dictation failed: %s", e)
+            return redirect(f"/?flash=Error: {e}")
+        # Anchor jump back to the rated card.
+        return redirect(f"/#d-{did}")
+
+    @flask_app.get("/inbox/<int:did>/edit")
+    def inbox_edit_view(did: int):
+        from flask import abort, request as _req
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            abort(404)
+        row = history.conn.execute(
+            "SELECT id, ts, window_title, style, raw_text, cleaned_text, "
+            "       original_cleaned, source FROM dictations WHERE id = ?",
+            (did,),
+        ).fetchone()
+        if row is None:
+            abort(404)
+        return render_template(
+            "inbox_edit.html",
+            sections=SECTIONS, active="home",
+            theme=dcfg.get("theme", "dark"),
+            row={
+                "id": row[0], "ts": row[1], "window_title": row[2] or "",
+                "style": row[3] or "default", "raw_text": row[4] or "",
+                "cleaned_text": row[5] or "", "original_cleaned": row[6] or "",
+                "source": row[7] or "desktop",
+            },
+            flash=_req.args.get("flash", ""),
+        )
+
+    @flask_app.post("/inbox/<int:did>/edit")
+    def inbox_edit_save(did: int):
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/?flash=History disabled.")
+        new_cleaned = _req.form.get("cleaned_text", "")
+        try:
+            with history.conn:
+                history.conn.execute(
+                    "UPDATE dictations SET cleaned_text = ? WHERE id = ?",
+                    (new_cleaned, did),
+                )
+        except Exception as e:
+            _log.warning("inbox edit save failed: %s", e)
+            return redirect(f"/inbox/{did}/edit?flash=Error: {e}")
+        return redirect(f"/#d-{did}")
 
     @flask_app.get("/insights")
     def insights():

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Edit dictation #{{ row.id }} — Echo Flow{% endblock %}
+{% block content %}
+  <div class="card">
+    <div class="card-header">
+      <h2>Edit dictation #{{ row.id }}</h2>
+      <a class="btn" href="/#d-{{ row.id }}">← back to inbox</a>
+    </div>
+    <div class="sub">From <code>{{ row.window_title or '(unknown)' }}</code> · style <code>{{ row.style }}</code> · source <code>{{ row.source }}</code></div>
+    {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+    <div class="section-label" style="margin-top: 8px;">Raw (whisper output)</div>
+    <pre class="transform-prompt">{{ row.raw_text }}</pre>
+
+    {% if row.original_cleaned and row.original_cleaned != row.cleaned_text %}
+      <div class="section-label">Original cleaned (model output before your edits)</div>
+      <pre class="transform-prompt">{{ row.original_cleaned }}</pre>
+    {% endif %}
+
+    <form method="post" action="/inbox/{{ row.id }}/edit" class="settings-form" style="margin-top: 10px;">
+      <label>
+        <span>Cleaned text (editable)</span>
+        <textarea name="cleaned_text" rows="6">{{ row.cleaned_text }}</textarea>
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn primary">Save</button>
+        <a class="btn" href="/">Cancel</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

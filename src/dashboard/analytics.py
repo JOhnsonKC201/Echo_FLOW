@@ -386,3 +386,149 @@ def home_payload(
         },
         "groups": recent_grouped(conn, include_mobile=include_mobile_in_list),
     }
+
+
+# -- Senior rewrite outcome metrics (PR-C right column + PR-D Insights) ----
+
+import time as _time
+
+
+def _typing_wpm_baseline(conn: sqlite3.Connection, default: int = 40) -> int:
+    """Average typing speed used to compute time-saved deltas. Defaults to
+    40 WPM (decent typist) so the number isn't flattering."""
+    return default
+
+
+def time_saved_ms(conn: sqlite3.Connection, days: int = 30) -> int:
+    """Estimated typing time saved over the last N days. Math:
+        time_saved = words_dictated * (60s / typing_baseline_wpm)
+                   - sum(dictation_duration_ms)
+
+    Negative results clamp to 0 (degenerate: very short dictations where
+    typing-baseline-equivalent < actual speaking time)."""
+    since = _time.time() - (days * 86400)
+    row = conn.execute(
+        "SELECT COALESCE(SUM(LENGTH(cleaned_text) - LENGTH(REPLACE(cleaned_text, ' ', ''))), 0), "
+        "       COALESCE(SUM(LENGTH(cleaned_text)), 0), "
+        "       COALESCE(SUM(duration_ms), 0) "
+        "FROM dictations WHERE ts >= ?",
+        (since,),
+    ).fetchone()
+    spaces, char_count, total_dur_ms = row
+    # Word count ≈ spaces + 1 per non-empty dictation. Cheaper than splitting
+    # in Python and works inside SQL.
+    n_rows = conn.execute(
+        "SELECT COUNT(*) FROM dictations WHERE ts >= ? AND LENGTH(cleaned_text) > 0",
+        (since,),
+    ).fetchone()[0]
+    words = spaces + n_rows
+    if words <= 0:
+        return 0
+    baseline_wpm = _typing_wpm_baseline(conn)
+    typing_equiv_ms = int(words * (60_000 / baseline_wpm))
+    saved = typing_equiv_ms - int(total_dur_ms)
+    return max(0, saved)
+
+
+def acceptance_rate(conn: sqlite3.Connection, days: int = 7) -> dict:
+    """% of dictations in the window whose cleaned_text == original_cleaned
+    (i.e. user didn't open the editor to fix the model's output).
+
+    Returns {current, prior, delta_pp, n_current, n_prior}. NULL ratings
+    are treated as accepted-by-default — the user can mark them bad in
+    the Inbox; a 'bad' rating overrides equality.
+    """
+    now = _time.time()
+    cur_since = now - (days * 86400)
+    prior_since = now - (2 * days * 86400)
+
+    def _bucket(since: float, until: float) -> tuple[int, int]:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM dictations WHERE ts >= ? AND ts < ? AND source = 'desktop'",
+            (since, until),
+        ).fetchone()[0]
+        accepted = conn.execute(
+            "SELECT COUNT(*) FROM dictations "
+            "WHERE ts >= ? AND ts < ? AND source = 'desktop' "
+            "  AND (user_rating IS NULL OR user_rating = 1) "
+            "  AND (original_cleaned IS NULL OR original_cleaned = cleaned_text) "
+            "  AND COALESCE(user_rating, 0) >= 0",
+            (since, until),
+        ).fetchone()[0]
+        return accepted, total
+
+    a_cur, n_cur = _bucket(cur_since, now)
+    a_prev, n_prev = _bucket(prior_since, cur_since)
+    cur_rate = (a_cur / n_cur) if n_cur else 0.0
+    prev_rate = (a_prev / n_prev) if n_prev else 0.0
+    delta_pp = (cur_rate - prev_rate) * 100
+    return {
+        "current": cur_rate,
+        "prior": prev_rate,
+        "delta_pp": delta_pp,
+        "n_current": n_cur,
+        "n_prior": n_prev,
+    }
+
+
+def latency_percentiles(conn: sqlite3.Connection, n: int = 200) -> dict:
+    """p50 / p95 over the last N dictations that have latency_ms populated.
+
+    Returns {p50, p95, n}. Empty result if there's no data yet (newly
+    installed user, or all dictations predate the latency_ms column).
+    """
+    rows = conn.execute(
+        "SELECT latency_ms FROM dictations "
+        "WHERE latency_ms IS NOT NULL "
+        "ORDER BY id DESC LIMIT ?",
+        (int(n),),
+    ).fetchall()
+    samples = sorted(int(r[0]) for r in rows if r[0] is not None)
+    if not samples:
+        return {"p50": None, "p95": None, "n": 0}
+
+    def _pct(p: float) -> int:
+        idx = int(round((len(samples) - 1) * p))
+        return samples[max(0, min(idx, len(samples) - 1))]
+
+    return {"p50": _pct(0.50), "p95": _pct(0.95), "n": len(samples)}
+
+
+def today_summary(conn: sqlite3.Connection) -> dict:
+    """Compact summary for Home's right column.
+
+    {count, time_saved_ms, acceptance_pct, latency_p95_ms}
+    All values default to 0/None on empty/missing data — safe for templates.
+    """
+    midnight = _time.mktime(_time.struct_time(_time.localtime()[:3] + (0, 0, 0, 0, 0, -1)))
+    count = conn.execute(
+        "SELECT COUNT(*) FROM dictations WHERE ts >= ?", (midnight,)
+    ).fetchone()[0]
+    return {
+        "count": int(count),
+        "time_saved_ms": time_saved_ms(conn, days=1),
+        "acceptance": acceptance_rate(conn, days=7),
+        "latency": latency_percentiles(conn, n=200),
+    }
+
+
+def humanize_ms(ms: int) -> str:
+    """Render a duration in ms as the most useful unit: ms, s, m, h.
+
+    Used by both Home (right column) and Insights (time-saved tile).
+    """
+    if ms is None or ms <= 0:
+        return "0 ms"
+    ms = int(ms)
+    if ms < 1000:
+        return f"{ms} ms"
+    s = ms / 1000
+    if s < 60:
+        return f"{s:.1f} s"
+    m = s / 60
+    if m < 60:
+        return f"{m:.0f} m"
+    h, rem_m = divmod(int(m), 60)
+    if rem_m == 0:
+        return f"{h}h"
+    return f"{h}h {rem_m}m"

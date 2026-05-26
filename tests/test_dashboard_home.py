@@ -189,16 +189,18 @@ def _client_with_history(history):
 
 
 def test_home_route_renders_real_dictations(tmp_path):
+    # PR-C reshape: Home is now the Inbox surface. No more day grouping,
+    # no "Welcome back" greeting, no WPM/streak (those moved to /insights).
     h = _fresh_history(tmp_path)
     _seed(h, ts=_ts_for(dt.date.today()), words=4)
     client = _client_with_history(h)
     r = client.get("/", headers={"Host": "127.0.0.1:8766"})
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "Today" in body
-    assert "Welcome back" in body
-    assert "day streak" in body
-    assert "wpm" in body
+    assert "Inbox" in body
+    assert "Approve" in body
+    assert "Mark bad" in body
+    assert "acceptance" in body
 
 
 def test_home_route_shows_empty_state_when_no_history(tmp_path):
@@ -221,4 +223,6 @@ def test_home_route_handles_missing_history():
     r = client.get("/", headers={"Host": "127.0.0.1:8766"})
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "Welcome back" in body
+    # PR-C: inbox header shows even with no history backend.
+    assert "Inbox" in body
+    assert "No dictations yet" in body

@@ -1,47 +1,105 @@
 {% extends "base.html" %}
-{% block title %}Home — Echo Flow{% endblock %}
+{% block title %}Inbox — Echo Flow{% endblock %}
 {% block content %}
 <div class="home-grid">
   <section class="home-main">
-    <h1 class="welcome">Welcome back</h1>
-    {% if groups %}
-      {% for group in groups %}
-        <div class="day-label">{{ group['group'] }}</div>
-        <ul class="dictation-list">
-          {% for item in group['items'] %}
-            <li class="dictation-row">
-              <span class="time">{{ item.time }}</span>
-              <span class="preview">{{ item.text or "(empty)" }}</span>
-              {% if item.source != "desktop" %}
-                <span class="src-pill" title="from {{ item.source }}">{{ item.source }}</span>
-              {% endif %}
-            </li>
-          {% endfor %}
-        </ul>
-      {% endfor %}
-    {% else %}
+    <div class="card-header" style="margin-bottom: 14px;">
+      <h1 class="welcome">Inbox</h1>
+      <span class="muted small">last {{ items|length }} dictations</span>
+    </div>
+    {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+    {% if not items %}
       <div class="placeholder">
         <div>
           <div class="ph-title">No dictations yet</div>
-          <div class="ph-body">Hold your dictation hotkey and speak. Your history will appear here.</div>
+          <div class="ph-body">Hold your dictation hotkey and speak. Your inbox will populate here with raw → cleaned diffs and one-click approve / mark-bad actions.</div>
         </div>
       </div>
+    {% else %}
+      <ul class="inbox-list">
+        {% for it in items %}
+          <li class="inbox-card" id="d-{{ it.id }}">
+            <div class="inbox-meta">
+              <span class="ts">{{ it.ts_human }}</span>
+              <span class="src">{{ it.source }}</span>
+              {% if it.quality_score is not none %}
+                {% set q = it.quality_score|int %}
+                <span class="quality num {{ 'good' if q >= 75 else 'bad' if q < 50 else '' }}">q {{ q }}</span>
+              {% endif %}
+              {% if it.latency_ms %}
+                <span class="num muted small">{{ it.latency_ms }} ms</span>
+              {% endif %}
+              {% if it.user_rating == 1 %}
+                <span class="rating approved">✓ approved</span>
+              {% elif it.user_rating == -1 %}
+                <span class="rating bad">✕ marked bad</span>
+              {% endif %}
+            </div>
+
+            <div class="inbox-text">{{ it.cleaned_text }}</div>
+
+            {% if it.has_diff %}
+              <details class="inbox-diff-wrap">
+                <summary class="diff-toggle">show raw → cleaned diff</summary>
+                <div class="inbox-diff" role="region">
+                  {%- for kind, text in it.diff -%}
+                    {%- if kind == "del-line-start" -%}<span class="diff-del diff-line">- {%- endif -%}
+                    {%- if kind == "add-line-start" -%}</span><span class="diff-add diff-line">+ {%- endif -%}
+                    {%- if kind == "eq" -%}<span class="diff-eq">{{ text }}</span>{%- endif -%}
+                    {%- if kind == "del" -%}<span class="diff-del">{{ text }}</span>{%- endif -%}
+                    {%- if kind == "add" -%}<span class="diff-add">{{ text }}</span>{%- endif -%}
+                  {%- endfor -%}
+                  </span>
+                </div>
+              </details>
+            {% endif %}
+
+            <div class="inbox-actions">
+              <form method="post" action="/inbox/rate" class="inline">
+                <input type="hidden" name="id" value="{{ it.id }}">
+                <input type="hidden" name="rating" value="1">
+                <button type="submit" class="btn ok" title="Approve this dictation">Approve</button>
+              </form>
+              <form method="post" action="/inbox/rate" class="inline">
+                <input type="hidden" name="id" value="{{ it.id }}">
+                <input type="hidden" name="rating" value="-1">
+                <button type="submit" class="btn bad" title="Mark as a bad output">Mark bad</button>
+              </form>
+              {% if it.user_rating is not none %}
+                <form method="post" action="/inbox/rate" class="inline">
+                  <input type="hidden" name="id" value="{{ it.id }}">
+                  <input type="hidden" name="rating" value="">
+                  <button type="submit" class="btn" title="Clear rating">Clear</button>
+                </form>
+              {% endif %}
+              <a class="btn" href="/inbox/{{ it.id }}/edit">Edit</a>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
     {% endif %}
   </section>
 
   <aside class="home-stats">
     <div class="stat-card">
-      <div class="stat-value">{{ "{:,}".format(stats.total_words) }}</div>
-      <div class="stat-label">total words</div>
+      <div class="stat-value num">{{ today.count }}</div>
+      <div class="stat-label">today</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">{{ stats.wpm }}</div>
-      <div class="stat-label">wpm <span class="muted">(7-day avg)</span></div>
+      <div class="stat-value num">{{ time_saved_today }}</div>
+      <div class="stat-label">time saved today</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">{{ stats.streak }}</div>
-      <div class="stat-label">day{{ '' if stats.streak == 1 else 's' }} streak</div>
+      <div class="stat-value num">{{ acceptance_pct }}%</div>
+      <div class="stat-label">acceptance · 7d</div>
     </div>
+    {% if today.latency.p95 %}
+      <div class="stat-card">
+        <div class="stat-value num">{{ today.latency.p95 }} <span class="muted small">ms</span></div>
+        <div class="stat-label">latency p95 · last {{ today.latency.n }}</div>
+      </div>
+    {% endif %}
   </aside>
 </div>
 {% endblock %}
