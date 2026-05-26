@@ -151,6 +151,13 @@ dashboard:
   theme: "dark"               # dark | light
   open_window_on_start: false # daemon starts the server; window opens on demand.
 
+# Experimental features (off by default). Surfaced in the dashboard's
+# Settings → Experimental panel. These ship in later phases; toggling
+# them now persists the preference but has no runtime effect yet.
+experimental:
+  press_enter_command: false   # Phase 12 — "press enter" / "send it" trailing trigger
+  command_mode: false          # Phase 13 — full voice command mode
+
 logging:
   level: "INFO"
 

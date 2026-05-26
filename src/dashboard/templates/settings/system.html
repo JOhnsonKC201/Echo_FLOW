@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Settings — System{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Settings — System</h2>
+    <div class="sub">Audio feedback, voice-activity detection, silence timeout.</div>
+    {% include "settings/_nav.html" %}
+    {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+    <form method="post" action="/settings/system/save" class="settings-form">
+      <label class="check">
+        <input type="checkbox" name="sound_enabled" value="1" {% if values.sound_enabled %}checked{% endif %}>
+        <span>Play audible feedback on press/release</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="vad_enabled" value="1" {% if values.vad_enabled %}checked{% endif %}>
+        <span>Voice-activity detection (auto-stop on silence)</span>
+      </label>
+      <label>
+        <span>Silence timeout (ms, toggle mode only)</span>
+        <input type="number" name="silence_timeout_ms" value="{{ values.silence_timeout_ms }}" min="200" max="10000" step="100">
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

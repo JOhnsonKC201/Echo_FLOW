@@ -512,12 +512,9 @@ def make_app(app_ref):
         back = _req.form.get("back", "/scratchpad")
         return redirect(f"{back}?flash={msg}")
 
-    @flask_app.get("/settings/general")
-    def settings_general():
-        return render_template(
-            "settings/general.html", sections=SECTIONS, active="settings",
-            theme=dcfg.get("theme", "dark"),
-        )
+    # --- Settings (Phase 8) ---------------------------------------------
+    from . import settings_routes as _settings
+    _settings.register(flask_app, app_ref, SECTIONS, dcfg, _maybe_reload_config, _log)
 
     @flask_app.get("/notifications")
     def notifications():

@@ -1,0 +1,12 @@
+<nav class="settings-tabs">
+  {% set tabs = [
+    ("general", "General", "/settings/general"),
+    ("system", "System", "/settings/system"),
+    ("vibe", "Vibe", "/settings/vibe"),
+    ("experimental", "Experimental", "/settings/experimental"),
+    ("privacy", "Privacy", "/settings/privacy"),
+  ] %}
+  {% for key, label, url in tabs %}
+    <a class="settings-tab{% if key == sub_active %} active{% endif %}" href="{{ url }}">{{ label }}</a>
+  {% endfor %}
+</nav>

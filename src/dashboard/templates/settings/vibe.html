@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Settings — Vibe{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Settings — Vibe</h2>
+    <div class="sub">Cleanup behavior. These changes take effect on the next dictation.</div>
+    {% include "settings/_nav.html" %}
+    {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+    <form method="post" action="/settings/vibe/save" class="settings-form">
+      <label class="check">
+        <input type="checkbox" name="cleanup_enabled" value="1" {% if values.cleanup_enabled %}checked{% endif %}>
+        <span>Auto Cleanup (LLM polish on every dictation)</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="skip_when_clean" value="1" {% if values.skip_when_clean %}checked{% endif %}>
+        <span>Fast-path: skip LLM polish when Whisper output is already clean</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="learning_enabled" value="1" {% if values.learning_enabled %}checked{% endif %}>
+        <span>Adaptive learning (use past corrections as few-shot examples)</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="prompt_engineering_enabled" value="1" {% if values.prompt_engineering_enabled %}checked{% endif %}>
+        <span>Prompt-engineering mode (one-shot hotkey rewrites dictation as engineered prompt)</span>
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

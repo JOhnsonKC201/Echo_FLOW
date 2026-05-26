@@ -229,3 +229,24 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .pad-title { display: block; font-weight: 600; color: var(--text); margin-bottom: 4px; }
 .pad-title:hover { color: var(--accent); }
 .pad-preview { color: var(--muted); font-size: 12px; line-height: 1.4; white-space: pre-wrap; overflow: hidden; max-height: 36px; }
+
+/* Phase 8 — Settings panels */
+.settings-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 18px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.settings-tab { padding: 6px 12px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 13px; }
+.settings-tab:hover { color: var(--text); background: var(--panel-2); }
+.settings-tab.active { color: var(--text); background: var(--panel-2); border: 1px solid var(--border); }
+.settings-form { display: flex; flex-direction: column; gap: 14px; max-width: 540px; }
+.settings-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.settings-form label.check { flex-direction: row; align-items: center; gap: 10px; color: var(--text); }
+.settings-form label.check input[type=checkbox] { width: 16px; height: 16px; }
+.settings-form input[type=text], .settings-form input[type=number], .settings-form select {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 8px 10px; font: inherit;
+}
+.settings-form .actions { display: flex; gap: 8px; margin-top: 8px; }
+.btn.danger { background: var(--warn, #c0392b); color: #fff; border-color: transparent; font-weight: 600; }
+.restart-banner { background: var(--panel-2); border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 6px; margin: 0 0 14px; font-size: 13px; color: var(--text); }
+.kv { list-style: none; padding: 0; margin: 0 0 18px; display: flex; flex-direction: column; gap: 6px; }
+.kv li { display: flex; justify-content: space-between; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+.kv .k { color: var(--muted); }
+.kv .v { color: var(--text); }

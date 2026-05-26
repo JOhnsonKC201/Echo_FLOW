@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Settings — Privacy{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Settings — Privacy</h2>
+    <div class="sub">Your data stays on this machine. Nothing is sent anywhere.</div>
+    {% include "settings/_nav.html" %}
+    {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+    <h3>Local-only status</h3>
+    <ul class="kv">
+      <li><span class="k">Whisper backend</span><span class="v">{{ status.whisper_backend }}</span></li>
+      <li><span class="k">Cleanup provider</span><span class="v">{{ status.cleanup_provider }}</span></li>
+      <li><span class="k">History DB</span><span class="v"><code>{{ status.db_path }}</code></span></li>
+      <li><span class="k">Total dictations</span><span class="v">{{ status.dictation_count }}</span></li>
+      <li><span class="k">Mobile bridge</span><span class="v">{{ "enabled" if status.mobile_enabled else "disabled" }}</span></li>
+    </ul>
+
+    <h3>Wipe history</h3>
+    <p class="muted">Removes all dictations from the local database. Custom vocabulary, snippets, style profiles, transforms, and scratchpads are preserved.</p>
+    <form method="post" action="/settings/privacy/wipe" class="settings-form"
+          onsubmit="return confirm('Delete ALL dictation history? This cannot be undone.');">
+      <label>
+        <span>Type <code>WIPE</code> to confirm</span>
+        <input type="text" name="confirm" value="" placeholder="WIPE">
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn danger">Wipe dictation history</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

@@ -1,14 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Settings — Echo Flow{% endblock %}
+{% block title %}Settings — General{% endblock %}
 {% block content %}
   <div class="card">
     <h2>Settings — General</h2>
-    <div class="sub">Hotkey, microphone, language. (System / Vibe / Experimental / Privacy panels coming in Phase 8.)</div>
-    <div class="placeholder">
-      <div>
-        <div class="ph-title">Settings — Phase 8</div>
-        <div class="ph-body">Replace text-editing config.yaml with safe UI. Mic picker enumerates sounddevice.query_devices. Hotkey + restart-required banners.</div>
+    <div class="sub">Hotkey, language. Changes here require a daemon restart.</div>
+    {% include "settings/_nav.html" %}
+    {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+    <div class="restart-banner">Changes on this page take effect after restarting Echo Flow.</div>
+    <form method="post" action="/settings/general/save" class="settings-form">
+      <label>
+        <span>Push-to-talk hotkey</span>
+        <input type="text" name="hotkey_combo" value="{{ values.hotkey_combo }}" placeholder="ctrl+shift">
+      </label>
+      <label>
+        <span>Hotkey mode</span>
+        <select name="hotkey_mode">
+          <option value="hold" {% if values.hotkey_mode == "hold" %}selected{% endif %}>hold (push-to-talk)</option>
+          <option value="toggle" {% if values.hotkey_mode == "toggle" %}selected{% endif %}>toggle (tap, auto-stop)</option>
+        </select>
+      </label>
+      <label>
+        <span>Re-paste last hotkey</span>
+        <input type="text" name="paste_last_combo" value="{{ values.paste_last_combo }}" placeholder="(blank to disable)">
+      </label>
+      <label>
+        <span>Whisper language</span>
+        <input type="text" name="whisper_language" value="{{ values.whisper_language }}" placeholder="en">
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn primary">Save</button>
       </div>
-    </div>
+    </form>
   </div>
 {% endblock %}

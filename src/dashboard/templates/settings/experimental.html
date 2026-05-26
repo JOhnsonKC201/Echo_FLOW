@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Settings — Experimental{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Settings — Experimental</h2>
+    <div class="sub">Opt-in features. Off by default; may change without notice.</div>
+    {% include "settings/_nav.html" %}
+    {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+    <form method="post" action="/settings/experimental/save" class="settings-form">
+      <label class="check">
+        <input type="checkbox" name="press_enter_command" value="1" {% if values.press_enter_command %}checked{% endif %}>
+        <span>Press-Enter command (dictation ending with "press enter" auto-fires Enter after paste) — <em>Phase 12</em></span>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="command_mode" value="1" {% if values.command_mode %}checked{% endif %}>
+        <span>Full Command Mode (voice commands without dictating) — <em>Phase 13</em></span>
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+      <p class="muted">These toggles persist to config.yaml but the features themselves ship in later phases.</p>
+    </form>
+  </div>
+{% endblock %}
