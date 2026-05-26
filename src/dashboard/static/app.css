@@ -81,9 +81,11 @@ code, kbd, .mono, .num, .ts { font-family: var(--font-mono); }
 .bell:hover { background: var(--panel); }
 .bell-glyph { filter: grayscale(0.2); }
 .bell-badge {
-  position: absolute; top: -2px; right: -2px;
+  position: absolute; top: 2px; right: 2px;
   background: var(--accent); color: var(--bg);
-  font-size: 10px; padding: 1px 5px; border-radius: 999px;
+  font-size: 9px; line-height: 1; font-weight: 700;
+  padding: 2px 4px; border-radius: 999px; min-width: 14px;
+  text-align: center; box-shadow: 0 0 0 2px var(--bg);
 }
 
 .content {
@@ -287,7 +289,7 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .lvl-error { background: rgba(255,80,80,.18); color: #ff8a8a; }
 .notif-title { font-weight: 600; color: var(--text); }
 .notif-body { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: pre-wrap; }
-.bell-badge { background: var(--accent); color: #08110b; border-radius: 10px; font-size: 10px; padding: 1px 6px; min-width: 16px; text-align: center; }
+/* (.bell-badge already styled above near .bell) */
 .empty { color: var(--muted); font-size: 13px; padding: 18px 0; text-align: center; }
 
 /* Phase 10 — Bulk import file upload */

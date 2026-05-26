@@ -174,7 +174,7 @@ def test_insights_route_renders_with_real_data(tmp_path):
     assert "Total words dictated" in body
     assert "Desktop usage" in body
     # Quality trajectory polyline rendered when quality data exists.
-    assert "polyline fill=\"none\"" in body
+    assert "polyline class=\"line\"" in body
     # Heatmap was explicitly dropped.
     assert "hm-cell" not in body
 
@@ -186,7 +186,7 @@ def test_insights_route_empty_state(tmp_path):
     body = r.get_data(as_text=True)
     assert "Not enough usage to chart yet." in body
     # Sparkline section omitted when trend is empty.
-    assert "polyline fill=\"none\"" not in body
+    assert "polyline class=\"line\"" not in body
 
 
 def test_insights_route_handles_missing_history():

@@ -32,7 +32,16 @@
   </div>
 </aside>
 <header class="topbar">
-  <div class="crumb">{{ active|capitalize }}</div>
+  {# Section display names — keep in sync with SECTIONS in dashboard/app.py.
+     Falls back to the active key's title-case for anything not listed. #}
+  {% set _crumbs = {
+    'home': 'Home', 'insights': 'Outcomes', 'graph': 'Graph',
+    'dictionary': 'Dictionary', 'snippets': 'Snippets', 'style': 'Style',
+    'transforms': 'Transforms', 'commands': 'Commands',
+    'scratchpad': 'Scratchpad', 'privacy': 'Privacy',
+    'settings': 'Settings', 'notifications': 'Notifications'
+  } %}
+  <div class="crumb">{{ _crumbs.get(active, active|capitalize) }}</div>
   <div class="topbar-actions">
     <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light theme" type="button">
       <span class="theme-icon">{% if theme == 'light' %}☀{% else %}☾{% endif %}</span>
