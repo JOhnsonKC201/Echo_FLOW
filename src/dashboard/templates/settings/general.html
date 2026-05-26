@@ -29,12 +29,32 @@
         <span>Whisper language</span>
         <input type="text" name="whisper_language" value="{{ values.whisper_language }}" placeholder="en">
       </label>
+      <label style="display:flex; align-items:center; gap:10px;">
+        <span>Accent color</span>
+        <input type="color" name="accent_color" id="accent_color"
+               value="{{ values.accent_color }}"
+               style="width:48px; height:32px; padding:0; border:1px solid var(--border); border-radius:6px; background:transparent; cursor:pointer;">
+        <input type="text" id="accent_color_text" value="{{ values.accent_color }}"
+               style="width:90px; font-family:var(--font-mono); font-size:12px;">
+        <span class="muted small">Used for buttons, gauges, highlights. Reset to #3eaf6f for default.</span>
+      </label>
       <div class="actions">
         <button type="submit" class="btn primary">Save</button>
       </div>
     </form>
   </div>
   <script>
+    // Keep the hex text input + the native color picker in sync.
+    (function () {
+      const c = document.getElementById('accent_color');
+      const t = document.getElementById('accent_color_text');
+      if (!c || !t) return;
+      c.addEventListener('input', () => { t.value = c.value; });
+      t.addEventListener('change', () => {
+        if (/^#[0-9a-fA-F]{6}$/.test(t.value)) c.value = t.value.toLowerCase();
+      });
+    })();
+
     // Live hotkey conflict check. Probes /api/hotkey/check on blur and shows
     // inline status. Empty values are not checked (blank = disabled).
     (function () {

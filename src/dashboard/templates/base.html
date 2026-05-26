@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Echo Flow{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+{% if accent_color %}
+<style>
+  /* User-picked accent (Settings → General). Override the default --accent
+     for both themes; --accent-2 stays as the secondary so contrast is OK. */
+  :root, [data-theme="dark"], [data-theme="light"] { --accent: {{ accent_color }}; }
+</style>
+{% endif %}
 </head>
 <body>
 <aside class="sidebar">

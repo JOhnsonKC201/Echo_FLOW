@@ -99,6 +99,13 @@ def make_app(app_ref):
     for p in range(port_pref, port_pref + 5):
         allowlist |= _allowed_hosts_for(host, p)
 
+    # Inject the user-picked accent color into every template so base.html
+    # can override --accent without each route having to remember it.
+    @flask_app.context_processor
+    def _inject_theme_context():
+        acc = (app_ref.cfg.get("dashboard") or {}).get("accent_color")
+        return {"accent_color": acc}
+
     @flask_app.before_request
     def _enforce_host_header():
         h = request.headers.get("Host", "")

@@ -68,33 +68,43 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         cfg = app_ref.cfg
         hk = cfg.get("hotkey", {}) or {}
         wh = cfg.get("whisper", {}) or {}
+        dc = cfg.get("dashboard", {}) or {}
         return _render("general", values={
             "hotkey_combo": hk.get("combo", ""),
             "hotkey_mode": hk.get("mode", "hold"),
             "paste_last_combo": hk.get("paste_last_combo", "") or "",
             "whisper_language": wh.get("language", "en"),
+            "accent_color": dc.get("accent_color", "#3eaf6f"),
         })
 
     @flask_app.post("/settings/general/save")
     def settings_general_save():
+        import re
         f = request.form
         combo = f.get("hotkey_combo", "").strip()
         mode = f.get("hotkey_mode", "hold").strip()
         paste = f.get("paste_last_combo", "").strip()
         lang = f.get("whisper_language", "en").strip() or "en"
+        accent = f.get("accent_color", "").strip()
         if mode not in ("hold", "toggle"):
             return redirect("/settings/general?flash=mode must be hold or toggle")
         if not combo:
             return redirect("/settings/general?flash=hotkey combo cannot be empty")
-        errs = _save_scalars(app_ref, [
+        # Validate accent: must be a 7-char hex (#rrggbb). Empty preserves default.
+        if accent and not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
+            return redirect("/settings/general?flash=accent_color must be #rrggbb")
+        pairs = [
             ("hotkey.combo", combo),
             ("hotkey.mode", mode),
             ("hotkey.paste_last_combo", paste),
             ("whisper.language", lang),
-        ], log)
+        ]
+        if accent:
+            pairs.append(("dashboard.accent_color", accent.lower()))
+        errs = _save_scalars(app_ref, pairs, log)
         if errs:
             return redirect("/settings/general?flash=" + "; ".join(errs))
-        return redirect("/settings/general?flash=Saved. Restart Echo Flow for these changes to take effect.")
+        return redirect("/settings/general?flash=Saved. Restart Echo Flow for hotkey changes; theme changes apply on next page load.")
 
     # ---- System ------------------------------------------------------------
     @flask_app.get("/settings/system")
