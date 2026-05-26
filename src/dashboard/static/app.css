@@ -214,3 +214,12 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
   background: var(--bg); color: var(--text); border: 1px solid var(--border); font-size: 13px;
 }
 .style-row .grow { min-width: 0; }
+
+.transform-row { padding: 14px 0; border-top: 1px solid var(--border); }
+.transform-row:first-of-type { border-top: none; padding-top: 0; }
+.transform-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 12px; }
+.transform-name { font-weight: 600; font-size: 14px; margin-right: 8px; }
+.transform-actions { display: flex; gap: 8px; align-items: center; }
+.transform-prompt { color: var(--muted); font-size: 13px; line-height: 1.5; white-space: pre-wrap; background: var(--bg); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px; }
+.transform-hotkey { margin-top: 4px; }
+.pill.warn { background: rgba(230, 162, 60, 0.12); color: var(--warn); }

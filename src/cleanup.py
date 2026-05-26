@@ -349,7 +349,8 @@ class Cleaner:
     def clean(self, text: str, style: str = "default", augmentation: str = "",
               provider_override: str | None = None,
               max_tokens_override: int | None = None,
-              fallback_provider: str | None = None) -> tuple[str, bool]:
+              fallback_provider: str | None = None,
+              system_prompt_override: str | None = None) -> tuple[str, bool]:
         """Clean text and return (cleaned_text, polish_skipped).
 
         polish_skipped is True iff the fast path skipped the LLM (already-clean
@@ -383,7 +384,7 @@ class Cleaner:
             if self.provider == "learned":
                 base = self._apply_learned_patterns(base)
             return self._expand_snippets(_polish_text(base)), True
-        prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
+        prompt = system_prompt_override or SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
         if augmentation:
             prompt = prompt + augmentation
         provider = provider_override or self.provider

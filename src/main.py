@@ -67,6 +67,30 @@ def _announce(msg: str, level: str = "info") -> None:
     getattr(_log, level, _log.info)(plain)
 
 
+def _transform_combo_to_pynput(combo: str) -> str | None:
+    """Convert 'ctrl+alt+p' to pynput GlobalHotKeys format '<ctrl>+<alt>+p'."""
+    if not combo:
+        return None
+    mods = {"ctrl", "alt", "shift", "win", "cmd"}
+    parts = combo.lower().split("+")
+    out = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            return None
+        if p == "win":
+            out.append("<cmd>")
+        elif p in mods:
+            out.append(f"<{p}>")
+        elif p.startswith("f") and p[1:].isdigit():
+            out.append(f"<{p}>")
+        elif len(p) == 1:
+            out.append(p)
+        else:
+            return None
+    return "+".join(out)
+
+
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
 
 
@@ -212,6 +236,9 @@ class App:
         # async DB write (which lands ~100-300ms after we paste).
         self._last_cleaned_text: str | None = None
         self.tray: TrayApp | None = None
+        # Dashboard-armed transform consumed on the next dictation; reset after use.
+        self._armed_transform: dict | None = None
+        self._transform_hotkey_listener = None
         # Self-grading state
         self._grading_weights = grade_mod.load_weights(hc["db_path"]) if self.history else None
         self._recent_qualities: list[float] = []
@@ -240,6 +267,74 @@ class App:
                 except Exception as e:
                     _log.warning("self-improve pass failed: %s", e)
             threading.Thread(target=_self_improve, daemon=True).start()
+
+    def refresh_transform_hotkeys(self) -> None:
+        """(Re)register pynput GlobalHotKeys for every transform with a hotkey.
+
+        Tears down any prior listener and starts fresh. Pressing a registered
+        combo arms self._armed_transform for the NEXT dictation — the cleanup
+        path consumes it and reverts to default behavior on subsequent calls.
+        """
+        # Tear down prior listener if any.
+        prior = getattr(self, "_transform_hotkey_listener", None)
+        if prior is not None:
+            try:
+                prior.stop()
+            except Exception:
+                pass
+            self._transform_hotkey_listener = None
+        history = getattr(self, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return
+        try:
+            from .dashboard import transforms as _tf
+            items = _tf.list_transforms(history.conn)
+        except Exception as e:
+            _log.warning("refresh_transform_hotkeys: list failed: %s", e)
+            return
+        # Build {pynput_combo_string: callback} map.
+        bindings: dict[str, callable] = {}
+        for t in items:
+            if not t.get("enabled") or not t.get("hotkey"):
+                continue
+            combo = _transform_combo_to_pynput(t["hotkey"])
+            if not combo:
+                continue
+            tid = t["id"]
+            def _arm(tid=tid):
+                self._arm_transform(tid)
+            bindings[combo] = _arm
+        if not bindings:
+            return
+        try:
+            from pynput import keyboard as _kb
+            listener = _kb.GlobalHotKeys(bindings)
+            listener.start()
+            self._transform_hotkey_listener = listener
+            _log.info("transform hotkeys: %d bindings active", len(bindings))
+        except Exception as e:
+            _log.warning("transform hotkey listener failed: %s", e)
+
+    def _arm_transform(self, transform_id: int) -> None:
+        """Called by a transform hotkey — arm the next dictation."""
+        history = getattr(self, "history", None)
+        if history is None:
+            return
+        try:
+            from .dashboard import transforms as _tf
+            t = _tf.get_transform(history.conn, transform_id)
+        except Exception as e:
+            _log.warning("arm_transform: get failed: %s", e)
+            return
+        if t is None or not t.get("enabled"):
+            return
+        self._armed_transform = t
+        _log.info("transform armed for next dictation: %s", t["name"])
+        try:
+            from . import notify as _n
+            _n.notify("Echo Flow", f"Transform armed: {t['name']}", "info")
+        except Exception:
+            pass
 
     def reload_config(self) -> None:
         """Rebuild hot-reloadable state after a dashboard config mutation.
@@ -387,6 +482,17 @@ class App:
         provider_override = self._pe_cfg.get("provider") if use_prompt else None
         max_tokens_override = self._pe_cfg.get("max_output_tokens") if use_prompt else None
         fallback_provider = self._pe_cfg.get("fallback_provider") if use_prompt else None
+        # Armed transform from a dashboard-bound hotkey — overrides system
+        # prompt for this dictation only, then auto-disarms. Doesn't fire
+        # when use_prompt is active (PE mode takes precedence).
+        system_prompt_override = None
+        armed = getattr(self, "_armed_transform", None)
+        if armed and not use_prompt:
+            system_prompt_override = armed["system_prompt"]
+            console.print(f"[magenta]✨ Transform armed: {armed['name']}[/magenta]")
+            self._armed_transform = None
+            # RAG augmentation makes no sense for an arbitrary transform.
+            augmentation = ""
         # Pipeline lock: shared with mobile HTTP bridge to prevent concurrent
         # Whisper/Ollama hits on a single model instance.
         with self._pipeline_lock:
@@ -395,6 +501,7 @@ class App:
                 provider_override=provider_override,
                 max_tokens_override=max_tokens_override,
                 fallback_provider=fallback_provider,
+                system_prompt_override=system_prompt_override,
             )
         t2 = time.perf_counter()
         # Cache immediately so Ctrl+Shift+Win re-paste sees this dictation
@@ -843,6 +950,13 @@ class App:
                 # a truncated prefix. Full value lives in config.yaml.
             except Exception as e:
                 _log.warning("mobile bridge failed to start: %s", e)
+
+        # Bind transform hotkeys (Phase 6) — pulls from dashboard transforms
+        # table. Idempotent; safe to call after every dashboard mutation too.
+        try:
+            self.refresh_transform_hotkeys()
+        except Exception as e:
+            _log.warning("initial transform hotkey wiring failed: %s", e)
 
         # Desktop dashboard: local Flask app for the Wispr-style sidebar UI.
         # Bound to 127.0.0.1 by default — same-machine trust model, no auth.

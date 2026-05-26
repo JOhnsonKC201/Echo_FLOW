@@ -13,6 +13,16 @@ from .. import log as wlog
 _log = wlog.get("dashboard.app")
 
 
+def _refresh_transform_hotkeys(app_ref) -> None:
+    """Call App.refresh_transform_hotkeys() if available."""
+    fn = getattr(app_ref, "refresh_transform_hotkeys", None)
+    if callable(fn):
+        try:
+            fn()
+        except Exception as e:
+            _log.warning("refresh_transform_hotkeys failed: %s", e)
+
+
 def _maybe_reload_config(app_ref) -> None:
     """Call App.reload_config() if it exists, swallowing errors.
 
@@ -317,10 +327,88 @@ def make_app(app_ref):
 
     @flask_app.get("/transforms")
     def transforms():
+        from . import transforms as _tf
+        from flask import request as _req
+        items = []
+        history = getattr(app_ref, "history", None)
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                # Seed builtins if table is empty.
+                if not _tf.list_transforms(history.conn):
+                    _tf.seed_builtins(history.conn)
+                items = _tf.list_transforms(history.conn)
+            except Exception as e:
+                _log.warning("transforms list failed: %s", e)
         return render_template(
             "transforms.html", sections=SECTIONS, active="transforms",
             theme=dcfg.get("theme", "dark"),
+            items=items, flash=_req.args.get("flash", ""),
         )
+
+    @flask_app.post("/transforms/add")
+    def transforms_add():
+        from . import transforms as _tf
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/transforms?flash=History disabled — cannot save.")
+        name = _req.form.get("name", "").strip()
+        prompt = _req.form.get("system_prompt", "").strip()
+        hotkey = _req.form.get("hotkey", "").strip() or None
+        try:
+            _tf.add_transform(history.conn, name=name, system_prompt=prompt, hotkey=hotkey)
+            _refresh_transform_hotkeys(app_ref)
+            return redirect(f"/transforms?flash=Added {name!r}.")
+        except ValueError as e:
+            return redirect(f"/transforms?flash={e}")
+
+    @flask_app.post("/transforms/delete")
+    def transforms_delete():
+        from . import transforms as _tf
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/transforms?flash=History disabled.")
+        tid = int(_req.form.get("id", "0"))
+        try:
+            if _tf.delete_transform(history.conn, tid):
+                _refresh_transform_hotkeys(app_ref)
+                return redirect("/transforms?flash=Removed.")
+            return redirect("/transforms?flash=Not found.")
+        except ValueError as e:
+            return redirect(f"/transforms?flash={e}")
+
+    @flask_app.post("/transforms/bind-hotkey")
+    def transforms_bind_hotkey():
+        from . import transforms as _tf
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/transforms?flash=History disabled.")
+        tid = int(_req.form.get("id", "0"))
+        combo = _req.form.get("hotkey", "").strip() or None
+        try:
+            _tf.update_transform(history.conn, tid, hotkey=combo)
+            _refresh_transform_hotkeys(app_ref)
+            return redirect("/transforms?flash=Hotkey updated.")
+        except ValueError as e:
+            return redirect(f"/transforms?flash={e}")
+
+    @flask_app.post("/transforms/toggle")
+    def transforms_toggle():
+        from . import transforms as _tf
+        from flask import request as _req, redirect
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/transforms?flash=History disabled.")
+        tid = int(_req.form.get("id", "0"))
+        enabled = _req.form.get("enabled") == "1"
+        try:
+            _tf.update_transform(history.conn, tid, enabled=enabled)
+            _refresh_transform_hotkeys(app_ref)
+            return redirect("/transforms?flash=Updated.")
+        except ValueError as e:
+            return redirect(f"/transforms?flash={e}")
 
     @flask_app.get("/scratchpad")
     def scratchpad():

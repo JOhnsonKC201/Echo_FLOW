@@ -1,14 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Transforms — Echo Flow{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Transforms</h2>
-    <div class="sub">Reusable rewrites: Polish, Prompt Engineer, or your own.</div>
-    <div class="placeholder">
-      <div>
-        <div class="ph-title">Transforms — Phase 6</div>
-        <div class="ph-body">First-class transform manager with a visual hotkey key-picker. Built-ins seeded on first run; user-defined transforms live in a new SQLite table.</div>
+<h1 class="welcome">Transforms</h1>
+<div class="muted small" style="margin-bottom: 14px;">
+  Named system prompts for cleanup. Bind a hotkey to arm a transform for the next dictation.
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <h2>All transforms <span class="muted small">{{ items|length }} total</span></h2>
+  {% if items %}
+    {% for t in items %}
+      <div class="transform-row">
+        <div class="transform-head">
+          <div>
+            <span class="transform-name">{{ t.name }}</span>
+            {% if t.builtin %}<span class="pill">built-in</span>{% endif %}
+            {% if not t.enabled %}<span class="pill warn">disabled</span>{% endif %}
+          </div>
+          <div class="transform-actions">
+            <form method="post" action="/transforms/toggle" class="inline">
+              <input type="hidden" name="id" value="{{ t.id }}">
+              <input type="hidden" name="enabled" value="{{ '0' if t.enabled else '1' }}">
+              <button type="submit" class="btn">{{ 'Disable' if t.enabled else 'Enable' }}</button>
+            </form>
+            {% if not t.builtin %}
+              <form method="post" action="/transforms/delete" class="inline">
+                <input type="hidden" name="id" value="{{ t.id }}">
+                <button type="submit" class="link-danger" title="Remove">✕</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+        <div class="transform-prompt">{{ t.system_prompt }}</div>
+        <form method="post" action="/transforms/bind-hotkey" class="row-form transform-hotkey">
+          <input type="hidden" name="id" value="{{ t.id }}">
+          <input type="text" name="hotkey" placeholder="e.g. ctrl+alt+1 (empty to clear)"
+                 value="{{ t.hotkey or '' }}" style="flex: 0 0 220px;">
+          <button type="submit" class="btn">Save hotkey</button>
+        </form>
       </div>
+    {% endfor %}
+  {% else %}
+    <div class="muted small">No transforms yet — built-ins will seed on first add.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Create your own</h2>
+  <form method="post" action="/transforms/add">
+    <input type="text" name="name" placeholder="Name (e.g. Polish formal)" maxlength="60" required style="width: 100%; padding: 9px 12px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); font-size: 14px; margin-bottom: 8px;">
+    <textarea name="system_prompt" rows="6" placeholder="System prompt that the LLM will receive. Be specific about what to keep, change, or strip." required></textarea>
+    <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+      <input type="text" name="hotkey" placeholder="optional hotkey, e.g. ctrl+alt+p" style="flex: 0 0 280px; padding: 8px 10px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); font-size: 13px;">
+      <button type="submit" class="primary">Add transform</button>
     </div>
-  </div>
+  </form>
+</div>
 {% endblock %}
