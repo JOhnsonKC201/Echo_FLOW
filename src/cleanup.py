@@ -130,6 +130,48 @@ SYSTEM_PROMPTS = {
 }
 
 
+# Audience-specific framing prepended to the PE system prompt. Lets the
+# same dictation be polished into a request that fits the receiving agent's
+# affordances (Claude Code has FS/shell; ChatGPT doesn't, by default).
+_AUDIENCE_PREAMBLES = {
+    "claude-code": (
+        "The receiving agent is CLAUDE CODE — a coding agent with read/write "
+        "filesystem access, shell execution, and the project already loaded. "
+        "Reference relative paths and shell verbs naturally when the user "
+        "implies them. Don't paste large code blocks the user didn't dictate.\n\n"
+    ),
+    "chatgpt": (
+        "The receiving agent is CHATGPT (or another general LLM chat) — it does "
+        "not have filesystem or shell access by default. Frame the request so it "
+        "can be answered in chat: prefer descriptive instructions over file-path "
+        "directives, and ask for code/text the user can copy back.\n\n"
+    ),
+    "generic": "",
+}
+
+# Provider-size hints. Small local models tend to ramble or echo the system
+# prompt; large cloud models follow the canonical instructions cleanly.
+_PROVIDER_HINTS = {
+    "ollama": (
+        "\n\nCONSTRAINTS FOR THIS MODEL: be CONCISE. Output <=300 tokens unless "
+        "the dictation is genuinely multi-part. Never repeat or paraphrase these "
+        "instructions in your reply.\n"
+    ),
+    "groq":     "",
+    "anthropic": "",
+    "openai":    "",
+    "learned":   "",
+}
+
+
+def build_pe_prompt(audience: str, provider: str) -> str:
+    """Compose the Prompt-Engineering system prompt for a given audience + LLM."""
+    base = SYSTEM_PROMPTS["prompt"]
+    pre = _AUDIENCE_PREAMBLES.get(audience or "generic", "")
+    hint = _PROVIDER_HINTS.get(provider or "", "")
+    return pre + base + hint
+
+
 def _polish_text(s: str) -> str:
     """Deterministic capitalization + end-punctuation. No LLM, no surprises."""
     import re as _re
@@ -384,12 +426,32 @@ class Cleaner:
             if self.provider == "learned":
                 base = self._apply_learned_patterns(base)
             return self._expand_snippets(_polish_text(base)), True
-        prompt = system_prompt_override or SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
+        provider = provider_override or self.provider
+        # PE mode: build a system prompt tailored to BOTH the audience
+        # (claude-code / chatgpt / generic) AND the chosen provider's size
+        # class. Falls back to the canonical SYSTEM_PROMPTS entry for any
+        # other style, or to the caller's explicit override.
+        if system_prompt_override:
+            prompt = system_prompt_override
+        elif style == "prompt":
+            pe_cfg = self.cfg.get("prompt_engineering", {}) or {}
+            audience = (pe_cfg.get("audience") or "generic").strip().lower()
+            prompt = build_pe_prompt(audience, provider)
+        else:
+            prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
         if augmentation:
             prompt = prompt + augmentation
-        provider = provider_override or self.provider
 
         def _run_provider(name: str) -> str:
+            # PE mode: rebuild the system prompt per-provider so a Groq→Ollama
+            # fallback gets the size-aware "be concise" hint that Ollama needs.
+            nonlocal prompt
+            if style == "prompt" and not system_prompt_override:
+                pe_cfg = self.cfg.get("prompt_engineering", {}) or {}
+                audience = (pe_cfg.get("audience") or "generic").strip().lower()
+                prompt = build_pe_prompt(audience, name)
+                if augmentation:
+                    prompt = prompt + augmentation
             # Local-only enforcement, with a deliberate carve-out: Prompt-
             # Engineering mode (style == "prompt", armed via Ctrl+Shift+Alt
             # and dispatched with an explicit provider_override) is allowed
