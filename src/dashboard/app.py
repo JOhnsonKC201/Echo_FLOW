@@ -627,11 +627,15 @@ def make_app(app_ref):
     def onboarding_finish():
         from . import config_writer as _cw
         from flask import redirect
+        # Always flip the in-process flag so the user is never stuck in a
+        # redirect loop, even if the disk write fails (read-only fs, missing
+        # key, etc). The persistence failure surfaces as a notification toast
+        # next restart will re-show the tour, which is the lesser evil.
+        dcfg["onboarded"] = True
         try:
             _cw.set_scalar(app_ref.cfg_path, "dashboard.onboarded", True)
-            dcfg["onboarded"] = True
         except Exception as e:
-            _log.warning("onboarding finish failed: %s", e)
+            _log.warning("onboarding finish persistence failed: %s", e)
         return redirect("/")
 
     # --- Health / API ----------------------------------------------------

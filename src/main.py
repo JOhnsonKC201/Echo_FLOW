@@ -619,12 +619,18 @@ class App:
                 detected = _actions.detect_trailing_command(cleaned)
                 if detected is not None:
                     trailing_cmd, payload = detected
-                    if self.injector.trailing_space and not payload.endswith((" ", "\n")):
-                        # Drop the auto-trailing-space so Enter fires on the
-                        # final character, not on a stray space after it.
-                        pass  # handled by passing payload directly
-            # PASTE FIRST — user feels the speed.
-            self.injector.inject(payload)
+            # PASTE FIRST — user feels the speed. When firing a trailing
+            # command, suppress the auto-appended trailing space so Enter
+            # lands right after the final character of the payload.
+            if trailing_cmd is not None:
+                prev_ts = self.injector.trailing_space
+                self.injector.trailing_space = False
+                try:
+                    self.injector.inject(payload)
+                finally:
+                    self.injector.trailing_space = prev_ts
+            else:
+                self.injector.inject(payload)
             if trailing_cmd == "enter":
                 self.injector.send_key("enter")
                 _log.info("trailing-command: enter fired")

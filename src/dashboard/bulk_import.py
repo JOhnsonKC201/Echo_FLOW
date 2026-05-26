@@ -28,6 +28,10 @@ def read_upload(file_storage) -> str:
     truncated = len(data) > MAX_UPLOAD_BYTES
     if truncated:
         data = data[:MAX_UPLOAD_BYTES]
+        # Trim any UTF-8 continuation bytes (10xxxxxx) at the tail so we
+        # don't decode mid-codepoint into U+FFFD garbage in user content.
+        while data and (data[-1] & 0xC0) == 0x80:
+            data = data[:-1]
     try:
         text = data.decode("utf-8", errors="replace")
     except Exception:

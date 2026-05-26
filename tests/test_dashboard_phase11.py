@@ -46,10 +46,22 @@ def test_save_then_load_window_state(monkeypatch, tmp_path):
     from src.dashboard import window as w
     monkeypatch.setattr(w, "_STATE_FILE", tmp_path / "win.json")
     class _Win:
-        width = 1024; height = 768; x = 100; y = 50
+        width = 1024; height = 768
+        def get_size(self):
+            return (1024, 768)
     w._save_window_state(_Win())
     state = w._load_window_state()
-    assert state == {"width": 1024, "height": 768, "x": 100, "y": 50}
+    # x/y intentionally NOT persisted — off-screen-restore guard.
+    assert state == {"width": 1024, "height": 768}
+
+
+def test_save_window_state_falls_back_to_attrs_when_get_size_missing(monkeypatch, tmp_path):
+    from src.dashboard import window as w
+    monkeypatch.setattr(w, "_STATE_FILE", tmp_path / "win.json")
+    class _Win:
+        width = 999; height = 555
+    w._save_window_state(_Win())
+    assert w._load_window_state() == {"width": 999, "height": 555}
 
 
 def test_load_window_state_malformed_falls_back(monkeypatch, tmp_path):

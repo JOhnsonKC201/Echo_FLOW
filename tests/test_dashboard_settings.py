@@ -172,11 +172,26 @@ def test_experimental_save(tmp_path):
     client, app_ref = _client(tmp_path)
     r = client.post("/settings/experimental/save", headers=HOST, data={
         "press_enter_command": "1",
+        "command_prefix": "computer",
     })
     assert r.status_code == 302
     reparsed = yaml.safe_load(app_ref.cfg_path.read_text(encoding="utf-8"))
     assert reparsed["experimental"]["press_enter_command"] is True
     assert reparsed["experimental"]["command_mode"] is False
+
+
+@pytest.mark.parametrize("bad", ["", "a", "ab", "the", "now", "tell", "1234", "ok!"])
+def test_experimental_save_rejects_bad_prefix(tmp_path, bad):
+    client, _ = _client(tmp_path)
+    r = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": bad,
+    })
+    assert r.status_code == 302
+    # Either the validator caught it (flash about prefix) or it normalized to "computer".
+    if bad == "":
+        # Empty → defaulted to "computer", which is valid.
+        return
+    assert "command%20prefix" in r.headers["Location"]
 
 
 # --- Privacy -----------------------------------------------------------------

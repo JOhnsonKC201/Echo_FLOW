@@ -171,6 +171,20 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
     def settings_experimental_save():
         f = request.form
         prefix = (f.get("command_prefix", "") or "computer").strip() or "computer"
+        # Guard: prefix must be alphabetic, ≥3 chars, and not a common English
+        # stop word. A typo like "the" would attempt command classification on
+        # nearly every dictation; unmatched commands are silently dropped, so
+        # this is a data-loss risk we cheap-check on save.
+        _BAD_PREFIXES = {
+            "the", "and", "but", "you", "are", "all", "can", "for", "her",
+            "his", "not", "now", "one", "out", "see", "two", "use", "way",
+            "who", "yes", "say", "tell", "ask", "let",
+        }
+        if not prefix.isalpha() or len(prefix) < 3 or prefix.lower() in _BAD_PREFIXES:
+            return redirect(
+                "/settings/experimental?flash=command prefix must be 3+ letters "
+                "and not a common English word — try 'computer' or 'jarvis'."
+            )
         # `experimental:` block may not exist in config.yaml on older installs;
         # we attempt the write and surface the error rather than silently
         # creating a new block (config_writer is scalar-only by design).

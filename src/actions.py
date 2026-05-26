@@ -57,12 +57,9 @@ _TRAILING_ENTER_RE = re.compile(
     r"""\s+                            # whitespace only — preserve sentence
                                        # punctuation that closes the payload
         (?:please\s+)?                 # optional politeness
-        (?:press\s+enter
-         | hit\s+enter
-         | submit(?:\s+it)?
-         | send\s+it
-         | send\s+(?:the\s+)?message
-         )
+        (?:press\s+enter|hit\s+enter)  # restricted to enter — "submit"/"send it"
+                                       # produced too many false positives
+                                       # ("Tell him to submit it", "I'll send it")
         [\s,.!?'"()-]*$                # eat trailing punct AFTER the command
     """,
     re.IGNORECASE | re.VERBOSE,

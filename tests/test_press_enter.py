@@ -11,12 +11,9 @@ from src.actions import detect_trailing_command
 @pytest.mark.parametrize("text,expected_stripped", [
     ("Send the email. Press enter.", "Send the email."),
     ("send the email press enter", "send the email"),
-    ("Please send the message. Submit.", "Please send the message."),
-    ("Ship it now. Send it.", "Ship it now."),
-    ("Okay, send the message", "Okay,"),
     ("Hit enter when ready hit enter", "Hit enter when ready"),  # trailing match only
     ("Please please press enter", "Please"),  # leading "please" consumed by politeness group
-    ("Reply approved please submit", "Reply approved"),
+    ("Reply approved please hit enter", "Reply approved"),
 ])
 def test_detects_trailing_enter(text, expected_stripped):
     result = detect_trailing_command(text)
@@ -31,10 +28,13 @@ def test_detects_trailing_enter(text, expected_stripped):
     None,
     "Just a normal sentence.",
     "I'll press enter when I'm done.",       # not at the end
-    "Submit a PR tomorrow.",                  # not at the end
     "press enter",                            # bare command, no payload
-    "send it",                                # bare command
     "ok",                                     # nothing to detect
+    # Ambiguous phrases that USED to false-positive — now never fire:
+    "Tell him to submit it.",
+    "I'll send it tomorrow.",
+    "Ask her to send the message.",
+    "Ship it now. Send it.",
 ])
 def test_no_trailing_command(text):
     assert detect_trailing_command(text) is None
@@ -48,7 +48,7 @@ def test_detection_is_case_insensitive():
 def test_detection_strips_trailing_punctuation():
     # Closing punctuation AFTER the command is consumed; payload-ending
     # punctuation BEFORE the command is preserved.
-    r = detect_trailing_command('Reply now. Send it!!')
+    r = detect_trailing_command('Reply now. Press enter!!')
     assert r is not None
     cmd, stripped = r
     assert cmd == "enter"
