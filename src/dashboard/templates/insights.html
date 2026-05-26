@@ -4,6 +4,41 @@
 <h1 class="welcome">Outcomes</h1>
 <div class="muted small" style="margin: 4px 0 14px;">Signal, not vanity. All numbers computed locally.</div>
 
+<div class="wf-tabs" style="display:flex; gap:6px; margin-bottom:14px;">
+  <a class="wf-tab{% if tab == 'usage' %} active{% endif %}"
+     href="/insights?source={{ source }}">Your Usage</a>
+  <a class="wf-tab{% if tab == 'voice' %} active{% endif %}"
+     href="/insights/voice">Your Voice</a>
+</div>
+
+{% if tab == 'usage' %}
+<div class="wf-source" style="display:flex; gap:6px; margin-bottom:12px;">
+  <a class="wf-source-btn{% if source == 'desktop' %} active{% endif %}"
+     href="/insights?source=desktop">Desktop</a>
+  <a class="wf-source-btn{% if source == 'mobile' %} active{% endif %}"
+     href="/insights?source=mobile">Mobile</a>
+  <a class="wf-source-btn{% if source == 'all' %} active{% endif %}"
+     href="/insights?source=all">All</a>
+</div>
+
+<div class="insights-tiles">
+  <div class="tile">
+    <div class="tile-label">Total words</div>
+    <div class="tile-value num">{{ total_words }}</div>
+    <div class="tile-sub">filtered: {{ source }}</div>
+  </div>
+  <div class="tile">
+    <div class="tile-label">WPM · 7d</div>
+    <div class="tile-value num">{{ wpm }}</div>
+    <div class="tile-sub">vs. typing at {{ baseline_wpm }} WPM</div>
+  </div>
+  <div class="tile">
+    <div class="tile-label">Day streak</div>
+    <div class="tile-value num">{{ streak }}</div>
+    <div class="tile-sub">consecutive days</div>
+  </div>
+</div>
+
 <div class="insights-tiles">
   <div class="tile">
     <div class="tile-label">Time saved · 30d</div>
@@ -106,4 +141,73 @@
     <span class="num" style="margin-left: auto;">{{ fixes.dictionary_fixes }}</span>
   </div>
 </div>
+
+{% else %}
+{# ---------- Your Voice tab ---------- #}
+{% if voice %}
+<div class="insights-tiles">
+  <div class="tile">
+    <div class="tile-label">Speaking pace · median</div>
+    <div class="tile-value num">{{ voice.pace.median_wpm }}<span class="muted small"> wpm</span></div>
+    <div class="tile-sub">{{ voice.pace.n }} dictations · last {{ voice.days }}d</div>
+  </div>
+  <div class="tile">
+    <div class="tile-label">Filler ratio</div>
+    <div class="tile-value num">{{ voice.filler.ratio_pct }}<span class="muted small">%</span></div>
+    <div class="tile-sub">{{ voice.filler.count }} of {{ voice.filler.total_words }} words</div>
+  </div>
+  <div class="tile">
+    <div class="tile-label">Vocabulary diversity</div>
+    <div class="tile-value num">{{ voice.vocabulary.diversity_pct }}<span class="muted small">%</span></div>
+    <div class="tile-sub">{{ voice.vocabulary.unique }} unique / {{ voice.vocabulary.total }} total</div>
+  </div>
+</div>
+
+<div class="insights-row">
+  <div class="card insight-card">
+    <h2>Pace distribution <span class="muted small">WPM histogram</span></h2>
+    {% set peak = voice.pace.buckets | map(attribute='count') | max %}
+    {% if peak and peak > 0 %}
+      <ul class="usage-list">
+        {% for b in voice.pace.buckets %}
+          <li>
+            <div class="usage-bar-wrap">
+              <div class="usage-bar" style="width: {{ (b.count / peak * 100) | round(1) }}%;"></div>
+            </div>
+            <div class="usage-meta">
+              <span class="usage-label">{{ b.label }}</span>
+              <span class="muted small num" style="margin-left:auto;">{{ b.count }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="muted small">Not enough dictations yet to chart pace.</div>
+    {% endif %}
+  </div>
+
+  <div class="card insight-card">
+    <h2>Most-used phrases <span class="muted small">top bigrams</span></h2>
+    {% if voice.phrases %}
+      <ul class="usage-list">
+        {% for p in voice.phrases %}
+          <li>
+            <div class="usage-meta">
+              <span class="usage-label">{{ p.phrase }}</span>
+              <span class="muted small num" style="margin-left:auto;">{{ p.count }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="muted small">No phrases yet — keep dictating.</div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="card insight-card">
+  <div class="muted small">No voice data yet — dictate a few times and check back.</div>
+</div>
+{% endif %}
+{% endif %}
 {% endblock %}

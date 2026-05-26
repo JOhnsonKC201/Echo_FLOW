@@ -10,7 +10,8 @@
     <form method="post" action="/settings/general/save" class="settings-form">
       <label>
         <span>Push-to-talk hotkey</span>
-        <input type="text" name="hotkey_combo" value="{{ values.hotkey_combo }}" placeholder="ctrl+shift">
+        <input type="text" name="hotkey_combo" id="hotkey_combo" value="{{ values.hotkey_combo }}" placeholder="ctrl+shift" data-hotkey-check>
+        <span class="hotkey-status muted small" id="hotkey_combo_status"></span>
       </label>
       <label>
         <span>Hotkey mode</span>
@@ -21,7 +22,8 @@
       </label>
       <label>
         <span>Re-paste last hotkey</span>
-        <input type="text" name="paste_last_combo" value="{{ values.paste_last_combo }}" placeholder="(blank to disable)">
+        <input type="text" name="paste_last_combo" id="paste_last_combo" value="{{ values.paste_last_combo }}" placeholder="(blank to disable)" data-hotkey-check>
+        <span class="hotkey-status muted small" id="paste_last_combo_status"></span>
       </label>
       <label>
         <span>Whisper language</span>
@@ -32,4 +34,37 @@
       </div>
     </form>
   </div>
+  <script>
+    // Live hotkey conflict check. Probes /api/hotkey/check on blur and shows
+    // inline status. Empty values are not checked (blank = disabled).
+    (function () {
+      const inputs = document.querySelectorAll('input[data-hotkey-check]');
+      inputs.forEach((el) => {
+        const status = document.getElementById(el.id + '_status');
+        if (!status) return;
+        el.addEventListener('blur', async () => {
+          const combo = (el.value || '').trim();
+          if (!combo) { status.textContent = ''; return; }
+          status.textContent = 'checking…';
+          try {
+            const r = await fetch('/api/hotkey/check', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ combo: combo }),
+            });
+            const data = await r.json();
+            if (data.available) {
+              status.textContent = '✓ available';
+              status.style.color = 'var(--ok, #4ade80)';
+            } else {
+              status.textContent = '✗ ' + (data.reason || 'in use');
+              status.style.color = 'var(--warn, #f87171)';
+            }
+          } catch (e) {
+            status.textContent = 'check failed';
+          }
+        });
+      });
+    })();
+  </script>
 {% endblock %}
