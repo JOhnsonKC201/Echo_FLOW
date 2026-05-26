@@ -168,13 +168,13 @@ def test_insights_route_renders_with_real_data(tmp_path):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert "Outcomes" in body
-    assert "Time saved" in body
-    assert "Acceptance" in body
-    assert "Latency p95" in body
-    assert "App usage" in body
-    assert "Fixes the model made" in body
-    # Quality trajectory sparkline rendered when quality data exists.
-    assert "spark-line" in body
+    # PR-D Wispr-style hero surfaces: WPM gauge, Fixes by Echo, Total words.
+    assert "Words per minute" in body
+    assert "Fixes made by Echo" in body
+    assert "Total words dictated" in body
+    assert "Desktop usage" in body
+    # Quality trajectory polyline rendered when quality data exists.
+    assert "polyline fill=\"none\"" in body
     # Heatmap was explicitly dropped.
     assert "hm-cell" not in body
 
@@ -184,9 +184,9 @@ def test_insights_route_empty_state(tmp_path):
     r = _client(h).get("/insights", headers={"Host": "127.0.0.1:8766"})
     assert r.status_code == 200
     body = r.get_data(as_text=True)
-    assert "Not enough usage yet to chart." in body
+    assert "Not enough usage to chart yet." in body
     # Sparkline section omitted when trend is empty.
-    assert "spark-line" not in body
+    assert "polyline fill=\"none\"" not in body
 
 
 def test_insights_route_handles_missing_history():

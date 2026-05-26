@@ -154,7 +154,7 @@ dashboard:
   enabled: true
   host: "127.0.0.1"           # NEVER bind to 0.0.0.0 — same-machine trust only.
   port: 8766                  # Auto-fallback to 8767..8770 if busy.
-  theme: light               # dark | light
+  theme: "dark"               # dark | light
   open_window_on_start: false # daemon starts the server; window opens on demand.
   open_hotkey: "<ctrl>+<cmd>"  # Global hotkey to open the dashboard window (Ctrl+Win). Set "" to disable.
   onboarded: true            # Phase 11 first-run tour gate; flips true after /onboarding/finish.
