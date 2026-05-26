@@ -62,3 +62,19 @@ class Injector:
     def _type(self, text: str):
         import pyautogui
         pyautogui.typewrite(text, interval=0.005)
+
+    def send_key(self, key: str) -> bool:
+        """Fire a single key. Phase 12 — used for trailing voice commands.
+
+        `key` is a pyautogui key name ("enter", "tab", "escape", ...). Returns
+        True on success, False if anything failed. Caller must ensure the key
+        is on its own allowlist; this method does no policy enforcement.
+        """
+        try:
+            import pyautogui
+            # Small grace period so the prior paste settles before the key.
+            time.sleep(0.05)
+            pyautogui.press(key)
+            return True
+        except Exception:
+            return False

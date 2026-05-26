@@ -41,6 +41,55 @@ def _clean_phrase(s: str) -> str:
     return s
 
 
+# --- Trailing voice commands (Phase 12) -------------------------------------
+#
+# Smallest Command Mode subset: a dictation that ends with one of a few
+# explicit phrases ("press enter", "submit", "send it") fires a single key
+# AFTER the cleaned text has been pasted. The trailing phrase is stripped
+# from what gets pasted, so "send the email period press enter" pastes
+# "Send the email." and then hits Enter.
+#
+# Gated by experimental.press_enter_command in config.yaml; off by default.
+# Allowlist-only: nothing here can fire arbitrary keystrokes from voice.
+
+
+_TRAILING_ENTER_RE = re.compile(
+    r"""\s+                            # whitespace only — preserve sentence
+                                       # punctuation that closes the payload
+        (?:please\s+)?                 # optional politeness
+        (?:press\s+enter
+         | hit\s+enter
+         | submit(?:\s+it)?
+         | send\s+it
+         | send\s+(?:the\s+)?message
+         )
+        [\s,.!?'"()-]*$                # eat trailing punct AFTER the command
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def detect_trailing_command(text: str) -> tuple[str, str] | None:
+    """Inspect cleaned text for a trailing voice command.
+
+    Returns (command_name, stripped_text) where stripped_text is what
+    should actually be pasted (the command phrase removed). Returns None
+    if no trailing command is present.
+
+    Supported command_name values: "enter".
+    """
+    if not text:
+        return None
+    m = _TRAILING_ENTER_RE.search(text)
+    if not m:
+        return None
+    stripped = text[: m.start()].rstrip()
+    # Don't fire on a bare command-only dictation — too easy to mistrigger.
+    if not stripped or len(stripped) < 2:
+        return None
+    return ("enter", stripped)
+
+
 def extract_action_items(cleaned_text: str) -> list[str]:
     """Return a deduped, cleaned list of imperative phrases from the input.
 

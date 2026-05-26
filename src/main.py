@@ -581,8 +581,26 @@ class App:
                 _log.warning("scratchpad append failed: %s — falling back to inject", e)
                 self.injector.inject(cleaned)
         else:
+            # Phase 12: trailing voice command. If experimental.press_enter_command
+            # is on and the dictation ends with "press enter" / "submit" / "send it",
+            # paste the stripped text first, then fire Enter. Skipped when
+            # routing to a scratchpad — that path doesn't inject keystrokes.
+            payload = cleaned
+            trailing_cmd: str | None = None
+            if (self.cfg.get("experimental", {}) or {}).get("press_enter_command"):
+                from . import actions as _actions
+                detected = _actions.detect_trailing_command(cleaned)
+                if detected is not None:
+                    trailing_cmd, payload = detected
+                    if self.injector.trailing_space and not payload.endswith((" ", "\n")):
+                        # Drop the auto-trailing-space so Enter fires on the
+                        # final character, not on a stray space after it.
+                        pass  # handled by passing payload directly
             # PASTE FIRST — user feels the speed.
-            self.injector.inject(cleaned)
+            self.injector.inject(payload)
+            if trailing_cmd == "enter":
+                self.injector.send_key("enter")
+                _log.info("trailing-command: enter fired")
         t3 = time.perf_counter()
         if self.tray:
             self.tray.set_state("ok" if not self._paused else "paused")
