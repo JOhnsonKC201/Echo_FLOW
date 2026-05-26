@@ -45,7 +45,8 @@ HOST = {"Host": "127.0.0.1:8766"}
     ("/settings/system", b"Voice-activity detection"),
     ("/settings/vibe", b"Auto Cleanup"),
     ("/settings/experimental", b"Press-Enter command"),
-    ("/settings/privacy", b"Wipe history"),
+    # /settings/privacy is now a 302 redirect to /privacy (PR-E). Verified
+    # separately in test_settings_privacy_redirects.
 ])
 def test_settings_pages_render(tmp_path, path, marker):
     client, _ = _client(tmp_path)
@@ -194,41 +195,10 @@ def test_experimental_save_rejects_bad_prefix(tmp_path, bad):
     assert "command%20prefix" in r.headers["Location"]
 
 
-# --- Privacy -----------------------------------------------------------------
+# --- Privacy (PR-E: moved to top-level /privacy) ----------------------------
 
-def test_privacy_shows_db_path_and_counts(tmp_path):
-    client, app_ref = _client(tmp_path)
-    # Seed a few dictations.
-    h = app_ref.history
-    h.log(window_title="t", style="default", language="en", duration_ms=10,
-          raw_text="hello", cleaned_text="hello")
-    h.log(window_title="t", style="default", language="en", duration_ms=10,
-          raw_text="world", cleaned_text="world")
-    r = client.get("/settings/privacy", headers=HOST)
-    assert r.status_code == 200
-    assert b"Total dictations" in r.data
-    assert b">2<" in r.data  # count rendered
-
-
-def test_privacy_wipe_requires_confirm_token(tmp_path):
-    client, app_ref = _client(tmp_path)
-    app_ref.history.log(window_title="t", style="default", language="en",
-                        duration_ms=1, raw_text="x", cleaned_text="x")
-    r = client.post("/settings/privacy/wipe", headers=HOST, data={"confirm": "nope"})
+def test_settings_privacy_redirects_to_top_level(tmp_path):
+    client, _ = _client(tmp_path)
+    r = client.get("/settings/privacy", headers=HOST, follow_redirects=False)
     assert r.status_code == 302
-    assert "WIPE" in r.headers["Location"]
-    # Still there.
-    n = app_ref.history.conn.execute("SELECT COUNT(*) FROM dictations").fetchone()[0]
-    assert n == 1
-
-
-def test_privacy_wipe_with_confirm_deletes(tmp_path):
-    client, app_ref = _client(tmp_path)
-    app_ref.history.log(window_title="t", style="default", language="en",
-                        duration_ms=1, raw_text="x", cleaned_text="x")
-    app_ref.history.log(window_title="t", style="default", language="en",
-                        duration_ms=1, raw_text="y", cleaned_text="y")
-    r = client.post("/settings/privacy/wipe", headers=HOST, data={"confirm": "WIPE"})
-    assert r.status_code == 302
-    n = app_ref.history.conn.execute("SELECT COUNT(*) FROM dictations").fetchone()[0]
-    assert n == 0
+    assert r.headers["Location"].endswith("/privacy")

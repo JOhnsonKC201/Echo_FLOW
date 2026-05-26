@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Privacy — Echo Flow{% endblock %}
+{% block content %}
+<h1 class="welcome">Privacy</h1>
+<div class="muted small" style="margin: 4px 0 14px;">
+  Echo Flow is local-only. The ledger below is computed live from your machine — verify it any time with <code>netstat -an</code>.
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <h2>Local-only audit ledger</h2>
+    <span class="num tile-delta">verified locally</span>
+  </div>
+
+  <ul class="kv">
+    <li>
+      <span class="k">Network calls leaving this machine · 30d</span>
+      <span class="v num" style="color: var(--accent); font-weight: 600;">{{ ledger.egress_30d }}</span>
+    </li>
+    <li>
+      <span class="k">Mobile bridge</span>
+      <span class="v">
+        {% if ledger.bridge.state == "lan" %}
+          <span class="num" style="color: var(--warn);">{{ ledger.bridge.bind_address }} (LAN — warn)</span>
+        {% elif ledger.bridge.state == "loopback" %}
+          <span class="num" style="color: var(--accent);">loopback only ({{ ledger.bridge.bind_address }})</span>
+        {% else %}
+          <span class="num muted">disabled</span>
+        {% endif %}
+      </span>
+    </li>
+    <li>
+      <span class="k">Ollama endpoint</span>
+      <span class="v num">{{ ledger.ollama_url }}</span>
+    </li>
+    <li>
+      <span class="k">History DB on disk</span>
+      <span class="v"><code>{{ ledger.db_path }}</code> · <span class="num">{{ db_size_human }}</span></span>
+    </li>
+    <li>
+      <span class="k">Audio retained</span>
+      <span class="v">
+        <span class="num">{{ audio_size_human }}</span>
+        {% if not ledger.keep_audio %}
+          <span class="muted small">· keep_audio=false (audio purged after transcription)</span>
+        {% endif %}
+      </span>
+    </li>
+    <li>
+      <span class="k">Last config write</span>
+      <span class="v num">{{ last_cfg_human }}</span>
+    </li>
+  </ul>
+
+  <div class="muted small">{{ ledger.egress_provenance }}</div>
+</div>
+
+<div class="card">
+  <h2>Data controls</h2>
+  <div class="sub">Export, browse, or wipe your local data. All actions happen on this machine only.</div>
+
+  <div class="settings-form">
+    <div class="actions" style="flex-wrap: wrap;">
+      <a class="btn primary" href="/privacy/export.zip">Export all data (.zip)</a>
+      <form method="post" action="/privacy/open-folder" class="inline">
+        <button type="submit" class="btn">Open data folder</button>
+      </form>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 18px;">Wipe dictation history</h3>
+  <p class="muted small">
+    Removes all dictations from the local database. Custom vocabulary, snippets,
+    style profiles, transforms, and scratchpads are preserved.
+  </p>
+  <form method="post" action="/privacy/wipe" class="settings-form"
+        onsubmit="return confirm('Delete ALL dictation history? This cannot be undone.');">
+    <label>
+      <span>Type <code>WIPE</code> to confirm</span>
+      <input type="text" name="confirm" value="" placeholder="WIPE">
+    </label>
+    <div class="actions">
+      <button type="submit" class="btn danger">Wipe dictation history</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

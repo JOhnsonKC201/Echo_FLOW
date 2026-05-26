@@ -38,14 +38,19 @@ def _maybe_reload_config(app_ref) -> None:
 
 
 # Sections in sidebar order, must match base.html nav.
+# PR-E reorder: Commands promoted out of /settings/experimental to top-level
+# (between Transforms and Scratchpad); Privacy promoted out of /settings to
+# top-level (between Scratchpad and Settings).
 SECTIONS = [
     ("home", "Home", "/", "home.html"),
-    ("insights", "Insights", "/insights", "insights.html"),
+    ("insights", "Outcomes", "/insights", "insights.html"),
     ("dictionary", "Dictionary", "/dictionary", "dictionary.html"),
     ("snippets", "Snippets", "/snippets", "snippets.html"),
     ("style", "Style", "/style", "style.html"),
     ("transforms", "Transforms", "/transforms", "transforms.html"),
+    ("commands", "Commands", "/commands", "commands.html"),
     ("scratchpad", "Scratchpad", "/scratchpad", "scratchpad_list.html"),
+    ("privacy", "Privacy", "/privacy", "privacy.html"),
     ("settings", "Settings", "/settings/general", "settings/general.html"),
     ("notifications", "Notifications", "/notifications", "notifications.html"),
 ]
@@ -635,6 +640,90 @@ def make_app(app_ref):
             msg = f"Error: {e}"
         back = _req.form.get("back", "/scratchpad")
         return redirect(f"{back}?flash={msg}")
+
+    # --- Commands (PR-E top-level promotion of Phase 13) ----------------
+    @flask_app.get("/commands")
+    def commands_page():
+        from . import commands_view as _cv
+        from flask import request as _req
+        history = getattr(app_ref, "history", None)
+        data = _cv.page_data(app_ref.cfg, history)
+        return render_template(
+            "commands.html", sections=SECTIONS, active="commands",
+            theme=dcfg.get("theme", "dark"),
+            data=data, flash=_req.args.get("flash", ""),
+        )
+
+    # --- Privacy (PR-E first-class promotion) ---------------------------
+    @flask_app.get("/privacy")
+    def privacy_page():
+        from . import privacy as _priv
+        from flask import request as _req
+        cfg_path = Path(getattr(app_ref, "cfg_path", "config.yaml"))
+        history = getattr(app_ref, "history", None)
+        db_path_str = (app_ref.cfg.get("history", {}) or {}).get("db_path", "data/history.db")
+        db_path = (cfg_path.parent / db_path_str).resolve() if not Path(db_path_str).is_absolute() else Path(db_path_str)
+        data_dir = (cfg_path.parent / "data").resolve()
+        ledger = _priv.ledger(app_ref.cfg, db_path, cfg_path, data_dir)
+        last_cfg_human = _priv.human_age(ledger["last_config_write"])
+        return render_template(
+            "privacy.html", sections=SECTIONS, active="privacy",
+            theme=dcfg.get("theme", "dark"),
+            ledger=ledger,
+            db_size_human=_priv.humanize_bytes(ledger["db_size_bytes"]),
+            audio_size_human=_priv.humanize_bytes(ledger["audio_size_bytes"]),
+            last_cfg_human=last_cfg_human,
+            flash=_req.args.get("flash", ""),
+        )
+
+    @flask_app.post("/privacy/wipe")
+    def privacy_wipe():
+        from flask import request as _req, redirect
+        if (_req.form.get("confirm", "") or "").strip() != "WIPE":
+            return redirect('/privacy?flash=Type "WIPE" in the confirm box to proceed.')
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/privacy?flash=History disabled — nothing to wipe.")
+        try:
+            with history.conn:
+                history.conn.execute("DELETE FROM dictations")
+            return redirect("/privacy?flash=Dictation history wiped.")
+        except Exception as e:
+            _log.warning("privacy wipe failed: %s", e)
+            return redirect(f"/privacy?flash=Error: {e}")
+
+    @flask_app.get("/privacy/export.zip")
+    def privacy_export():
+        from . import privacy as _priv
+        from flask import send_file
+        import io
+        cfg_path = Path(getattr(app_ref, "cfg_path", "config.yaml"))
+        db_path_str = (app_ref.cfg.get("history", {}) or {}).get("db_path", "data/history.db")
+        db_path = (cfg_path.parent / db_path_str).resolve() if not Path(db_path_str).is_absolute() else Path(db_path_str)
+        data = _priv.build_export_zip(cfg_path, db_path)
+        return send_file(
+            io.BytesIO(data), mimetype="application/zip",
+            as_attachment=True, download_name="echo-flow-export.zip",
+        )
+
+    @flask_app.post("/privacy/open-folder")
+    def privacy_open_folder():
+        from flask import redirect
+        import subprocess, sys
+        cfg_path = Path(getattr(app_ref, "cfg_path", "config.yaml"))
+        data_dir = (cfg_path.parent / "data").resolve()
+        try:
+            data_dir.mkdir(parents=True, exist_ok=True)
+            if sys.platform == "win32":
+                subprocess.Popen(["explorer", str(data_dir)], close_fds=True)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(data_dir)], close_fds=True)
+            else:
+                subprocess.Popen(["xdg-open", str(data_dir)], close_fds=True)
+            return redirect("/privacy?flash=Opening data folder…")
+        except Exception as e:
+            _log.warning("open data folder failed: %s", e)
+            return redirect(f"/privacy?flash=Could not open: {e}")
 
     # --- Settings (Phase 8) ---------------------------------------------
     from . import settings_routes as _settings

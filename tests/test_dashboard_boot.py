@@ -39,7 +39,9 @@ SECTION_PATHS = [
     "/snippets",
     "/style",
     "/transforms",
+    "/commands",
     "/scratchpad",
+    "/privacy",
     "/settings/general",
     "/notifications",
 ]
@@ -52,9 +54,10 @@ def test_section_returns_200_with_sidebar(path):
     assert r.status_code == 200, f"{path} -> {r.status_code}"
     body = r.get_data(as_text=True)
     # Every page extends base.html which includes the sidebar nav.
+    # PR-D renamed "Insights" → "Outcomes" in the nav.
     assert "Echo Flow" in body
     assert "nav-item" in body
-    assert "Home" in body and "Insights" in body and "Settings" in body
+    assert "Home" in body and "Outcomes" in body and "Settings" in body
 
 
 def test_healthz_returns_ok():

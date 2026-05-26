@@ -202,28 +202,11 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         return redirect("/settings/experimental?flash=Saved.")
 
     # ---- Privacy -----------------------------------------------------------
+    # PR-E: Privacy is now a top-level /privacy page. /settings/privacy
+    # redirects there. The wipe POST below stays as a back-compat alias.
     @flask_app.get("/settings/privacy")
     def settings_privacy():
-        cfg = app_ref.cfg
-        wh = cfg.get("whisper", {}) or {}
-        cu = cfg.get("cleanup", {}) or {}
-        mb = cfg.get("mobile", {}) or {}
-        hist = cfg.get("history", {}) or {}
-        count = 0
-        history = getattr(app_ref, "history", None)
-        if history is not None and getattr(history, "conn", None) is not None:
-            try:
-                count = history.conn.execute("SELECT COUNT(*) FROM dictations").fetchone()[0]
-            except Exception:
-                count = 0
-        status = {
-            "whisper_backend": wh.get("backend", "local"),
-            "cleanup_provider": cu.get("provider", "ollama"),
-            "db_path": hist.get("db_path", "data/history.db"),
-            "dictation_count": count,
-            "mobile_enabled": bool(mb.get("enabled", False)),
-        }
-        return _render("privacy", status=status)
+        return redirect("/privacy", code=302)
 
     @flask_app.post("/settings/privacy/wipe")
     def settings_privacy_wipe():

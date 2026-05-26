@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Commands — Echo Flow{% endblock %}
+{% block content %}
+<h1 class="welcome">Commands</h1>
+<div class="muted small" style="margin: 4px 0 14px;">
+  Voice-fire keyboard shortcuts. Allowlist-only — voice can never type arbitrary text.
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+{% if not data.enabled %}
+  <div class="restart-banner">
+    Command Mode is off.
+    <a href="/settings/experimental">Enable it in Settings → Experimental</a> to start firing voice commands.
+  </div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <h2>How to fire a command</h2>
+    <span class="num muted">prefix: {{ data.prefix }}</span>
+  </div>
+  <div class="sub">Speak the prefix word, then a command. Examples:</div>
+  <pre class="transform-prompt"><span class="diff-add">{{ data.prefix }}, save</span>            → fires Ctrl+S
+<span class="diff-add">{{ data.prefix }} scroll down</span>     → Page Down
+<span class="diff-add">{{ data.prefix }}, copy that</span>      → Ctrl+C</pre>
+</div>
+
+<div class="card">
+  <h2>Supported commands <span class="muted small num">{{ data.supported|length }}</span></h2>
+  <ul class="cmd-list">
+    {% for label in data.supported %}<li>{{ label }}</li>{% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Recent commands <span class="muted small num">{{ data.recent|length }}</span></h2>
+  {% if data.recent %}
+    <table class="kv-table">
+      <thead>
+        <tr><th>Time</th><th>Spoken</th><th>Action</th><th>OK</th></tr>
+      </thead>
+      <tbody>
+        {% for r in data.recent %}
+          <tr>
+            <td class="num">{{ r.ts_human }}</td>
+            <td>{{ r.body }}</td>
+            <td>
+              {% if r.action_type == "unknown" %}
+                <span class="muted">unrecognized</span>
+              {% else %}
+                <code>{{ r.action_type }} {{ r.action_value }}</code>
+                {% if r.label %}<span class="muted small">({{ r.label }})</span>{% endif %}
+              {% endif %}
+            </td>
+            <td>
+              {% if r.ok %}<span style="color: var(--accent);">✓</span>{% else %}<span style="color: var(--danger);">✕</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted small">No commands fired yet. Try saying "<span class="num">{{ data.prefix }}, save</span>" while Command Mode is on.</div>
+  {% endif %}
+</div>
+{% endblock %}
