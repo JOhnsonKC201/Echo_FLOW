@@ -62,6 +62,10 @@ cleanup:
     # Needs GROQ_API_KEY in the daemon's environment.
     teacher_enabled: false   # opt-in; flip in dashboard once you trust the loop
     teacher_model: ""        # blank = use cleanup.groq.model; or pin e.g. "llama-3.3-70b-versatile"
+    teacher_min_chars: 30    # skip trivially-short dictations to save quota
+    teacher_sample_rate: 1.0 # 0.0–1.0; fraction of dictations to send to teacher
+    teacher_quality_gate: true   # only persist teacher pair if it grades >= user pair
+    teacher_as_fallback: true    # use teacher as last-resort cleanup if local providers fail
     trust_teacher: true      # include teacher pairs as few-shot examples + vocab source
     trust_mobile: false      # include mobile-bridge pairs (default OFF — untrusted LAN)
     # RAG retrieval: pick SEMANTICALLY similar past dictations (smarter than recency)
@@ -79,6 +83,13 @@ cleanup:
   groq:
     base_url: "https://api.groq.com/openai/v1/chat/completions"
     model: "llama-3.3-70b-versatile"   # fast + capable for PE rewrites
+    timeout_sec: 12.0
+  # Cloud — Anthropic, used ONLY by Prompt-Engineering mode when
+  # prompt_engineering.provider = "anthropic". Reads ANTHROPIC_API_KEY.
+  anthropic:
+    base_url: "https://api.anthropic.com/v1/messages"
+    model: "claude-haiku-4-5-20251001"   # fast Haiku 4.5; swap to Sonnet for higher quality
+    anthropic_version: "2023-06-01"
     timeout_sec: 12.0
   # "learned" provider: LLM-free cleanup. Applies vocab + high-confidence learned patterns only.
   learned:
@@ -127,10 +138,10 @@ cleanup:
 # short spoken ideas to Claude Code / ChatGPT.
 prompt_engineering:
   enabled: true
-  provider: "groq"               # PE mode allowed to use cloud (Groq). Regular dictation stays local.
+  provider: groq               # PE mode allowed to use cloud (Groq). Regular dictation stays local.
   fallback_provider: "ollama"    # invoked only if Groq raises (no key, rate-limit, network)
   oneshot_combo: "ctrl+shift+alt"  # arm prompt mode for the NEXT dictation only; "" to disable
-  audience: "claude-code"        # claude-code | chatgpt | generic — picks system-prompt variant
+  audience: claude-code        # claude-code | chatgpt | generic — picks system-prompt variant
   max_output_tokens: 700         # room for richer polish on complex multi-component dictations without inviting PRD-style padding
 
 inject:

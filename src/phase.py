@@ -39,7 +39,14 @@ def _dictation_count(db_path: str) -> int:
         if not os.path.exists(db_path):
             return 0
         conn = sqlite3.connect(db_path)
-        cur = conn.execute("SELECT COUNT(*) FROM dictations")
+        # Count only real dictations toward self-sufficiency. Teacher rows
+        # are background distillations of existing dictations — counting
+        # them would let a chatty user trip the phase transition without
+        # actually accumulating new spoken evidence. Mobile rows count
+        # because they're real dictations on a trusted LAN.
+        cur = conn.execute(
+            "SELECT COUNT(*) FROM dictations WHERE source != 'teacher'"
+        )
         return int(cur.fetchone()[0])
     except Exception as e:
         _log.exception(f"Suppressed in _dictation_count: {e}")

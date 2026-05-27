@@ -137,3 +137,61 @@ def test_personal_vocabulary_excludes_teacher_when_distrusted(temp_db):
     learn_mod._vocab_cache = None
     vocab = learner.personal_vocabulary(10)
     assert "Kubernetes" not in vocab
+
+
+# ---------- PatternMiner origin attribution ----------------------------------
+
+def test_pattern_miner_attributes_user_vs_teacher_counts(tmp_path):
+    """user_count and teacher_count track which source taught each pattern."""
+    import sqlite3
+    from src.learn import PatternMiner
+    db = str(tmp_path / "pat.db")
+    miner = PatternMiner(db)
+    miner.record("hello jonson", "hello Johnson", source="user")
+    miner.record("hi jonson", "hi Johnson", source="teacher")
+    miner.record("call jonson", "call Johnson", source="teacher")
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT user_count, teacher_count FROM learned_patterns "
+        "WHERE trigger='jonson' AND replacement='Johnson'"
+    ).fetchone()
+    assert row == (1, 2)
+
+
+def test_pattern_miner_default_source_is_user(tmp_path):
+    """Backward-compat: existing callers that omit source still count as user."""
+    import sqlite3
+    from src.learn import PatternMiner
+    db = str(tmp_path / "pat.db")
+    miner = PatternMiner(db)
+    miner.record("hello jonson", "hello Johnson")  # no source kwarg
+    conn = sqlite3.connect(db)
+    row = conn.execute(
+        "SELECT user_count, teacher_count FROM learned_patterns "
+        "WHERE trigger='jonson'"
+    ).fetchone()
+    assert row == (1, 0)
+
+
+# ---------- Anthropic provider routing ---------------------------------------
+
+def test_anthropic_provider_is_routed_in_pe_mode(monkeypatch):
+    """PE mode (provider_override set) allows anthropic; otherwise blocked."""
+    from src.cleanup import Cleaner
+    cfg = {
+        "enabled": True, "provider": "ollama",
+        "anthropic": {"model": "claude-haiku-4-5-20251001"},
+        "ollama": {"model": "x"},
+        "groq": {"model": "y"},
+    }
+    c = Cleaner(cfg)
+    calls = {"anthropic": 0, "ollama": 0}
+    monkeypatch.setattr(Cleaner, "_via_anthropic",
+                        lambda self, system, text, max_tokens=None: (calls.__setitem__("anthropic", calls["anthropic"] + 1) or "ANT OUT"))
+    monkeypatch.setattr(Cleaner, "_via_ollama",
+                        lambda self, system, text, max_tokens=None, style="default": (calls.__setitem__("ollama", calls["ollama"] + 1) or "OLL OUT"))
+    # In PE mode with explicit override, anthropic should be called.
+    out, _ = c.clean("dictate this", style="prompt", provider_override="anthropic")
+    assert calls["anthropic"] == 1
+    assert "ANT" in out
+

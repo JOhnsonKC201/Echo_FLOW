@@ -14,6 +14,49 @@ import sqlite3
 import time
 
 
+def teacher_compare_rows(conn: sqlite3.Connection, n: int = 25) -> list[dict]:
+    """Pair each recent teacher row with its source user dictation.
+
+    Joins dictations on raw_text — for every source='teacher' row we find the
+    most-recent non-teacher row with the same raw_text. Lets the dashboard
+    show "you said X, you cleaned it Y, the teacher cleaned it Z" side-by-side
+    so the user can audit (and eventually approve/reject) what the teacher
+    is contributing to learning.
+    """
+    rows = conn.execute(
+        """
+        SELECT t.id, t.ts, t.raw_text, t.cleaned_text AS teacher_cleaned,
+               (SELECT u.cleaned_text FROM dictations u
+                  WHERE u.source != 'teacher' AND u.raw_text = t.raw_text
+                  ORDER BY u.id DESC LIMIT 1) AS user_cleaned,
+               (SELECT u.id FROM dictations u
+                  WHERE u.source != 'teacher' AND u.raw_text = t.raw_text
+                  ORDER BY u.id DESC LIMIT 1) AS user_id,
+               t.style, t.quality_score
+        FROM dictations t
+        WHERE t.source = 'teacher'
+        ORDER BY t.id DESC
+        LIMIT ?
+        """,
+        (int(n),),
+    ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        out.append({
+            "teacher_id": r[0],
+            "ts": r[1] or 0.0,
+            "ts_human": format_ts(r[1] or 0.0),
+            "raw_text": r[2] or "",
+            "teacher_cleaned": r[3] or "",
+            "user_cleaned": r[4] or "",
+            "user_id": r[5],
+            "style": r[6] or "default",
+            "quality_score": r[7],
+            "differs_from_user": (r[3] or "") != (r[4] or "") if r[4] else True,
+        })
+    return out
+
+
 def inbox_rows(conn: sqlite3.Connection, n: int = 15) -> list[dict]:
     """Return the last N dictations as a list of dicts with everything the
     template needs. Newest first."""

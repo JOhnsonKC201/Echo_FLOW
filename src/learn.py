@@ -212,6 +212,14 @@ def _ensure_patterns_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_patterns_trigger ON learned_patterns(trigger)"
     )
+    # Origin attribution (additive). Lets the dashboard surface which
+    # patterns came from the user vs. the teacher LLM, and lets us
+    # selectively wipe teacher-only patterns if they go sideways.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(learned_patterns)").fetchall()}
+    if "user_count" not in cols:
+        conn.execute("ALTER TABLE learned_patterns ADD COLUMN user_count INTEGER NOT NULL DEFAULT 0")
+    if "teacher_count" not in cols:
+        conn.execute("ALTER TABLE learned_patterns ADD COLUMN teacher_count INTEGER NOT NULL DEFAULT 0")
 
 
 def _tokenize(s: str) -> list[str]:
@@ -251,8 +259,13 @@ class PatternMiner:
     def _conn(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
-    def record(self, raw: str, cleaned: str) -> int:
+    def record(self, raw: str, cleaned: str, source: str = "user") -> int:
         """Increment success/total counts for every 1↔1 substitution observed.
+
+        `source` is "user" for desktop/mobile dictations (where the cleanup is
+        what actually got pasted) and "teacher" for background-distilled
+        cleanups from a stronger model. Both contribute to confidence equally;
+        the breakdown is tracked in user_count / teacher_count for auditing.
 
         Returns count of pairs recorded. Called after every dictation.
         """
@@ -265,17 +278,24 @@ class PatternMiner:
         now = _t.time()
         conn = self._conn()
         _ensure_patterns_table(conn)
+        is_teacher = (source == "teacher")
         for a, b in pairs:
             trigger = a.lower()
             # success = how often THIS replacement was the cleaned form
             conn.execute(
                 """
-                INSERT INTO learned_patterns (trigger, replacement, success, total, updated_at)
-                VALUES (?, ?, 1, 1, ?)
+                INSERT INTO learned_patterns
+                    (trigger, replacement, success, total, updated_at, user_count, teacher_count)
+                VALUES (?, ?, 1, 1, ?, ?, ?)
                 ON CONFLICT(trigger, replacement) DO UPDATE SET
-                    success = success + 1, total = total + 1, updated_at = excluded.updated_at
+                    success = success + 1,
+                    total = total + 1,
+                    updated_at = excluded.updated_at,
+                    user_count = user_count + ?,
+                    teacher_count = teacher_count + ?
                 """,
-                (trigger, b, now),
+                (trigger, b, now, 0 if is_teacher else 1, 1 if is_teacher else 0,
+                 0 if is_teacher else 1, 1 if is_teacher else 0),
             )
             # All OTHER replacements for the same trigger see total++ but not success.
             conn.execute(

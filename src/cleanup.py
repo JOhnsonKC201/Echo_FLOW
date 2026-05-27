@@ -178,6 +178,36 @@ def _polish_text(s: str) -> str:
     if not s or not s.strip():
         return s
     s = s.strip()
+    # Defensive: strip the "comma-storm" failure mode where Whisper's decoder
+    # was anchored on a comma-separated initial_prompt and emitted every
+    # word capitalized + comma-separated ("Hello, World, Today."). Heuristic:
+    # ≥4 commas AND the average gap between commas is ≤2 words AND a high
+    # fraction of words are Capitalized → flatten the commas back to spaces.
+    if s.count(",") >= 3:
+        # Strip trailing terminator so the last cell is comparable.
+        body = s.rstrip(".?!").rstrip()
+        cells = [c.strip() for c in body.split(",") if c.strip()]
+        # Signature: every cell is a very short alphabetic chunk (1-2 words,
+        # mostly ≤ 12 chars). Real prose comma lists have at least some
+        # longer phrases between commas.
+        def _is_storm_cell(c: str) -> bool:
+            stripped = c.rstrip(".?!").strip("'\"")
+            words = stripped.split()
+            if not (1 <= len(words) <= 2):
+                return False
+            # Alphabetic / apostrophe-only (allow "don't"), short.
+            if not all(w.replace("'", "").isalpha() for w in words):
+                return False
+            return len(stripped) <= 14
+        storm_cells = sum(1 for c in cells if _is_storm_cell(c))
+        if cells and storm_cells / len(cells) >= 0.8:
+            s = _re.sub(r"\s*,\s*", " ", s)
+            s = _re.sub(r"\s+", " ", s).strip()
+            # Re-lowercase mid-sentence Title Case so the sentence cap below
+            # is the only thing assigning capitalization.
+            def _lower_mid(m: "_re.Match[str]") -> str:
+                return m.group(1) + m.group(2).lower()
+            s = _re.sub(r"(\s)([A-Z][a-z]+)", _lower_mid, s)
     # Collapse internal whitespace.
     s = _re.sub(r"\s+", " ", s)
     # Capitalize first letter of every sentence.
@@ -464,7 +494,7 @@ class Cleaner:
             # and dispatched with an explicit provider_override) is allowed
             # to call a cloud provider. Regular cleanup stays local.
             pe_allowed = (style == "prompt" and provider_override is not None)
-            if name in ("anthropic", "openai") or (name == "groq" and not pe_allowed):
+            if name == "openai" or (name in ("anthropic", "groq") and not pe_allowed):
                 _log.warning(
                     "cleanup.provider=%s is a cloud provider; Echo Flow "
                     "is local-only outside Prompt-Engineering mode. "
@@ -473,6 +503,8 @@ class Cleaner:
                 name = "ollama"
             if name == "groq":
                 out = self._via_groq(prompt, text, max_tokens=max_tokens_override)
+            elif name == "anthropic":
+                out = self._via_anthropic(prompt, text, max_tokens=max_tokens_override)
             elif name == "ollama":
                 out = self._via_ollama(prompt, text, max_tokens=max_tokens_override, style=style)
             elif name == "learned":
@@ -501,22 +533,43 @@ class Cleaner:
                 return self._expand_snippets(text)
             return self._expand_snippets(out)
 
+        # Teacher-as-fallback: if learning.teacher_enabled is on, the teacher
+        # model is a legitimate last-resort cleanup for non-PE dictations
+        # when local providers fail. Tried AFTER any explicit fallback.
+        learning_cfg = self.cfg.get("learning", {}) or {}
+        teacher_fallback_ok = (
+            style != "prompt"
+            and bool(learning_cfg.get("teacher_enabled", False))
+            and bool(learning_cfg.get("teacher_as_fallback", True))
+        )
+
         try:
             return _run_provider(provider), False
         except Exception as primary_err:
-            if not fallback_provider or fallback_provider == provider:
-                _log.error("provider error: %s; falling back to raw", primary_err)
-                notify.notify("Echo Flow", f"Cleanup failed ({type(primary_err).__name__}); pasted raw.", "error")
-                return self._expand_snippets(text), False
-            _log.warning("primary provider %s failed (%s); retrying via %s",
-                         provider, primary_err, fallback_provider)
-            try:
-                return _run_provider(fallback_provider), False
-            except Exception as fb_err:
-                _log.error("fallback provider %s also failed: %s; pasted raw",
-                           fallback_provider, fb_err)
-                notify.notify("Echo Flow", "Cleanup failed (both providers); pasted raw.", "error")
-                return self._expand_snippets(text), False
+            tried_fallback = False
+            if fallback_provider and fallback_provider != provider:
+                _log.warning("primary provider %s failed (%s); retrying via %s",
+                             provider, primary_err, fallback_provider)
+                tried_fallback = True
+                try:
+                    return _run_provider(fallback_provider), False
+                except Exception as fb_err:
+                    _log.warning("fallback provider %s also failed: %s",
+                                 fallback_provider, fb_err)
+            if teacher_fallback_ok:
+                try:
+                    out = self.teach(text, style=style)
+                    if out:
+                        _log.info("teacher served as cleanup fallback")
+                        return self._expand_snippets(out), False
+                except Exception as t_err:
+                    _log.warning("teacher fallback failed: %s", t_err)
+            _log.error(
+                "cleanup failed (primary=%s, fallback_tried=%s); pasted raw",
+                provider, tried_fallback,
+            )
+            notify.notify("Echo Flow", "Cleanup failed; pasted raw.", "error")
+            return self._expand_snippets(text), False
 
     def _via_ollama(self, system: str, text: str, *,
                     max_tokens: int | None = None,
@@ -626,6 +679,47 @@ class Cleaner:
             )
             return None
         return out
+
+    def _via_anthropic(self, system: str, text: str, *,
+                       max_tokens: int | None = None) -> str:
+        """Cloud path — Anthropic Messages API. PE mode only.
+
+        Reads ANTHROPIC_API_KEY from env. Model and timeout come from
+        cleanup.anthropic in config.yaml (sensible defaults applied).
+        """
+        import os
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY env var is empty; cannot call Anthropic. "
+                "Set it via setx or in your shell, then restart the daemon."
+            )
+        ac = self.cfg.get("anthropic", {}) or {}
+        url = ac.get("base_url", "https://api.anthropic.com/v1/messages")
+        model = ac.get("model", "claude-haiku-4-5-20251001")
+        timeout = float(ac.get("timeout_sec", 12.0))
+        r = self._session.post(
+            url,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": ac.get("anthropic_version", "2023-06-01"),
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "system": system,
+                "max_tokens": int(max_tokens) if max_tokens else 700,
+                "temperature": 0.3,
+                "messages": [{"role": "user", "content": text}],
+            },
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        payload = r.json()
+        # Messages API returns content as a list of blocks; pull text blocks.
+        blocks = payload.get("content") or []
+        out_parts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
+        return "".join(out_parts).strip()
 
     def warmup(self) -> None:
         """Preload the Ollama model so the first dictation isn't slow.

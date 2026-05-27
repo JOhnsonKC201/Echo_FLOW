@@ -123,6 +123,35 @@ else:
 CONFIG_PATH = USER_ROOT / "config.yaml"
 
 
+def _format_initial_prompt(terms: list[str]) -> str:
+    """Build a Whisper initial_prompt that doesn't poison output style.
+
+    faster-whisper feeds initial_prompt to the decoder as "previous text",
+    so the decoder will continue that style. Two failure modes to avoid:
+      1. Comma-separated lists ("foo, bar, baz") → Whisper produces
+         comma-separated output ("Hello, world, today.")
+      2. Bare label prefixes ("Vocabulary:") → Whisper sometimes echoes
+         the label.
+    We wrap the terms in a complete sentence ending with a period so the
+    decoder treats them as words seen in fluent prose, not as a list.
+    Space-separated only — no commas anywhere in the prompt.
+    """
+    if not terms:
+        return ""
+    # Dedupe while preserving order; strip empties.
+    seen = set()
+    cleaned: list[str] = []
+    for t in terms:
+        t = (t or "").strip()
+        if not t or t in seen:
+            continue
+        seen.add(t)
+        cleaned.append(t)
+    if not cleaned:
+        return ""
+    return "The speaker often uses words like " + " ".join(cleaned) + "."
+
+
 def load_config() -> dict:
     # First-run on a frozen install: seed user config from the bundled default.
     if not CONFIG_PATH.exists() and (BUNDLE_ROOT / "config.yaml").exists():
@@ -226,6 +255,10 @@ class App:
         self.pattern_miner = PatternMiner(hc["db_path"]) if self.history else None
         if self.pattern_miner and self.retriever:
             self.cleaner.attach_learning(self.pattern_miner, self.retriever)
+        # Periodic pattern-decay: prune stale learned_patterns nightly so the
+        # learned provider stays sharp instead of accumulating dead weight.
+        if self.pattern_miner:
+            self._start_pattern_decay_thread()
 
         # Wire dashboard-managed snippets into the cleaner so user edits in
         # the Snippets UI take effect on the next dictation. Falls back to
@@ -250,13 +283,19 @@ class App:
         # Bias the Whisper decoder with the user's custom vocabulary so
         # proper nouns + technical terms are heard correctly the first time.
         # Built once at startup (cached on the Transcriber's WhisperConfig).
+        #
+        # CRITICAL: initial_prompt is fed to the decoder as "previous text"
+        # — Whisper continues that style. A comma-separated list teaches
+        # Whisper to emit comma-separated output ("Hello, world, today.").
+        # We therefore use SPACE-separated terms wrapped in a complete
+        # sentence that ends with a period, so the decoder doesn't anchor
+        # on list punctuation.
         try:
             vocab = self._build_custom_vocabulary()
             if vocab:
                 # Keep well under faster-whisper's ~224-token initial_prompt
                 # budget. Capping at 80 terms is roughly 100-160 tokens.
-                ip = "Vocabulary: " + ", ".join(vocab[:80])
-                self.transcriber.cfg.initial_prompt = ip
+                self.transcriber.cfg.initial_prompt = _format_initial_prompt(vocab[:80])
                 _log.info("whisper initial_prompt set with %d vocab terms", min(80, len(vocab)))
         except Exception as e:
             _log.warning("custom vocabulary biasing skipped: %s", e)
@@ -393,7 +432,7 @@ class App:
         """
         try:
             vocab = self._build_custom_vocabulary()
-            ip = ("Vocabulary: " + ", ".join(vocab[:80])) if vocab else None
+            ip = _format_initial_prompt(vocab[:80]) if vocab else None
             if hasattr(self.transcriber, "cfg"):
                 self.transcriber.cfg.initial_prompt = ip
                 _log.info(
@@ -978,6 +1017,34 @@ class App:
                 pretty.append(p.upper() if len(p) == 1 else p.title())
         return " + ".join(pretty)
 
+    def _start_pattern_decay_thread(self) -> None:
+        """Daemon thread that decays learned_patterns once every 24h.
+
+        Calls PatternMiner.decay_stale() with the configured half-life so
+        patterns the user stops reinforcing fade out instead of persisting
+        forever. Sleep-based loop; quietly no-ops on errors.
+        """
+        lc = ((self.cfg.get("cleanup") or {}).get("learned") or {})
+        half_life = float(lc.get("pattern_half_life_days", 14.0))
+        interval_sec = float(lc.get("pattern_decay_interval_sec", 24 * 3600))
+        if half_life <= 0 or interval_sec <= 0:
+            return
+
+        def _loop():
+            import time as _t
+            # Wait once on startup so the daemon comes up fast.
+            _t.sleep(min(interval_sec, 300.0))
+            while True:
+                try:
+                    pruned, kept = self.pattern_miner.decay_stale(half_life_days=half_life)
+                    _log.info("pattern decay: pruned=%d kept=%d (half-life %.1fd)",
+                              pruned, kept, half_life)
+                except Exception as e:
+                    _log.warning("pattern decay failed: %s", e)
+                _t.sleep(interval_sec)
+
+        threading.Thread(target=_loop, daemon=True, name="pattern-decay").start()
+
     def _spawn_teacher_distillation(self, *, raw: str, user_cleaned: str,
                                     style: str, window_title: str,
                                     lang: str, duration_ms: int) -> None:
@@ -997,12 +1064,58 @@ class App:
             return
         if not raw or not raw.strip():
             return
+        # Cost / rate guards: skip trivially-short dictations and respect
+        # the user-configured sample rate so heavy use doesn't burn quota.
+        min_chars = int(lc.get("teacher_min_chars", 30))
+        if len(raw.strip()) < min_chars:
+            return
+        try:
+            sample_rate = float(lc.get("teacher_sample_rate", 1.0))
+        except (TypeError, ValueError):
+            sample_rate = 1.0
+        if sample_rate < 1.0:
+            import random as _r
+            if _r.random() > max(0.0, sample_rate):
+                return
 
         def _run():
             try:
                 teacher_out = self.cleaner.teach(raw, style=style)
                 if not teacher_out or teacher_out == raw or teacher_out == user_cleaned:
                     return
+                # Snippet-aware: run snippet expansion on the teacher's output
+                # so it's directly comparable to the user's cleaned text and
+                # so PatternMiner doesn't learn around snippet triggers.
+                try:
+                    teacher_out = self.cleaner._expand_snippets(teacher_out)
+                except Exception:
+                    pass
+                # Quality gate: grade both and only persist when the teacher
+                # is at least as good as the user's local cleanup. Prevents
+                # a flaky teacher from poisoning the learning pool.
+                require_gate = bool(lc.get("teacher_quality_gate", True))
+                if require_gate:
+                    try:
+                        from . import grade as grade_mod
+                        user_q = grade_mod.grade(
+                            raw=raw, cleaned=user_cleaned, whisper_meta=None,
+                            retriever=self.retriever, pattern_miner=self.pattern_miner,
+                            learner=self.learner, weights=self._grading_weights,
+                        )
+                        teach_q = grade_mod.grade(
+                            raw=raw, cleaned=teacher_out, whisper_meta=None,
+                            retriever=self.retriever, pattern_miner=self.pattern_miner,
+                            learner=self.learner, weights=self._grading_weights,
+                        )
+                        if teach_q.overall < user_q.overall - 0.5:
+                            _log.info(
+                                "teacher rejected by quality gate "
+                                "(user=%.1f teacher=%.1f)",
+                                user_q.overall, teach_q.overall,
+                            )
+                            return
+                    except Exception as e:
+                        _log.warning("teacher quality gate failed (allowing): %s", e)
                 try:
                     self.history.log(
                         window_title=window_title,
@@ -1016,7 +1129,7 @@ class App:
                 except Exception as e:
                     _log.warning("teacher history log failed: %s", e)
                 try:
-                    self.pattern_miner.record(raw, teacher_out)
+                    self.pattern_miner.record(raw, teacher_out, source="teacher")
                 except Exception as e:
                     _log.warning("teacher pattern_miner.record failed: %s", e)
                 if self.learner:

@@ -181,6 +181,25 @@ def make_app(app_ref):
         # Anchor jump back to the rated card.
         return redirect(f"/#d-{did}")
 
+    @flask_app.get("/teacher")
+    def teacher_compare_view():
+        """Audit view: every recent teacher pair side-by-side with the user's cleanup."""
+        from . import inbox as _inbox
+        history = getattr(app_ref, "history", None)
+        rows: list = []
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                rows = _inbox.teacher_compare_rows(history.conn, n=50)
+            except Exception as e:
+                _log.warning("teacher compare query failed: %s", e)
+        return render_template(
+            "teacher_compare.html",
+            sections=SECTIONS, active="home",
+            theme=dcfg.get("theme", "dark"),
+            rows=rows,
+            flash=request.args.get("flash", ""),
+        )
+
     @flask_app.get("/inbox/<int:did>/edit")
     def inbox_edit_view(did: int):
         from flask import abort, request as _req

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Teacher review{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Teacher review</h2>
+    <div class="sub">
+      Recent teacher-distilled cleanups paired with your own.
+      The teacher (Groq llama-3.3-70b by default) re-cleans each dictation in the
+      background; pairs that pass the quality gate are kept and feed the
+      learned-pattern miner. Visit <code>Settings → Vibe</code> to turn the
+      teacher loop on/off.
+    </div>
+    {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+    {% if not rows %}
+      <p class="muted">No teacher pairs yet. Enable teacher distillation in
+      <a href="/settings/vibe">Settings → Vibe</a>, then dictate something to
+      generate the first one. To bootstrap from existing history, run
+      <code>python scripts/backfill_teacher.py --apply</code>.</p>
+    {% else %}
+      <table class="data-table" style="width:100%;">
+        <thead>
+          <tr>
+            <th style="width:140px;">When</th>
+            <th>Raw (what you said)</th>
+            <th>Your cleanup</th>
+            <th>Teacher cleanup</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td>
+                <div class="muted small">{{ r.ts_human }}</div>
+                <div class="muted small">{{ r.style }}</div>
+                {% if r.differs_from_user %}
+                  <span class="chip warn">differs</span>
+                {% else %}
+                  <span class="chip">match</span>
+                {% endif %}
+              </td>
+              <td>{{ r.raw_text }}</td>
+              <td>{{ r.user_cleaned or '—' }}</td>
+              <td><strong>{{ r.teacher_cleaned }}</strong></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
+{% endblock %}
