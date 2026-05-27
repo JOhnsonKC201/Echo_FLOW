@@ -217,6 +217,8 @@ class App:
                 max_examples=lc.get("max_examples", 6),
                 max_vocab_terms=lc.get("max_vocab_terms", 25),
                 min_example_chars=lc.get("min_example_chars", 12),
+                trust_mobile=bool(lc.get("trust_mobile", False)),
+                trust_teacher=bool(lc.get("trust_teacher", True)),
             ),
             retriever=self.retriever,
         ) if self.history else None
@@ -399,6 +401,13 @@ class App:
                     len(vocab[:80]),
                 )
             self._pe_cfg = self.cfg.get("prompt_engineering", {"enabled": False})
+            # Refresh learner trust flags so dashboard toggles (trust_teacher,
+            # trust_mobile) take effect on the next dictation without a restart.
+            if self.learner is not None:
+                lc = ((self.cfg.get("cleanup") or {}).get("learning") or {})
+                self.learner.cfg.trust_mobile = bool(lc.get("trust_mobile", False))
+                self.learner.cfg.trust_teacher = bool(lc.get("trust_teacher", True))
+                self.learner.invalidate_cache()
         except Exception as e:
             _log.warning("reload_config failed: %s", e)
 
@@ -784,6 +793,14 @@ class App:
                             self.pattern_miner.record(raw, cleaned)
                         except Exception as e:
                             print(f"[pattern_miner] failed: {e}")
+                    # Background teacher distillation: re-clean via a stronger
+                    # cloud model and store as source='teacher'. Off by default;
+                    # opt in via cleanup.learning.teacher_enabled.
+                    if not use_prompt:
+                        self._spawn_teacher_distillation(
+                            raw=raw, user_cleaned=cleaned, style=style,
+                            window_title=title, lang=lang, duration_ms=duration_ms,
+                        )
                 except Exception as e:
                     print(f"[log] failed: {e}")
             threading.Thread(target=_log_async, daemon=True).start()
@@ -960,6 +977,54 @@ class App:
             else:
                 pretty.append(p.upper() if len(p) == 1 else p.title())
         return " + ".join(pretty)
+
+    def _spawn_teacher_distillation(self, *, raw: str, user_cleaned: str,
+                                    style: str, window_title: str,
+                                    lang: str, duration_ms: int) -> None:
+        """Schedule a background teacher cleanup of `raw` and persist it.
+
+        Off by default. Enabled via cleanup.learning.teacher_enabled. Runs in
+        a daemon thread so it never blocks the live dictation path. The
+        teacher's output is stored as a second dictations row with
+        source='teacher' and also fed to the PatternMiner, so the LLM-free
+        learned provider benefits from both the user's edits and a stronger
+        cloud model's edits.
+        """
+        if not self.history or not self.pattern_miner or not self.cleaner:
+            return
+        lc = ((self.cfg.get("cleanup") or {}).get("learning") or {})
+        if not lc.get("teacher_enabled", False):
+            return
+        if not raw or not raw.strip():
+            return
+
+        def _run():
+            try:
+                teacher_out = self.cleaner.teach(raw, style=style)
+                if not teacher_out or teacher_out == raw or teacher_out == user_cleaned:
+                    return
+                try:
+                    self.history.log(
+                        window_title=window_title,
+                        style=style,
+                        language=lang,
+                        duration_ms=duration_ms,
+                        raw_text=raw,
+                        cleaned_text=teacher_out,
+                        source="teacher",
+                    )
+                except Exception as e:
+                    _log.warning("teacher history log failed: %s", e)
+                try:
+                    self.pattern_miner.record(raw, teacher_out)
+                except Exception as e:
+                    _log.warning("teacher pattern_miner.record failed: %s", e)
+                if self.learner:
+                    self.learner.invalidate_cache()
+            except Exception as e:
+                _log.warning("teacher distillation thread failed: %s", e)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def tray_open_dashboard(self):
         """Launch the PyWebView dashboard window in a detached subprocess.

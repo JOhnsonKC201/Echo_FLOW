@@ -54,6 +54,16 @@ cleanup:
     max_examples: 6          # few-shot pairs to include in the prompt
     max_vocab_terms: 25      # personal vocabulary entries
     min_example_chars: 12    # ignore trivially short dictations
+    # Teacher-model distillation: after each dictation, re-clean the raw
+    # text via a stronger cloud model (Groq llama-3.3-70b by default) in
+    # the background and store the result as source='teacher'. The pattern
+    # miner learns from teacher pairs alongside your own edits, so the
+    # system improves toward a stronger reference, not just toward you.
+    # Needs GROQ_API_KEY in the daemon's environment.
+    teacher_enabled: false   # opt-in; flip in dashboard once you trust the loop
+    teacher_model: ""        # blank = use cleanup.groq.model; or pin e.g. "llama-3.3-70b-versatile"
+    trust_teacher: true      # include teacher pairs as few-shot examples + vocab source
+    trust_mobile: false      # include mobile-bridge pairs (default OFF — untrusted LAN)
     # RAG retrieval: pick SEMANTICALLY similar past dictations (smarter than recency)
     retrieval:
       enabled: true

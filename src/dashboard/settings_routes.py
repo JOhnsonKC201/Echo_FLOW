@@ -148,6 +148,9 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "cleanup_enabled": bool(cu.get("enabled", True)),
             "skip_when_clean": bool(cu.get("skip_when_clean", True)),
             "learning_enabled": bool(learning.get("enabled", True)),
+            "teacher_enabled": bool(learning.get("teacher_enabled", False)),
+            "teacher_model": learning.get("teacher_model", "") or "",
+            "trust_teacher": bool(learning.get("trust_teacher", True)),
             "prompt_engineering_enabled": bool(pe.get("enabled", True)),
             "prompt_engineering_audience": pe.get("audience", "claude-code"),
             "prompt_engineering_provider": pe.get("provider", "groq"),
@@ -164,10 +167,17 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         provider = f.get("prompt_engineering_provider", "groq")
         if provider not in _PROVIDERS:
             provider = "groq"
+        teacher_model = (f.get("teacher_model", "") or "").strip()
+        # Keep it conservative — only Groq model names are sensible here.
+        if len(teacher_model) > 80:
+            teacher_model = teacher_model[:80]
         errs = _save_scalars(app_ref, [
             ("cleanup.enabled", _checkbox(f, "cleanup_enabled")),
             ("cleanup.skip_when_clean", _checkbox(f, "skip_when_clean")),
             ("cleanup.learning.enabled", _checkbox(f, "learning_enabled")),
+            ("cleanup.learning.teacher_enabled", _checkbox(f, "teacher_enabled")),
+            ("cleanup.learning.teacher_model", teacher_model),
+            ("cleanup.learning.trust_teacher", _checkbox(f, "trust_teacher")),
             ("prompt_engineering.enabled", _checkbox(f, "prompt_engineering_enabled")),
             ("prompt_engineering.audience", audience),
             ("prompt_engineering.provider", provider),

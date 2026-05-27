@@ -40,6 +40,12 @@ class LearningConfig:
     # dictations are excluded from few-shot examples and personal vocabulary so
     # untrusted LAN traffic cannot pollute the desktop's learned prompts.
     trust_mobile: bool = False
+    # When True (default), teacher-distilled cleanups (source='teacher') are
+    # eligible as few-shot examples and personal-vocab sources. The whole
+    # point of the teacher layer is to learn from a stronger model, so unlike
+    # `trust_mobile` this defaults ON — flip OFF to fall back to user-only
+    # learning while still recording teacher rows for review.
+    trust_teacher: bool = True
 
 
 class Learner:
@@ -55,7 +61,12 @@ class Learner:
         """Pull (raw, cleaned) pairs that differ enough to be instructive."""
         if not self.cfg.enabled:
             return []
-        source_filter = "" if self.cfg.trust_mobile else " AND source != 'mobile'"
+        excluded = []
+        if not self.cfg.trust_mobile:
+            excluded.append("'mobile'")
+        if not self.cfg.trust_teacher:
+            excluded.append("'teacher'")
+        source_filter = f" AND source NOT IN ({','.join(excluded)})" if excluded else ""
         try:
             cur = self._conn().execute(
                 "SELECT raw_text, cleaned_text FROM dictations "
@@ -87,7 +98,12 @@ class Learner:
         # Cache for 60s to avoid re-scanning on every dictation
         if _vocab_cache is not None and (time.time() - _vocab_cache_ts) < 60:
             return _vocab_cache[:limit]
-        source_filter = "" if self.cfg.trust_mobile else " WHERE source != 'mobile'"
+        excluded = []
+        if not self.cfg.trust_mobile:
+            excluded.append("'mobile'")
+        if not self.cfg.trust_teacher:
+            excluded.append("'teacher'")
+        source_filter = f" WHERE source NOT IN ({','.join(excluded)})" if excluded else ""
         try:
             cur = self._conn().execute(
                 "SELECT cleaned_text FROM dictations"

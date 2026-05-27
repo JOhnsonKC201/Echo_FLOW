@@ -579,6 +579,54 @@ class Cleaner:
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
 
+    def teach(self, raw_text: str, style: str = "default") -> str | None:
+        """Run the teacher model (Groq) on raw text and return its cleanup.
+
+        Background distillation path: the result is meant to be stored as a
+        second (raw, cleaned) pair with source='teacher' so PatternMiner can
+        learn from a stronger model alongside the user's local edits.
+
+        Returns the teacher's cleaned text, or None if disabled, misconfigured,
+        or the call failed. Never raises — teacher errors must not affect the
+        live dictation path.
+        """
+        if not raw_text or not raw_text.strip():
+            return None
+        if style == "prompt":
+            # PE rewrites aren't cleanup pairs — skip teaching on them.
+            return None
+        learning_cfg = self.cfg.get("learning", {}) or {}
+        if not learning_cfg.get("teacher_enabled", False):
+            return None
+        prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
+        # Teacher always speaks to a large cloud model; no size hint needed.
+        try:
+            # Allow a teacher_model override that's distinct from PE's groq.model.
+            teacher_model = (learning_cfg.get("teacher_model") or "").strip()
+            gc = dict(self.cfg.get("groq", {}) or {})
+            if teacher_model:
+                gc["model"] = teacher_model
+            saved = self.cfg.get("groq")
+            self.cfg["groq"] = gc
+            try:
+                out = self._via_groq(prompt, raw_text)
+            finally:
+                if saved is not None:
+                    self.cfg["groq"] = saved
+        except Exception as e:
+            _log.warning("teacher (groq) call failed: %s", e)
+            return None
+        out = (out or "").strip()
+        if not out or out == raw_text:
+            return None
+        if self._looks_hallucinated(raw_text, out):
+            _log.warning(
+                "teacher hallucination guard tripped (raw=%d out=%d); dropping",
+                len(raw_text), len(out),
+            )
+            return None
+        return out
+
     def warmup(self) -> None:
         """Preload the Ollama model so the first dictation isn't slow.
 

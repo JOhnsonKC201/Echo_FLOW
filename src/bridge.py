@@ -437,6 +437,19 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
                         app_ref.pattern_miner.record(raw, cleaned)
                     except Exception as e:
                         _log.warning("pattern miner failed: %s", e)
+                # Background teacher distillation also runs for mobile-sourced
+                # dictations so the user's phone benefits from the same
+                # learning loop. Gated by cleanup.learning.teacher_enabled.
+                _spawn_teacher = getattr(app_ref, "_spawn_teacher_distillation", None)
+                if callable(_spawn_teacher):
+                    try:
+                        _spawn_teacher(
+                            raw=raw, user_cleaned=cleaned, style=style,
+                            window_title=window_title, lang=lang,
+                            duration_ms=duration_ms,
+                        )
+                    except Exception as e:
+                        _log.warning("teacher spawn failed: %s", e)
             except Exception as e:
                 _log.warning("history write failed: %s", e)
 

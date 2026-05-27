@@ -19,6 +19,30 @@
         <input type="checkbox" name="learning_enabled" value="1" {% if values.learning_enabled %}checked{% endif %}>
         <span>Adaptive learning (use past corrections as few-shot examples)</span>
       </label>
+
+      <fieldset style="border:1px solid var(--border,#333); padding:10px 14px; margin:10px 0; border-radius:8px;">
+        <legend style="padding:0 6px;">Teacher model (distillation)</legend>
+        <div class="muted small" style="margin-bottom:8px;">
+          After each dictation, a stronger cloud LLM (Groq llama-3.3-70b by default)
+          re-cleans the raw text in the background. Its output is stored as a
+          <code>teacher</code> source pair so the system learns from a reference
+          model alongside your own edits. Needs <code>GROQ_API_KEY</code> set.
+        </div>
+        <label class="check">
+          <input type="checkbox" name="teacher_enabled" value="1" {% if values.teacher_enabled %}checked{% endif %}>
+          <span>Enable teacher-model distillation</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="trust_teacher" value="1" {% if values.trust_teacher %}checked{% endif %}>
+          <span>Trust teacher pairs (include in few-shot examples and personal vocabulary)</span>
+        </label>
+        <label>
+          <span>Teacher model (Groq)</span>
+          <input type="text" name="teacher_model" value="{{ values.teacher_model }}" placeholder="llama-3.3-70b-versatile">
+          <div class="muted small">Blank = use the same model as PE (<code>cleanup.groq.model</code>).</div>
+        </label>
+      </fieldset>
+
       <label class="check">
         <input type="checkbox" name="prompt_engineering_enabled" value="1" {% if values.prompt_engineering_enabled %}checked{% endif %}>
         <span>Prompt-engineering mode (one-shot hotkey rewrites dictation as engineered prompt)</span>
