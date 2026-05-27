@@ -3,114 +3,269 @@
 {% block content %}
 
 <style>
-  /* Wispr-style insights — scoped to this page so it can't leak. */
+  /* Premium Outcomes — scoped to this page so it can't leak. */
+
   .wf-header { display:flex; align-items:baseline; justify-content:space-between;
-               margin: 4px 0 14px; }
-  .wf-title  { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
-  .wf-tabs   { display:flex; gap:24px; margin: 4px 0 22px;
-               border-bottom: 1px solid var(--border); }
-  .wf-tab    { padding: 10px 0; font-size: 13px; font-weight:600; color: var(--muted);
+               margin: 4px 0 18px; position:relative; }
+  .wf-title  { font-size: 30px; font-weight: 700; letter-spacing: -0.025em;
+               background: linear-gradient(180deg, var(--text), color-mix(in oklab, var(--text) 80%, var(--accent) 20%));
+               -webkit-background-clip: text; background-clip: text;
+               -webkit-text-fill-color: transparent; color: transparent; }
+  .wf-header::after { content:""; position:absolute; left:0; right:0; bottom:-10px;
+                      height:1px; background: linear-gradient(90deg,
+                        color-mix(in oklab, var(--accent) 40%, transparent),
+                        var(--border) 30%, var(--border) 70%, transparent); }
+
+  .wf-tabs   { display:flex; gap:24px; margin: 16px 0 24px;
+               border-bottom: 1px solid var(--border); position:relative; }
+  .wf-tab    { padding: 10px 2px; font-size: 13px; font-weight:600; color: var(--muted);
                cursor:pointer; border-bottom: 2px solid transparent; margin-bottom:-1px;
-               text-decoration: none; transition: color .15s ease; }
-  .wf-tab:hover { color: var(--text); }
-  .wf-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+               text-decoration: none;
+               transition: color .15s ease, transform .15s ease; }
+  .wf-tab:hover { color: var(--text); transform: translateY(-1px); }
+  .wf-tab.active { color: var(--text); border-bottom-color: var(--accent);
+                   filter: drop-shadow(0 4px 8px color-mix(in oklab, var(--accent) 35%, transparent)); }
 
-  .wf-grid-top { display:grid; grid-template-columns: 1fr 1fr 1.3fr; gap:16px;
-                 margin-bottom: 16px; }
-  .wf-grid-bot { display:grid; grid-template-columns: 1fr 1.5fr; gap:16px; }
+  .wf-grid-top { display:grid; grid-template-columns: 1fr 1fr 1.3fr; gap:18px;
+                 margin-bottom: 18px; }
+  .wf-grid-bot { display:grid; grid-template-columns: 1fr 1.5fr; gap:18px; }
 
-  .wf-card { background: var(--panel); border:1px solid var(--border);
-             border-radius: 14px; padding: 20px 22px;
-             transition: border-color .15s ease; }
-  .wf-card:hover { border-color: color-mix(in oklab, var(--accent) 25%, var(--border)); }
-  .wf-hero-num { font-size: 38px; font-weight: 700; line-height:1.05;
-                 letter-spacing:-0.025em; font-variant-numeric: tabular-nums; }
-  .wf-hero-lbl { margin-top: 6px; font-size: 11px; font-weight:600;
-                 letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-  .wf-divider  { height:1px; background: var(--border); margin: 16px 0; }
+  .wf-card { position:relative; isolation:isolate;
+             background: linear-gradient(180deg,
+                color-mix(in oklab, var(--panel) 92%, var(--accent) 4%),
+                var(--panel) 55%);
+             border:1px solid var(--border); border-radius: 16px;
+             padding: 22px 24px;
+             box-shadow:
+                0 1px 0 color-mix(in oklab, var(--text) 4%, transparent) inset,
+                0 1px 2px rgba(0,0,0,.04),
+                0 10px 28px -16px color-mix(in oklab, var(--accent) 18%, rgba(0,0,0,.35));
+             transition: transform .25s cubic-bezier(.2,.7,.2,1),
+                         border-color .2s ease, box-shadow .25s ease; }
+  .wf-card::before { content:""; position:absolute; inset:0; border-radius:16px;
+                     padding:1px; pointer-events:none; opacity:.7;
+                     background: linear-gradient(140deg,
+                        color-mix(in oklab, var(--accent) 30%, transparent) 0%,
+                        transparent 28%, transparent 72%,
+                        color-mix(in oklab, var(--accent-2) 18%, transparent) 100%);
+                     -webkit-mask: linear-gradient(#000 0 0) content-box,
+                                   linear-gradient(#000 0 0);
+                             mask: linear-gradient(#000 0 0) content-box,
+                                   linear-gradient(#000 0 0);
+                     -webkit-mask-composite: xor; mask-composite: exclude; }
+  .wf-card:hover { transform: translateY(-1px);
+                   border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
+                   box-shadow:
+                      0 1px 0 color-mix(in oklab, var(--text) 5%, transparent) inset,
+                      0 2px 4px rgba(0,0,0,.05),
+                      0 18px 40px -18px color-mix(in oklab, var(--accent) 28%, rgba(0,0,0,.45)); }
 
-  /* WPM gauge — semicircle arc. Labels live in their own row below the SVG
-     so the arc and the typography never collide. */
+  .wf-hero-num { font-size: 42px; font-weight: 700; line-height:1.02;
+                 letter-spacing:-0.03em; font-variant-numeric: tabular-nums;
+                 background: linear-gradient(180deg, var(--text),
+                    color-mix(in oklab, var(--text) 80%, var(--accent) 22%));
+                 -webkit-background-clip: text; background-clip: text;
+                 -webkit-text-fill-color: transparent; color: transparent; }
+  .wf-hero-lbl { margin-top: 8px; font-size: 11px; font-weight:600;
+                 letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .wf-delta    { margin-top: 10px; display:inline-flex; align-items:center; gap:6px;
+                 font-size: 11.5px; font-weight: 600; color: var(--muted);
+                 padding: 3px 9px; border-radius: 999px;
+                 background: color-mix(in oklab, var(--panel-2) 70%, transparent);
+                 border: 1px solid color-mix(in oklab, var(--border) 80%, transparent); }
+  .wf-delta.up   { color: var(--accent);
+                   background: color-mix(in oklab, var(--accent) 10%, transparent);
+                   border-color: color-mix(in oklab, var(--accent) 25%, transparent); }
+  .wf-delta.down { color: #d97777;
+                   background: color-mix(in oklab, #d97777 8%, transparent);
+                   border-color: color-mix(in oklab, #d97777 22%, transparent); }
+  .wf-divider  { height:1px; margin: 18px 0;
+                 background: linear-gradient(90deg, transparent, var(--border) 12%,
+                    var(--border) 88%, transparent); }
+
+  /* WPM gauge — gradient arc + tick scale + centered overlay. */
   .wf-gauge      { margin-top: 18px; display:flex; flex-direction:column;
-                   align-items:center; gap:8px; }
-  .wf-gauge svg  { display:block; }
-  .wf-gauge-track { stroke: var(--panel-2); stroke-width: 12; fill: none; stroke-linecap: round; }
-  .wf-gauge-fill  { stroke: var(--accent);  stroke-width: 12; fill: none;
-                    stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
-  .wf-gauge-val   { font-size: 15px; font-weight: 700; color: var(--text); }
+                   align-items:center; gap:10px; }
+  .wf-gauge-wrap { position:relative; width:200px; height:120px; }
+  .wf-gauge svg  { display:block; overflow: visible; }
+  .wf-gauge-track { stroke: color-mix(in oklab, var(--panel-2) 80%, var(--text) 4%);
+                    stroke-width: 12; fill: none; stroke-linecap: round; }
+  .wf-gauge-fill  { stroke: url(#wf-gauge-grad); stroke-width: 12; fill: none;
+                    stroke-linecap: round;
+                    filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 50%, transparent));
+                    transition: stroke-dashoffset 1.2s cubic-bezier(.16,.84,.3,1); }
+  .wf-gauge-tick  { stroke: color-mix(in oklab, var(--muted) 60%, transparent);
+                    stroke-width: 1; stroke-linecap: round; }
+  .wf-gauge-tick.major { stroke: var(--muted); stroke-width: 1.5; }
+  .wf-gauge-center { position:absolute; left:0; right:0; top:48px; text-align:center;
+                     font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+                     color: color-mix(in oklab, var(--text) 65%, transparent);
+                     letter-spacing:.02em; }
+  .wf-gauge-val   { display:inline-flex; align-items:center; gap:7px;
+                    font-size: 13px; font-weight: 700; color: var(--text);
+                    padding: 4px 12px; border-radius: 999px;
+                    background: color-mix(in oklab, var(--accent) 10%, transparent);
+                    border: 1px solid color-mix(in oklab, var(--accent) 22%, transparent); }
+  .wf-gauge-val::before { content:""; width:6px; height:6px; border-radius:999px;
+                          background: var(--accent);
+                          box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 70%, transparent); }
   .wf-gauge-cap   { font-size: 11px; color: var(--muted); }
 
   /* Fixes breakdown rows */
   .wf-row { display:flex; align-items:center; justify-content:space-between;
-            padding: 10px 0; font-size: 13px; }
-  .wf-row + .wf-row { border-top: 1px solid var(--border); }
-  .wf-row .lbl { color: var(--text); }
+            padding: 12px 10px; font-size: 13px; border-radius: 8px;
+            position:relative; transition: background .15s ease; }
+  .wf-row::before { content:""; position:absolute; left:0; top:8px; bottom:8px;
+                    width:2px; border-radius:2px; background: var(--accent);
+                    opacity:0; transition: opacity .15s ease; }
+  .wf-row:hover { background: color-mix(in oklab, var(--accent) 5%, transparent); }
+  .wf-row:hover::before { opacity:1; }
+  .wf-row + .wf-row { border-top: 1px solid color-mix(in oklab, var(--border) 70%, transparent); }
+  .wf-row .lbl { color: var(--text); display:inline-flex; align-items:center; gap:10px; }
+  .wf-row .lbl .dot { width:6px; height:6px; border-radius:999px;
+                      background: color-mix(in oklab, var(--accent) 60%, var(--muted)); }
   .wf-row .val { color: var(--text); font-weight:600;
-                 font-variant-numeric: tabular-nums; }
+                 font-variant-numeric: tabular-nums;
+                 display:inline-flex; align-items:center; gap:10px; }
+  .wf-row .sparkbar { width:48px; height:4px; border-radius:999px;
+                      background: color-mix(in oklab, var(--panel-2) 80%, transparent);
+                      overflow:hidden; }
+  .wf-row .sparkbar > span { display:block; height:100%;
+                      background: linear-gradient(90deg, var(--accent),
+                         color-mix(in oklab, var(--accent) 60%, var(--accent-2))); }
 
-  /* Source toggle (Desktop / Mobile) */
-  .wf-source { display:flex; gap:4px; margin-top: 16px;
-               background: var(--panel-2); border-radius: 10px; padding: 3px; }
-  .wf-source button { flex:1; background: transparent; border:0; color: var(--muted);
-                      font-size: 12.5px; font-weight: 600; padding: 8px 12px;
-                      border-radius: 8px; cursor:pointer;
-                      transition: background .15s ease, color .15s ease; }
+  /* Source toggle (Desktop / Mobile) — segmented control */
+  .wf-source { position:relative; display:grid; grid-auto-flow:column;
+               grid-auto-columns: 1fr; gap:0; margin-top: 18px;
+               background: color-mix(in oklab, var(--panel-2) 80%, transparent);
+               border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+               border-radius: 12px; padding: 4px; }
+  .wf-source button { position:relative; z-index:1; background: transparent; border:0;
+                      color: var(--muted); font-size: 12.5px; font-weight: 600;
+                      padding: 9px 12px; border-radius: 9px; cursor:pointer;
+                      transition: color .2s ease, transform .12s ease; }
   .wf-source button:hover { color: var(--text); }
-  .wf-source button.active { background: var(--panel); color: var(--text);
-                             box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .wf-source button:active { transform: scale(.97); }
+  .wf-source button.active { color: var(--text);
+                             background: var(--panel);
+                             box-shadow:
+                                0 1px 2px rgba(0,0,0,.08),
+                                0 4px 12px -6px color-mix(in oklab, var(--accent) 22%, transparent),
+                                0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent); }
 
   /* Big number context line */
   .wf-context { color: var(--muted); font-size: 13px; line-height: 1.55;
-                margin-top: 10px; }
+                margin-top: 12px; }
 
   /* Apps usage list */
-  .wf-apps { display:flex; flex-direction:column; gap: 12px; margin-top: 14px; }
+  .wf-apps { display:flex; flex-direction:column; gap: 14px; margin-top: 16px; }
   .wf-app  { display:grid; grid-template-columns: 1fr auto; gap: 6px 12px;
              align-items:center; }
-  .wf-app-lbl { font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
-                text-transform: uppercase; color: var(--text); }
-  .wf-app-cnt { font-size: 11px; color: var(--muted);
+  .wf-app-lbl { font-size: 13px; font-weight: 600; letter-spacing: 0.01em;
+                color: var(--text); display:inline-flex; align-items:center; gap:8px; }
+  .wf-app-lbl .glyph { width:18px; height:18px; display:inline-flex;
+                       align-items:center; justify-content:center;
+                       border-radius:6px; font-size: 11px;
+                       background: color-mix(in oklab, var(--accent) 12%, transparent);
+                       color: var(--accent); }
+  .wf-app-cnt { font-size: 11.5px; color: var(--muted);
                 font-variant-numeric: tabular-nums; }
-  .wf-app-bar { grid-column: 1 / -1; height: 6px; background: var(--panel-2);
-                border-radius: 999px; overflow:hidden; }
-  .wf-app-bar > span { display:block; height:100%; background: var(--accent);
-                       border-radius: 999px;
-                       transition: width .4s cubic-bezier(.2,.7,.2,1); }
+  .wf-app-bar { grid-column: 1 / -1; height: 8px;
+                background: color-mix(in oklab, var(--panel-2) 80%, transparent);
+                border-radius: 999px; overflow:hidden; position:relative; }
+  .wf-app-bar > span { display:block; height:100%; border-radius: 999px;
+                       background: linear-gradient(90deg,
+                          color-mix(in oklab, var(--accent) 85%, var(--accent-2) 15%),
+                          var(--accent));
+                       box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 50%, transparent);
+                       transition: width .8s cubic-bezier(.2,.7,.2,1); }
 
-  /* Heatmap — GitHub-style. Weekday labels on the left column. */
+  /* Heatmap — premium GitHub-style. */
   .wf-heat-head { display:flex; align-items:baseline; justify-content:space-between;
-                  margin-bottom: 16px; }
-  .wf-heat-streak { font-size: 22px; font-weight:700; letter-spacing:-0.01em; }
-  .wf-heat-streak small { font-size: 12px; font-weight:500; color: var(--muted);
-                          margin-left: 6px; }
-  .wf-heat-longest { font-size: 11px; font-weight: 600; letter-spacing:.06em;
+                  margin-bottom: 18px; gap: 12px; flex-wrap:wrap; }
+  .wf-heat-streak { font-size: 24px; font-weight:700; letter-spacing:-0.02em;
+                    display:inline-flex; align-items:center; gap:10px; }
+  .wf-heat-streak .chip { display:inline-flex; align-items:center; gap:6px;
+                          font-size: 11.5px; font-weight:600;
+                          padding: 3px 10px; border-radius: 999px;
+                          background: color-mix(in oklab, var(--accent) 14%, transparent);
+                          color: var(--accent);
+                          border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
+                          box-shadow: 0 0 12px -2px color-mix(in oklab, var(--accent) 30%, transparent); }
+  .wf-heat-streak small { font-size: 12px; font-weight:500; color: var(--muted); }
+  .wf-heat-longest { font-size: 11px; font-weight: 600; letter-spacing:.08em;
                      text-transform: uppercase; color: var(--muted); }
-  .wf-heat-wrap { display:flex; gap:6px; }
-  .wf-heat-days { display:grid; grid-template-rows: repeat(7, 11px);
-                  gap:3px; font-size:9px; color: var(--muted); padding-top:1px; }
+  .wf-heat-wrap { display:flex; gap:8px; }
+  .wf-heat-days { display:grid; grid-template-rows: repeat(7, 13px);
+                  gap:4px; font-size:10px; color: var(--muted); padding-top:1px; }
   .wf-heat-grid { display:grid; grid-auto-flow: column;
-                  grid-template-rows: repeat(7, 11px);
-                  gap: 3px; overflow-x: auto; padding-bottom: 4px; flex:1; }
-  .wf-cell { width:11px; height:11px; border-radius:2px;
-             background: color-mix(in oklab, var(--panel-2) 70%, var(--text) 4%); }
-  .wf-cell.l1 { background: color-mix(in oklab, var(--accent) 18%, transparent); }
-  .wf-cell.l2 { background: color-mix(in oklab, var(--accent) 40%, transparent); }
-  .wf-cell.l3 { background: color-mix(in oklab, var(--accent) 70%, transparent); }
-  .wf-cell.l4 { background: var(--accent); }
-  .wf-heat-legend { display:flex; align-items:center; gap: 6px;
-                    margin-top: 14px; font-size: 11px; color: var(--muted); }
-  .wf-heat-legend .wf-cell { width:10px; height:10px; }
+                  grid-template-rows: repeat(7, 13px);
+                  gap: 4px; overflow-x: auto; padding-bottom: 4px; flex:1; }
+  .wf-cell { width:13px; height:13px; border-radius:3px;
+             background: color-mix(in oklab, var(--panel-2) 70%, var(--text) 4%);
+             transition: transform .15s ease, box-shadow .15s ease; }
+  .wf-cell:hover { transform: scale(1.4); z-index:1;
+                   box-shadow: 0 0 0 1.5px var(--accent),
+                               0 6px 14px -4px color-mix(in oklab, var(--accent) 50%, transparent); }
+  .wf-cell.l1 { background: color-mix(in oklab, var(--accent) 22%, transparent); }
+  .wf-cell.l2 { background: color-mix(in oklab, var(--accent) 45%, transparent); }
+  .wf-cell.l3 { background: color-mix(in oklab, var(--accent) 72%, transparent); }
+  .wf-cell.l4 { background: var(--accent);
+                box-shadow: 0 0 6px -1px color-mix(in oklab, var(--accent) 60%, transparent); }
+  .wf-heat-legend { display:flex; align-items:center; gap: 10px;
+                    margin-top: 16px; font-size: 11px; color: var(--muted); }
+  .wf-heat-legend-bar { width: 88px; height: 8px; border-radius: 999px;
+                        background: linear-gradient(90deg,
+                          color-mix(in oklab, var(--panel-2) 70%, var(--text) 4%),
+                          color-mix(in oklab, var(--accent) 25%, transparent),
+                          color-mix(in oklab, var(--accent) 55%, transparent),
+                          color-mix(in oklab, var(--accent) 80%, transparent),
+                          var(--accent));
+                        border: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
 
-  /* Quality trajectory */
+  /* Quality trajectory — premium sparkline */
   .wf-trajectory { padding: 4px 0 0; }
-  .wf-trajectory svg { width:100%; height: 80px; display:block;
-                       margin-top: 8px; }
-  .wf-trajectory .area { fill: var(--accent); fill-opacity: .12; }
-  .wf-trajectory .line { fill:none; stroke: var(--accent); stroke-width: 1.8;
-                         stroke-linecap: round; stroke-linejoin: round; }
+  .wf-trajectory svg { width:100%; height: 120px; display:block; margin-top: 10px;
+                       overflow: visible; }
+  .wf-trajectory .area { fill: url(#wf-traj-area); }
+  .wf-trajectory .line { fill:none; stroke: url(#wf-traj-line); stroke-width: 2.2;
+                         stroke-linecap: round; stroke-linejoin: round;
+                         filter: drop-shadow(0 2px 6px color-mix(in oklab, var(--accent) 35%, transparent)); }
+  .wf-trajectory .baseline { stroke: color-mix(in oklab, var(--muted) 50%, transparent);
+                             stroke-width: 1; stroke-dasharray: 3 4; }
+  .wf-trajectory .grid { stroke: color-mix(in oklab, var(--border) 70%, transparent);
+                         stroke-width: 1; }
+  .wf-trajectory .dot { fill: var(--accent);
+                        filter: drop-shadow(0 0 4px color-mix(in oklab, var(--accent) 70%, transparent)); }
+  .wf-trajectory .dot-ring { fill: none;
+                             stroke: color-mix(in oklab, var(--accent) 55%, transparent);
+                             stroke-width: 1.5; }
 
-  .wf-empty { color: var(--muted); font-size: 12.5px; padding: 10px 0; }
+  .wf-empty { color: var(--muted); font-size: 12.5px; padding: 14px 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wf-card, .wf-tab, .wf-cell, .wf-source button,
+    .wf-app-bar > span, .wf-gauge-fill { transition: none !important; }
+    .wf-card:hover, .wf-cell:hover { transform: none !important; }
+  }
 </style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="wf-gauge-grad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="var(--accent-2)" />
+      <stop offset="100%" stop-color="var(--accent)" />
+    </linearGradient>
+    <linearGradient id="wf-traj-line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="var(--accent-2)" />
+      <stop offset="100%" stop-color="var(--accent)" />
+    </linearGradient>
+    <linearGradient id="wf-traj-area" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28" />
+      <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+</svg>
 
 <div class="wf-header">
   <div class="wf-title">Outcomes</div>
@@ -136,13 +291,32 @@
     {% set wpm_frac = (wpm_val / wpm_target) if wpm_val < wpm_target else 1.0 %}
     {# Arc r=70, viewBox padded to clear the stroke. Length = pi*r = 220. #}
     <div class="wf-gauge">
-      <svg width="180" height="100" viewBox="0 0 180 100">
-        <path class="wf-gauge-track" d="M 20 90 A 70 70 0 0 1 160 90" />
-        <path class="wf-gauge-fill"  d="M 20 90 A 70 70 0 0 1 160 90"
-              stroke-dasharray="220" stroke-dashoffset="{{ 220 * (1 - wpm_frac) }}" />
-      </svg>
+      <div class="wf-gauge-wrap">
+        <svg width="200" height="120" viewBox="0 0 200 110">
+          <path class="wf-gauge-track" d="M 25 95 A 75 75 0 0 1 175 95" />
+          <path class="wf-gauge-fill"  d="M 25 95 A 75 75 0 0 1 175 95"
+                stroke-dasharray="236" stroke-dashoffset="{{ 236 * (1 - wpm_frac) }}" />
+          {# tick scale: 11 evenly-spaced ticks across the semicircle.
+             Precomputed: outer point on r=75, inner on r=67 (major) / r=70 (minor),
+             centered at (100,95). Angles 180°→0° in 18° steps. #}
+          <g class="wf-gauge-ticks">
+            <line class="wf-gauge-tick major" x1="33" y1="95" x2="25" y2="95" />
+            <line class="wf-gauge-tick" x1="33.7" y1="71.8" x2="32.0" y2="68.6" />
+            <line class="wf-gauge-tick" x1="38.0" y1="49.4" x2="33.4" y2="44.4" />
+            <line class="wf-gauge-tick" x1="46.5" y1="29.8" x2="36.6" y2="22.5" />
+            <line class="wf-gauge-tick" x1="60.4" y1="14.0" x2="44.6" y2="6.4" />
+            <line class="wf-gauge-tick major" x1="100" y1="28" x2="100" y2="20" />
+            <line class="wf-gauge-tick" x1="139.6" y1="14.0" x2="155.4" y2="6.4" />
+            <line class="wf-gauge-tick" x1="153.5" y1="29.8" x2="163.4" y2="22.5" />
+            <line class="wf-gauge-tick" x1="162.0" y1="49.4" x2="166.6" y2="44.4" />
+            <line class="wf-gauge-tick" x1="166.3" y1="71.8" x2="168.0" y2="68.6" />
+            <line class="wf-gauge-tick major" x1="167" y1="95" x2="175" y2="95" />
+          </g>
+        </svg>
+        <div class="wf-gauge-center">{{ wpm_val or '—' }}</div>
+      </div>
       <div class="wf-gauge-val">
-        {% if wpm_val == 0 %}—
+        {% if wpm_val == 0 %}Awaiting first dictation
         {% elif wpm_val >= 150 %}Top tier
         {% elif wpm_val >= baseline_wpm * 2 %}Fast
         {% elif wpm_val >= baseline_wpm %}On pace
@@ -185,9 +359,9 @@
         Dictate to see your words add up.
       {% endif %}
     </div>
-    <div class="wf-source">
-      <button class="active">⌨ Desktop</button>
-      <button>📱 Mobile</button>
+    <div class="wf-source" role="tablist" aria-label="Source">
+      <button class="active" type="button" role="tab" aria-selected="true">⌨ Desktop</button>
+      <button type="button" role="tab" aria-selected="false">📱 Mobile</button>
     </div>
   </div>
 </div>
@@ -204,14 +378,23 @@
     {% if apps %}
       <div class="wf-apps">
         {% for row in apps[:7] %}
+          {% set lbl_lower = (row.label or '') | lower %}
+          {% set glyph = '◆' %}
+          {% if 'code' in lbl_lower or 'editor' in lbl_lower or 'cursor' in lbl_lower or 'vim' in lbl_lower %}{% set glyph = '⌘' %}
+          {% elif 'browser' in lbl_lower or 'chrome' in lbl_lower or 'edge' in lbl_lower or 'firefox' in lbl_lower or 'safari' in lbl_lower %}{% set glyph = '◐' %}
+          {% elif 'terminal' in lbl_lower or 'shell' in lbl_lower or 'console' in lbl_lower or 'powershell' in lbl_lower %}{% set glyph = '▦' %}
+          {% elif 'mail' in lbl_lower or 'outlook' in lbl_lower %}{% set glyph = '✉' %}
+          {% elif 'slack' in lbl_lower or 'discord' in lbl_lower or 'teams' in lbl_lower or 'chat' in lbl_lower %}{% set glyph = '◍' %}
+          {% elif 'note' in lbl_lower or 'doc' in lbl_lower or 'word' in lbl_lower %}{% set glyph = '✎' %}
+          {% endif %}
           <div class="wf-app">
-            <div class="wf-app-lbl">{{ row.label }}</div>
+            <div class="wf-app-lbl"><span class="glyph">{{ glyph }}</span>{{ row.label }}</div>
             <div class="wf-app-cnt">
               <strong style="color:var(--text);">{{ (row.pct * 100) | round | int }}%</strong>
               · {{ row.count }}
             </div>
             <div class="wf-app-bar">
-              <span style="width: {{ (row.pct * 100) | round(1) }}%;"></span>
+              <span style="width: {{ (row.pct * 100) | round(1) }}%; transition-delay: {{ loop.index0 * 60 }}ms;"></span>
             </div>
           </div>
         {% endfor %}
@@ -225,7 +408,9 @@
   <div class="wf-card">
     <div class="wf-heat-head">
       <div class="wf-heat-streak">
-        {{ streak or 0 }} <small>day{{ '' if streak == 1 else 's' }} streak</small>
+        {{ streak or 0 }}
+        {% if streak and streak >= 3 %}<span class="chip">▲ on a roll</span>{% endif %}
+        <small>day{{ '' if streak == 1 else 's' }} streak</small>
       </div>
       <div class="wf-heat-longest">
         Peak · {{ heatmap.max or 0 }} per day
@@ -247,9 +432,7 @@
       </div>
       <div class="wf-heat-legend">
         Less
-        <span class="wf-cell l0"></span><span class="wf-cell l1"></span>
-        <span class="wf-cell l2"></span><span class="wf-cell l3"></span>
-        <span class="wf-cell l4"></span>
+        <span class="wf-heat-legend-bar" aria-hidden="true"></span>
         More
       </div>
     {% else %}
@@ -283,7 +466,18 @@
       {% else %}<span style="color:var(--muted)">· steady</span>{% endif %}
       <span class="muted small" style="margin-left:8px;">range {{ tmin }}–{{ tmax }}</span>
     </div>
+    {% set median = (tmin + tmax) // 2 %}
+    {% set median_y = h - ((median - ymin) / (ymax - ymin)) * h %}
+    {% set last_x = (n - 1) * (w / (n - 1 if n > 1 else 1)) %}
+    {% set last_y = h - ((last - ymin) / (ymax - ymin)) * h %}
+    {% set first_y = h - ((first - ymin) / (ymax - ymin)) * h %}
     <svg viewBox="0 0 {{ w }} {{ h }}" preserveAspectRatio="none">
+      {# vertical grid hashes at 25/50/75% #}
+      <line class="grid" x1="{{ w * 0.25 }}" y1="0" x2="{{ w * 0.25 }}" y2="{{ h }}" />
+      <line class="grid" x1="{{ w * 0.50 }}" y1="0" x2="{{ w * 0.50 }}" y2="{{ h }}" />
+      <line class="grid" x1="{{ w * 0.75 }}" y1="0" x2="{{ w * 0.75 }}" y2="{{ h }}" />
+      {# median baseline #}
+      <line class="baseline" x1="0" y1="{{ median_y }}" x2="{{ w }}" y2="{{ median_y }}" />
       <polygon class="area"
                points="0,{{ h }} {%- for q in trend -%}
                  {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
@@ -292,6 +486,9 @@
                 points="{%- for q in trend -%}
                   {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
                 {%- endfor -%}"/>
+      <circle class="dot" cx="0" cy="{{ first_y }}" r="3" />
+      <circle class="dot" cx="{{ last_x }}" cy="{{ last_y }}" r="4" />
+      <circle class="dot-ring" cx="{{ last_x }}" cy="{{ last_y }}" r="8" />
     </svg>
   </div>
 {% endif %}
