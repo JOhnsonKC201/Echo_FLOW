@@ -422,6 +422,23 @@ def make_app(app_ref):
         except ValueError as e:
             return redirect(f"/snippets?flash={e}")
 
+    @flask_app.post("/snippets/update")
+    def snippets_update():
+        from . import snippets as _sn
+        from flask import request as _req, redirect
+        sid = int(_req.form.get("id", "0") or 0)
+        code = _req.form.get("code", "").strip()
+        expansion = _req.form.get("expansion", "").strip()
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None or sid <= 0:
+            return redirect("/snippets?flash=Nothing to update.")
+        try:
+            _sn.update_snippet(history.conn, sid, code, expansion)
+            _maybe_reload_config(app_ref)
+            return redirect(f"/snippets?flash=Updated {code!r}.")
+        except ValueError as e:
+            return redirect(f"/snippets?flash={e}")
+
     @flask_app.post("/snippets/delete")
     def snippets_delete():
         from . import snippets as _sn

@@ -51,6 +51,36 @@ def add_snippet(conn: sqlite3.Connection, code: str, expansion: str) -> int:
     return cur.lastrowid or 0
 
 
+def update_snippet(
+    conn: sqlite3.Connection,
+    snippet_id: int,
+    code: str,
+    expansion: str,
+) -> bool:
+    code = (code or "").strip()
+    expansion = (expansion or "").strip()
+    if not code:
+        raise ValueError("code cannot be empty")
+    if not expansion:
+        raise ValueError("expansion cannot be empty")
+    if len(code) > 40:
+        raise ValueError("code too long (max 40 chars)")
+    if len(expansion) > 500:
+        raise ValueError("expansion too long (max 500 chars)")
+    clash = conn.execute(
+        "SELECT id FROM user_snippets WHERE code = ? AND id != ?",
+        (code, snippet_id),
+    ).fetchone()
+    if clash:
+        raise ValueError(f"another snippet already uses code {code!r}")
+    cur = conn.execute(
+        "UPDATE user_snippets SET code = ?, expansion = ?, added_at = ? WHERE id = ?",
+        (code, expansion, time.time(), snippet_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
 def delete_snippet(conn: sqlite3.Connection, snippet_id: int) -> bool:
     cur = conn.execute("DELETE FROM user_snippets WHERE id = ?", (snippet_id,))
     conn.commit()

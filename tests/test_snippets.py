@@ -56,12 +56,19 @@ def test_punctuation_around_snippet():
     assert c._expand_snippets("hello, btw.") == "hello, by the way."
 
 
-def test_clean_pipeline_with_provider_none_still_expands():
-    """provider='none' returns early (no LLM), but snippet expansion shouldn't run
-    on the raw text because we expand AFTER cleanup. With provider='none' the
-    return is `text` unchanged — that's intentional."""
+def test_clean_pipeline_pre_expands_snippets():
+    """Snippets are pre-expanded before the LLM runs so triggers survive
+    paraphrasing. With provider='none' the LLM never runs, but the pre-expand
+    pass still resolves the trigger — which is what users expect."""
     c = _cleaner_with({"btw": "by the way"})
-    # provider='none' means clean() returns text unmodified — no snippet pass.
-    # Snippet expansion only happens on the LLM success path.
     out, _skipped = c.clean("btw test")
-    assert out == "btw test"
+    assert out == "by the way test"
+
+
+def test_multi_word_snippet_expands():
+    """Multi-word triggers like 'my linkedin' must expand to URLs."""
+    c = _cleaner_with({"my linkedin": "https://www.linkedin.com/in/x/"})
+    assert (
+        c._expand_snippets("check out my linkedin please")
+        == "check out https://www.linkedin.com/in/x/ please"
+    )

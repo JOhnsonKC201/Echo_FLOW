@@ -403,6 +403,13 @@ class Cleaner:
         if not self.enabled or not text.strip():
             return text, False
         self._n_clean_calls += 1
+        # Pre-expand snippets BEFORE the LLM sees the text. The LLM frequently
+        # paraphrases triggers ("share my linkedin" → "share my LinkedIn
+        # profile"), which breaks post-cleanup regex matching. URLs and full
+        # phrases survive cleanup intact, so resolving here is robust. The
+        # post-expand pass below still runs as a safety net for any trigger
+        # that slips through unmodified.
+        text = self._expand_snippets(text)
         # Fast path: if raw text is already clean and we're not in prompt mode,
         # skip the LLM entirely. Saves 200-2000ms per dictation.
         skip_when_clean = self.cfg.get("skip_when_clean", True)
@@ -500,7 +507,7 @@ class Cleaner:
             if not fallback_provider or fallback_provider == provider:
                 _log.error("provider error: %s; falling back to raw", primary_err)
                 notify.notify("Echo Flow", f"Cleanup failed ({type(primary_err).__name__}); pasted raw.", "error")
-                return text, False
+                return self._expand_snippets(text), False
             _log.warning("primary provider %s failed (%s); retrying via %s",
                          provider, primary_err, fallback_provider)
             try:
@@ -509,7 +516,7 @@ class Cleaner:
                 _log.error("fallback provider %s also failed: %s; pasted raw",
                            fallback_provider, fb_err)
                 notify.notify("Echo Flow", "Cleanup failed (both providers); pasted raw.", "error")
-                return text, False
+                return self._expand_snippets(text), False
 
     def _via_ollama(self, system: str, text: str, *,
                     max_tokens: int | None = None,

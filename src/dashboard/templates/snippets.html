@@ -19,25 +19,43 @@
 </div>
 
 <div class="card">
-  <h2>All snippets <span class="muted small">{{ items|length }} total</span></h2>
+  <div class="card-header" style="margin-bottom: 10px;">
+    <h2>All snippets <span class="muted small">{{ items|length }} total</span></h2>
+    {% if items %}
+      <input type="search" id="snippet-filter" placeholder="Filter…" class="filter-input" autocomplete="off">
+    {% endif %}
+  </div>
   {% if items %}
-    <table class="kv-table">
-      <thead><tr><th>Code</th><th>Expansion</th><th></th></tr></thead>
-      <tbody>
+    <table class="kv-table snippet-table">
+      <thead><tr><th style="width: 220px;">Code</th><th>Expansion</th><th style="width: 120px;"></th></tr></thead>
+      <tbody id="snippet-rows">
         {% for s in items %}
-          <tr>
-            <td><code>{{ s.code }}</code></td>
-            <td>{{ s.expansion }}</td>
+          <tr class="snippet-row" data-search="{{ (s.code ~ ' ' ~ s.expansion)|lower }}">
             <td>
-              <form method="post" action="/snippets/delete" class="inline">
+              <span class="view code-pill">{{ s.code }}</span>
+              <input class="edit" type="text" name="code" value="{{ s.code }}" maxlength="40" form="snippet-edit-{{ s.id }}">
+            </td>
+            <td>
+              <span class="view expansion-cell">{{ s.expansion }}</span>
+              <input class="edit" type="text" name="expansion" value="{{ s.expansion }}" maxlength="500" form="snippet-edit-{{ s.id }}">
+            </td>
+            <td class="row-actions">
+              <button type="button" class="link-action view js-edit" title="Edit">Edit</button>
+              <form method="post" action="/snippets/delete" class="inline view">
                 <input type="hidden" name="id" value="{{ s.id }}">
-                <button type="submit" class="link-danger" title="Remove">✕</button>
+                <button type="submit" class="link-danger" title="Remove" onclick="return confirm('Remove snippet {{ s.code }}?');">✕</button>
+              </form>
+              <form id="snippet-edit-{{ s.id }}" method="post" action="/snippets/update" class="inline edit">
+                <input type="hidden" name="id" value="{{ s.id }}">
+                <button type="submit" class="link-action primary-link" title="Save">Save</button>
+                <button type="button" class="link-action js-cancel" title="Cancel">Cancel</button>
               </form>
             </td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+    <div class="muted small empty-filter" id="snippet-empty" hidden>No snippets match that filter.</div>
   {% else %}
     <div class="muted small">No snippets yet. Add one above or bulk-import below.</div>
   {% endif %}
@@ -59,4 +77,45 @@
     </div>
   </form>
 </div>
+
+<script>
+(function() {
+  const tbody = document.getElementById('snippet-rows');
+  if (!tbody) return;
+
+  tbody.addEventListener('click', function(e) {
+    const editBtn = e.target.closest('.js-edit');
+    const cancelBtn = e.target.closest('.js-cancel');
+    if (editBtn) {
+      const row = editBtn.closest('.snippet-row');
+      row.classList.add('editing');
+      const input = row.querySelector('input.edit[name="code"]');
+      if (input) { input.focus(); input.select(); }
+    } else if (cancelBtn) {
+      const row = cancelBtn.closest('.snippet-row');
+      row.classList.remove('editing');
+      // Reset input values to original displayed text
+      row.querySelectorAll('input.edit').forEach(function(inp) {
+        inp.value = inp.defaultValue;
+      });
+    }
+  });
+
+  const filter = document.getElementById('snippet-filter');
+  const empty = document.getElementById('snippet-empty');
+  if (filter) {
+    filter.addEventListener('input', function() {
+      const q = filter.value.trim().toLowerCase();
+      let visible = 0;
+      tbody.querySelectorAll('.snippet-row').forEach(function(row) {
+        const hay = row.dataset.search || '';
+        const match = !q || hay.indexOf(q) !== -1;
+        row.hidden = !match;
+        if (match) visible++;
+      });
+      if (empty) empty.hidden = visible !== 0;
+    });
+  }
+})();
+</script>
 {% endblock %}
