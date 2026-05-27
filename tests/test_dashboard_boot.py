@@ -64,7 +64,13 @@ def test_healthz_returns_ok():
     client = _flask_client(_fake_app_ref())
     r = client.get("/api/healthz", headers={"Host": "127.0.0.1:8766"})
     assert r.status_code == 200
-    assert r.get_json() == {"ok": True}
+    body = r.get_json()
+    # Minimum contract: "ok": True. The extended body also reports
+    # per-subsystem status and feature-flag visibility, which production
+    # watchdogs and installers rely on.
+    assert body["ok"] is True
+    assert "features" in body
+    assert "groq_key_set" in body["features"]
 
 
 # --- Host header guard (DNS-rebinding defense) -------------------------------

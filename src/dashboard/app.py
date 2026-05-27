@@ -954,8 +954,31 @@ def make_app(app_ref):
     # --- Health / API ----------------------------------------------------
     @flask_app.get("/api/healthz")
     def healthz():
+        """Lightweight health probe for installers, watchdogs, and the tray.
+
+        Reports daemon liveness plus per-subsystem status. Never exposes
+        user content or secret values. Safe to scrape on a timer.
+        """
         from flask import jsonify
-        return jsonify({"ok": True})
+        import os as _os
+        history = getattr(app_ref, "history", None)
+        cleaner = getattr(app_ref, "cleaner", None)
+        cfg = getattr(app_ref, "cfg", {}) or {}
+        pe = (cfg.get("prompt_engineering") or {})
+        learning = ((cfg.get("cleanup") or {}).get("learning") or {})
+        return jsonify({
+            "ok": True,
+            "history": history is not None and getattr(history, "conn", None) is not None,
+            "cleaner": cleaner is not None and bool(getattr(cleaner, "enabled", False)),
+            "phase": getattr(getattr(app_ref, "phase", None), "name", None),
+            "features": {
+                "pe_enabled": bool(pe.get("enabled")),
+                "pe_provider": pe.get("provider"),
+                "teacher_enabled": bool(learning.get("teacher_enabled")),
+                "groq_key_set": bool(_os.environ.get("GROQ_API_KEY", "").strip()),
+                "anthropic_key_set": bool(_os.environ.get("ANTHROPIC_API_KEY", "").strip()),
+            },
+        })
 
     # --- Knowledge graph -------------------------------------------------
     # /graph     — dashboard-wrapped view (iframe shell, preserves sidebar)

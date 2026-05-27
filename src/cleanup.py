@@ -595,11 +595,13 @@ class Cleaner:
         return r.json()["message"]["content"].strip()
 
     def _via_groq(self, system: str, text: str, *,
-                  max_tokens: int | None = None) -> str:
+                  max_tokens: int | None = None,
+                  model_override: str | None = None) -> str:
         """Cloud path — used only for Prompt-Engineering mode.
 
         Reads GROQ_API_KEY from env. Model and timeout come from cleanup.groq
-        in config.yaml (sensible defaults applied).
+        in config.yaml (sensible defaults applied). `model_override` lets the
+        teacher path pin a different Groq model without mutating shared cfg.
         """
         import os
         api_key = os.environ.get("GROQ_API_KEY", "").strip()
@@ -610,7 +612,7 @@ class Cleaner:
             )
         gc = self.cfg.get("groq", {}) or {}
         url = gc.get("base_url", "https://api.groq.com/openai/v1/chat/completions")
-        model = gc.get("model", "llama-3.3-70b-versatile")
+        model = (model_override or gc.get("model", "llama-3.3-70b-versatile")).strip()
         timeout = float(gc.get("timeout_sec", 12.0))
         r = self._session.post(
             url,
@@ -653,19 +655,11 @@ class Cleaner:
             return None
         prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
         # Teacher always speaks to a large cloud model; no size hint needed.
+        # Use model_override to avoid mutating self.cfg["groq"] (race-safe
+        # under concurrent teacher dispatches).
         try:
-            # Allow a teacher_model override that's distinct from PE's groq.model.
-            teacher_model = (learning_cfg.get("teacher_model") or "").strip()
-            gc = dict(self.cfg.get("groq", {}) or {})
-            if teacher_model:
-                gc["model"] = teacher_model
-            saved = self.cfg.get("groq")
-            self.cfg["groq"] = gc
-            try:
-                out = self._via_groq(prompt, raw_text)
-            finally:
-                if saved is not None:
-                    self.cfg["groq"] = saved
+            teacher_model = (learning_cfg.get("teacher_model") or "").strip() or None
+            out = self._via_groq(prompt, raw_text, model_override=teacher_model)
         except Exception as e:
             _log.warning("teacher (groq) call failed: %s", e)
             return None

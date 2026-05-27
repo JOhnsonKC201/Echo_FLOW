@@ -78,11 +78,47 @@ The main entry points: `INSTALL.bat` for first-time setup with autostart, `run.b
 - **Ollama "connection refused"**: start the Ollama desktop app or run `ollama serve` in a terminal.
 - **Hotkey doesn't work after Windows update**: sometimes pynput's global listener needs the app restarted. `RESTART.bat`.
 - **Pasting in some Electron apps lags**: the clipboard restore happens in a background thread. Usually fine, occasionally a 100ms hiccup.
+- **Every word getting comma-separated** (`"Hello, World, Today."`): caused by Whisper's `initial_prompt` style-anchoring on a comma-list of vocabulary terms. Fixed in May 2026 — vocabulary is now wrapped in prose, and `_polish_text` has a comma-storm detector as a safety net. If you upgraded and still see it, `RESTART.bat` the daemon so the new `initial_prompt` builder runs.
+
+## Teacher-model distillation (optional)
+
+After each dictation, Echo Flow can re-clean the raw text via a stronger cloud LLM in the background and store the result as a `source='teacher'` row. The pattern miner learns from both your edits and the teacher's, so the system improves toward a reference model — not just toward you.
+
+```
+setx GROQ_API_KEY "gsk_..."        # one-time
+```
+
+Then open the dashboard → **Settings → Vibe → Teacher model** and flip "Enable teacher-model distillation". Zero added latency on the live dictation path (the teacher runs in a daemon thread). A quality gate compares the teacher's output to yours and only persists the pair when the teacher grades at least as well.
+
+To bootstrap from your existing history (no waiting for new dictations):
+
+```
+python scripts\backfill_teacher.py --apply --limit 500
+```
+
+Review the pairs at `http://127.0.0.1:8766/teacher` before you trust the loop wholesale.
+
+## Privacy & data flow
+
+- **Local by default.** No telemetry, no analytics, no auto-update phone-home. All audio, transcripts, embeddings, and learning data live in `data/history.db` on your machine.
+- **Cloud features are opt-in and explicitly gated.** Prompt-Engineering mode (Ctrl+Shift+Alt) and the teacher loop are the only paths that call a cloud API. Both require an API key you set yourself and both are off until you flip the toggle.
+- **Bridge stays loopback-only** unless you change `mobile.bind_address`. Read `MOBILE_BRIDGE.md` before exposing to LAN.
+- **Dashboard stays loopback-only** on `127.0.0.1:8766`. Same trust model as local browser tabs.
+- **No keys are ever logged.** Startup audits which cloud features are enabled and warns if their key is missing, without printing the key itself.
+
+## Health check
+
+```
+curl http://127.0.0.1:8766/healthz
+```
+
+Returns daemon liveness, current phase, and which optional features are wired (without exposing keys). Useful for tray watchdogs and installers.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
 
 ## What it costs
 
 Nothing if you run it fully local. Groq is free at the volumes a single human can talk. Anthropic and OpenAI cost real money per API call, so only use them if you want their cleanup quality and don't mind the bill.
 
-## License
-
-Use it, modify it, share it. No warranty.

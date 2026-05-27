@@ -13,13 +13,17 @@ from . import sound as wsound
 wlog.setup()
 _log = wlog.get("main")
 
-# Local-only enforcement: warn loudly if any legacy cloud key is set in the
-# environment so the user knows we are ignoring it.
-BLOCKED_ENV = ["GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+# Cloud-key policy: PE mode (Ctrl+Shift+Alt) and the teacher-distillation
+# loop legitimately consume GROQ_API_KEY / ANTHROPIC_API_KEY. The local-only
+# guarantee is enforced at the provider-routing layer (src/cleanup.py
+# _run_provider), NOT by stripping env vars — which would break opt-in
+# cloud features for users who deliberately set the key. We keep OpenAI in
+# the blocklist because no code path uses it.
+BLOCKED_ENV = ["OPENAI_API_KEY"]
 for _k in BLOCKED_ENV:
     if os.getenv(_k):
         _log.warning(
-            "%s is set but Echo Flow is local-only. Ignoring.", _k
+            "%s is set but no Echo Flow feature uses it. Ignoring.", _k
         )
         os.environ.pop(_k, None)
 
@@ -123,6 +127,35 @@ else:
 CONFIG_PATH = USER_ROOT / "config.yaml"
 
 
+def _audit_cloud_keys(cfg: dict) -> None:
+    """Warn loudly when a cloud feature is enabled but its API key is missing.
+
+    Echo Flow stays local-only by default, but the user can opt into:
+      - Prompt-Engineering mode (cloud LLM for the next dictation)
+      - Teacher-distillation loop (background re-cleanup by a stronger LLM)
+    Both need an API key set in the environment. If we don't notice the
+    misconfiguration here, the first failure surfaces as a cryptic runtime
+    error mid-dictation.
+    """
+    pe = cfg.get("prompt_engineering", {}) or {}
+    learning = ((cfg.get("cleanup") or {}).get("learning") or {})
+    needs: dict[str, list[str]] = {}
+    if pe.get("enabled") and pe.get("provider") == "groq":
+        needs.setdefault("GROQ_API_KEY", []).append("Prompt-Engineering mode")
+    if pe.get("enabled") and pe.get("provider") == "anthropic":
+        needs.setdefault("ANTHROPIC_API_KEY", []).append("Prompt-Engineering mode")
+    if learning.get("teacher_enabled"):
+        needs.setdefault("GROQ_API_KEY", []).append("Teacher distillation")
+    for env_key, features in needs.items():
+        if not os.environ.get(env_key, "").strip():
+            _log.warning(
+                "%s is required by: %s — but it is not set in the environment. "
+                "Set it via `setx %s your-key-here` (Windows) and restart the "
+                "daemon. The affected feature will silently fall back until then.",
+                env_key, ", ".join(features), env_key,
+            )
+
+
 def _format_initial_prompt(terms: list[str]) -> str:
     """Build a Whisper initial_prompt that doesn't poison output style.
 
@@ -177,6 +210,10 @@ class App:
         # faster-whisper + Ollama HTTP client aren't guaranteed thread-safe
         # on a single model instance. Cheap when only one path is active.
         self._pipeline_lock = threading.RLock()
+        # Cloud-feature key audit: surface clear, actionable warnings at
+        # startup so users discover misconfiguration before their first
+        # dictation. Each warning maps to a documented setup step.
+        _audit_cloud_keys(cfg)
         # Auto-phase: decide backend BEFORE loading anything
         db_path = cfg["history"]["db_path"]
         self.phase = phase_mod.decide(cfg, db_path)

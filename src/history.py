@@ -187,6 +187,13 @@ class History:
             "CREATE INDEX IF NOT EXISTS idx_dtags_dict ON dictation_tags(dictation_id)",
             "CREATE INDEX IF NOT EXISTS idx_dtags_tag ON dictation_tags(tag_id)",
             "CREATE INDEX IF NOT EXISTS idx_actions_open ON action_items(completed, created_at)",
+            # Indexes for source-aware queries — source filtering in the
+            # learner (recent_examples / personal_vocabulary) and the
+            # teacher-compare view (which joins on raw_text) both scan
+            # without these. Negligible on small DBs; required on large.
+            "CREATE INDEX IF NOT EXISTS idx_dictations_source ON dictations(source)",
+            "CREATE INDEX IF NOT EXISTS idx_dictations_raw ON dictations(raw_text)",
+            "CREATE INDEX IF NOT EXISTS idx_dictations_style_ts ON dictations(style, ts DESC)",
         ):
             try:
                 self.conn.execute(stmt)

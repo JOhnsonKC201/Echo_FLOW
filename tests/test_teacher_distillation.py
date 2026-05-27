@@ -31,7 +31,7 @@ def _stub_cleaner(monkeypatch, teacher_enabled: bool, groq_out: str | Exception 
     }
     c = Cleaner(cfg)
 
-    def _fake_groq(self, system, text, *, max_tokens=None):
+    def _fake_groq(self, system, text, *, max_tokens=None, model_override=None):
         if isinstance(groq_out, Exception):
             raise groq_out
         return groq_out
