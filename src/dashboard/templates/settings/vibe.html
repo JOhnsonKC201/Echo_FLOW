@@ -23,6 +23,27 @@
         <input type="checkbox" name="prompt_engineering_enabled" value="1" {% if values.prompt_engineering_enabled %}checked{% endif %}>
         <span>Prompt-engineering mode (one-shot hotkey rewrites dictation as engineered prompt)</span>
       </label>
+
+      <label>
+        <span>PE target audience</span>
+        <select name="prompt_engineering_audience">
+          <option value="claude-code" {% if values.prompt_engineering_audience == 'claude-code' %}selected{% endif %}>Claude Code (filesystem + shell aware)</option>
+          <option value="chatgpt"     {% if values.prompt_engineering_audience == 'chatgpt'     %}selected{% endif %}>ChatGPT / general chat</option>
+          <option value="generic"     {% if values.prompt_engineering_audience == 'generic'     %}selected{% endif %}>Generic — no framing</option>
+        </select>
+        <div class="muted small">Tailors the engineered prompt to the receiving LLM (e.g. Claude Code can reference paths and shell verbs; ChatGPT cannot).</div>
+      </label>
+
+      <label>
+        <span>PE provider</span>
+        <select name="prompt_engineering_provider">
+          <option value="groq"      {% if values.prompt_engineering_provider == 'groq'      %}selected{% endif %}>Groq (recommended — cloud, fast)</option>
+          <option value="ollama"    {% if values.prompt_engineering_provider == 'ollama'    %}selected{% endif %}>Ollama (local)</option>
+          <option value="anthropic" {% if values.prompt_engineering_provider == 'anthropic' %}selected{% endif %}>Anthropic</option>
+        </select>
+        <div class="muted small">Which LLM does the PE rewrite. Groq needs <code>GROQ_API_KEY</code> in the daemon's environment; otherwise it silently falls back to Ollama.</div>
+      </label>
+
       <div class="actions">
         <button type="submit" class="btn primary">Save</button>
       </div>

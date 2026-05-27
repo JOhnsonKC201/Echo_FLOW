@@ -149,21 +149,33 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "skip_when_clean": bool(cu.get("skip_when_clean", True)),
             "learning_enabled": bool(learning.get("enabled", True)),
             "prompt_engineering_enabled": bool(pe.get("enabled", True)),
+            "prompt_engineering_audience": pe.get("audience", "claude-code"),
+            "prompt_engineering_provider": pe.get("provider", "groq"),
         })
 
     @flask_app.post("/settings/vibe/save")
     def settings_vibe_save():
         f = request.form
+        _AUDIENCES = {"claude-code", "chatgpt", "generic"}
+        _PROVIDERS = {"groq", "ollama", "anthropic"}
+        audience = f.get("prompt_engineering_audience", "claude-code")
+        if audience not in _AUDIENCES:
+            audience = "claude-code"
+        provider = f.get("prompt_engineering_provider", "groq")
+        if provider not in _PROVIDERS:
+            provider = "groq"
         errs = _save_scalars(app_ref, [
             ("cleanup.enabled", _checkbox(f, "cleanup_enabled")),
             ("cleanup.skip_when_clean", _checkbox(f, "skip_when_clean")),
             ("cleanup.learning.enabled", _checkbox(f, "learning_enabled")),
             ("prompt_engineering.enabled", _checkbox(f, "prompt_engineering_enabled")),
+            ("prompt_engineering.audience", audience),
+            ("prompt_engineering.provider", provider),
         ], log)
         if errs:
             return redirect("/settings/vibe?flash=" + "; ".join(errs))
         maybe_reload_config(app_ref)
-        return redirect("/settings/vibe?flash=Saved.")
+        return redirect(f"/settings/vibe?flash=Saved — PE audience: {audience}, provider: {provider}.")
 
     # ---- Experimental ------------------------------------------------------
     @flask_app.get("/settings/experimental")

@@ -398,6 +398,7 @@ class App:
                     "reload_config: initial_prompt refreshed with %d terms",
                     len(vocab[:80]),
                 )
+            self._pe_cfg = self.cfg.get("prompt_engineering", {"enabled": False})
         except Exception as e:
             _log.warning("reload_config failed: %s", e)
 
