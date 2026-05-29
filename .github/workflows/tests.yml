@@ -27,9 +27,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # Echo Flow is local-only and pulls a lot of OS-bound packages
-          # (sounddevice, faster-whisper). The test suite stubs those, so
-          # we only install the lightweight subset needed to run pytest.
-          pip install pytest pyyaml requests flask rich
+          # (sounddevice, faster-whisper, sentence-transformers). The test
+          # suite lazy-imports / stubs those, so we install only the subset
+          # imported at collection time: pytest + the lightweight runtime
+          # deps, plus numpy and pynput (imported by src/graph.py and a few
+          # test modules when pytest collects them).
+          pip install pytest pytest-mock pyyaml requests flask rich numpy pynput
         shell: pwsh
 
       - name: Run pytest

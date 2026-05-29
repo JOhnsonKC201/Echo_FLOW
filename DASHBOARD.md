@@ -79,6 +79,4 @@ the Echo Flow icon.
 ## Phased rollout
 
 Phase 0 (this commit): shell only — sidebar nav + 9 placeholder sections.
-Subsequent phases fill them in one at a time. See
-`C:\Users\johns\.claude\plans\image-3-image-4-playful-valley.md` for the
-full roadmap.
+Subsequent phases fill them in one at a time.

@@ -14,6 +14,6 @@ pip install -r requirements.txt
 echo.
 echo === Done. ===
 echo 1. Install Ollama from https://ollama.com  (optional, for local LLM cleanup)
-echo 2. Run:  ollama pull qwen2.5:7b-instruct
+echo 2. Run:  ollama pull qwen2.5:3b-instruct
 echo 3. Start the app with run.bat
 pause

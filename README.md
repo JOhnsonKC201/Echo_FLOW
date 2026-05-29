@@ -1,6 +1,6 @@
 # Echo Flow
 
-A dictation app I built for my own machine because the commercial ones charge monthly fees and send my audio to their servers. This one runs entirely on your computer if you want it to.
+A dictation app I built for my own machine because the commercial ones charge monthly fees and send my audio to their servers. This one runs entirely on your computer — your audio never leaves the machine unless you explicitly opt into a cloud feature.
 
 Hold Ctrl+Shift, talk, release. The text shows up wherever your cursor is.
 
@@ -11,29 +11,29 @@ scripts\setup.bat
 run.bat
 ```
 
-The setup script creates a Python venv and installs the dependencies. First launch takes a minute or two while Whisper downloads its model.
+The setup script creates a Python venv and installs the dependencies. First launch takes a minute or two while Whisper downloads its model. Transcription runs **locally** on your CPU (or GPU if you have one) — nothing is uploaded.
 
 You'll see a green microphone in your system tray when it's ready.
 
-### If you want it faster (optional)
+### Local LLM cleanup (recommended)
 
-Grab a free Groq API key from https://console.groq.com (no credit card needed) and:
-
-```
-setx GROQ_API_KEY "gsk_..."
-```
-
-Close and reopen your terminal so the variable loads. Groq runs Whisper in the cloud and it's about 3x faster than my laptop's CPU. Default config is already wired for it, and it'll fall back to local if you're offline.
-
-### If you want it completely offline
-
-Install Ollama from https://ollama.com, then:
+Raw Whisper output gets a light polish (punctuation, capitalization, removing filler words) from a local LLM via Ollama. Install Ollama from https://ollama.com, then:
 
 ```
 ollama pull qwen2.5:3b-instruct
 ```
 
-Open `config.yaml` and set `whisper.backend: local` and `cleanup.provider: ollama`. That's it, no internet needed after that.
+This is the default (`cleanup.provider: ollama` in `config.yaml`) — transcription and cleanup both run on your machine, no internet needed. If Ollama isn't running, you just get Whisper's raw text.
+
+### Optional: cloud for Prompt-Engineering mode
+
+Regular dictation is 100% local and never calls a cloud API. The one built-in cloud path is **Prompt-Engineering mode** (Ctrl+Shift+Alt), which rewrites a short spoken idea into a full engineered prompt using Groq. It's opt-in and uses your own key:
+
+```
+setx GROQ_API_KEY "gsk_..."
+```
+
+Close and reopen your terminal so the variable loads (free key from https://console.groq.com, no credit card). Without a key, PE mode falls back to your local Ollama. The same key powers the optional teacher-distillation loop (see below).
 
 ## Using it
 
@@ -50,7 +50,7 @@ Everything's in `config.yaml`. The interesting knobs:
 
 - `hotkey.combo`: defaults to `ctrl+shift`. Change if it clashes with something.
 - `whisper.model`: `tiny`, `base`, `small`, `medium`, `large-v3-turbo`. Bigger = more accurate but slower. `auto` picks one based on whether you have a GPU.
-- `cleanup.provider`: `groq` for cloud, `ollama` for local LLM, `none` to skip cleanup and paste Whisper's raw output, `learned` for the LLM-free mode that uses your past corrections.
+- `cleanup.provider`: `ollama` for the local LLM (default), `learned` for the LLM-free mode that uses your past corrections, `none` to skip cleanup and paste Whisper's raw output. (Regular dictation is local-only; Groq is reserved for Prompt-Engineering mode.)
 - `cleanup.profiles`: switches cleanup style based on which app is focused. Slack messages get casual punctuation, VS Code gets symbol-aware cleanup, Gmail gets fuller sentences.
 
 ## What's in the folder
@@ -67,7 +67,7 @@ config.yaml  the only thing you should normally edit
 
 ## iOS
 
-There's an iOS version too — a custom keyboard you install via Settings, hold to dictate, release to insert. Same Groq + on-device Whisper fallback as the desktop. See [`ios/README.md`](ios/README.md) for build steps (needs a Mac with Xcode).
+There's an iOS version too — a custom keyboard you install via Settings, hold to dictate, release to insert. It talks to your desktop's local bridge over Wi-Fi (or falls back to on-device Whisper). See [`ios/README.md`](ios/README.md) for build steps (needs a Mac with Xcode).
 
 The main entry points: `INSTALL.bat` for first-time setup with autostart, `run.bat` to launch manually, `RESTART.bat` to kill and relaunch (useful after config changes), `UNINSTALL.bat` to remove the autostart shortcut and optionally wipe data.
 
