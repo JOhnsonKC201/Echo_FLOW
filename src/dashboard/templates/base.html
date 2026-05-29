@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Echo Flow{% endblock %}</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='logo.png') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 {% if accent_color %}
 <style>
@@ -16,7 +18,8 @@
 <body data-page="{{ active }}">
 <aside class="sidebar">
   <div class="brand">
-    <span class="logo">▮▮▯</span>
+    <img class="logo-img" src="{{ url_for('static', filename='logo.png') }}"
+         alt="Echo Flow" width="28" height="28">
     <span class="brand-name">Echo Flow</span>
     <span class="pill">Local</span>
   </div>

@@ -95,6 +95,66 @@ def preview(alias: str) -> bool:
     return _play_alias_or_file(spec)
 
 
+# Curated catalog for the Settings sound picker — (value, label) pairs.
+# Windows Media WAVs ship on virtually every Win10/11 install; system aliases
+# always resolve. Users can still type any other WAV name or full path.
+SOUND_CHOICES: list[tuple[str, str]] = [
+    # Crisp "listening" cues — good for the start sound.
+    ("Speech On.wav",               "Speech On — crisp “listening” chirp"),
+    ("Speech Sleep.wav",            "Speech Sleep — soft down-note"),
+    ("Speech Off.wav",              "Speech Off — “stopped listening”"),
+    ("Speech Misrecognition.wav",   "Speech Misrecognition — gentle buzz"),
+    ("ding.wav",                    "Ding — short, neutral"),
+    ("chimes.wav",                  "Chimes — soft three-note"),
+    ("chord.wav",                   "Chord — mellow"),
+    ("notify.wav",                  "Notify — classic"),
+    ("tada.wav",                    "Tada — celebratory"),
+    ("recycle.wav",                 "Recycle — quick swoosh"),
+    # Modern Windows 10/11 notification set.
+    ("Windows Notify.wav",                  "Windows Notify"),
+    ("Windows Notify System Generic.wav",   "Windows Notify (generic)"),
+    ("Windows Notify Messaging.wav",        "Windows Notify (messaging)"),
+    ("Windows Notify Calendar.wav",         "Windows Notify (calendar)"),
+    ("Windows Notify Email.wav",            "Windows Notify (email)"),
+    ("Windows Foreground.wav",              "Windows Foreground"),
+    ("Windows Background.wav",              "Windows Background — subtle"),
+    ("Windows Ding.wav",                    "Windows Ding"),
+    ("Windows Default.wav",                 "Windows Default"),
+    ("Windows Message Nudge.wav",           "Windows Nudge"),
+    ("Windows Print complete.wav",          "Windows Print complete"),
+    ("Windows Proximity Notification.wav",  "Windows Proximity"),
+    ("Windows Unlock.wav",                  "Windows Unlock"),
+    ("Windows Logon.wav",                   "Windows Logon"),
+    ("Windows Battery Low.wav",             "Windows Battery Low"),
+    ("Alarm01.wav",                         "Alarm 01"),
+    ("Alarm02.wav",                         "Alarm 02"),
+    ("Ring01.wav",                          "Ring 01"),
+    # Always-resolvable system aliases.
+    ("SystemAsterisk",      "System Asterisk (alias)"),
+    ("SystemNotification",  "System Notification (alias)"),
+    ("SystemExclamation",   "System Exclamation (alias)"),
+    ("SystemDefault",       "System Default (alias)"),
+    ("SystemHand",          "System Hand — error (alias)"),
+    ("SystemQuestion",      "System Question (alias)"),
+]
+
+
+def list_choices() -> list[dict]:
+    """Curated sound options for the Settings picker.
+
+    Each item: {"value", "label", "available"}. `available` is True for system
+    aliases and for Media WAVs that resolve on THIS machine, so the UI can
+    de-emphasize ones the user doesn't have. Non-Windows → only aliases marked
+    available (the picker still lists everything; users type freely).
+    """
+    out: list[dict] = []
+    for value, label in SOUND_CHOICES:
+        is_alias = not value.lower().endswith(".wav")
+        available = is_alias or (_resolve_wav(value) is not None)
+        out.append({"value": value, "label": label, "available": available})
+    return out
+
+
 def play(kind: str, cfg: dict | None = None) -> None:
     """Play a named feedback sound. kind: 'start' | 'stop' | 'error' | 'ready'."""
     cfg = cfg or {}

@@ -18,6 +18,13 @@
   (50/60 → 56/60 with a tighter default system prompt).
 
 ### Added
+- New Echo Flow feather logo applied across the app: `assets/icon.png` +
+  `assets/icon.ico` (exe / window icon), dashboard favicon, and the dashboard
+  sidebar brand mark (`/static/logo.png`).
+- Expanded notification-sound catalog. `sound.list_choices()` centralizes a
+  curated set of Windows Media WAVs + system aliases (30+), surfaced as the
+  picker in Settings → System for the start / stop / error cues with per-entry
+  availability and a Test button. Users can still type any other WAV/alias.
 - Whisper decoder biasing via `initial_prompt` built from custom
   vocabulary + snippet expansions + personal vocabulary.
 - Polish eval harness at `tests/eval/` (30 cases) plus ASR eval stub.
