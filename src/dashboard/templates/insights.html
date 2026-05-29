@@ -15,6 +15,8 @@
                       height:1px; background: linear-gradient(90deg,
                         color-mix(in oklab, var(--accent) 40%, transparent),
                         var(--border) 30%, var(--border) 70%, transparent); }
+  .wf-subtitle { margin-top: 6px; font-size: 13px; color: var(--muted);
+                 letter-spacing: 0; }
 
   .wf-tabs   { display:flex; gap:24px; margin: 16px 0 24px;
                border-bottom: 1px solid var(--border); position:relative; }
@@ -97,10 +99,11 @@
   .wf-gauge-tick  { stroke: color-mix(in oklab, var(--muted) 60%, transparent);
                     stroke-width: 1; stroke-linecap: round; }
   .wf-gauge-tick.major { stroke: var(--muted); stroke-width: 1.5; }
-  .wf-gauge-center { position:absolute; left:0; right:0; top:48px; text-align:center;
-                     font-family: var(--font-mono); font-size: 13px; font-weight: 600;
-                     color: color-mix(in oklab, var(--text) 65%, transparent);
-                     letter-spacing:.02em; }
+  .wf-gauge-min, .wf-gauge-max { position:absolute; bottom:4px;
+                     font-size: 10px; font-weight: 600; color: var(--muted);
+                     font-variant-numeric: tabular-nums; letter-spacing:.02em; }
+  .wf-gauge-min { left: 16px; }
+  .wf-gauge-max { right: 16px; }
   .wf-gauge-val   { display:inline-flex; align-items:center; gap:7px;
                     font-size: 13px; font-weight: 700; color: var(--text);
                     padding: 4px 12px; border-radius: 999px;
@@ -140,13 +143,14 @@
                background: color-mix(in oklab, var(--panel-2) 80%, transparent);
                border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
                border-radius: 12px; padding: 4px; }
-  .wf-source button { position:relative; z-index:1; background: transparent; border:0;
-                      color: var(--muted); font-size: 12.5px; font-weight: 600;
-                      padding: 9px 12px; border-radius: 9px; cursor:pointer;
-                      transition: color .2s ease, transform .12s ease; }
-  .wf-source button:hover { color: var(--text); }
-  .wf-source button:active { transform: scale(.97); }
-  .wf-source button.active { color: var(--text);
+  .wf-source a { position:relative; z-index:1; background: transparent; border:0;
+                 color: var(--muted); font-size: 12.5px; font-weight: 600;
+                 padding: 9px 12px; border-radius: 9px; cursor:pointer;
+                 text-align:center; text-decoration:none;
+                 transition: color .2s ease, transform .12s ease; }
+  .wf-source a:hover { color: var(--text); }
+  .wf-source a:active { transform: scale(.97); }
+  .wf-source a.active { color: var(--text);
                              background: var(--panel);
                              box-shadow:
                                 0 1px 2px rgba(0,0,0,.08),
@@ -268,7 +272,10 @@
 </svg>
 
 <div class="wf-header">
-  <div class="wf-title">Outcomes</div>
+  <div>
+    <div class="wf-title">Outcomes</div>
+    <div class="wf-subtitle">How Echo is showing up in your work.</div>
+  </div>
 </div>
 
 <div class="wf-tabs">
@@ -286,8 +293,10 @@
   <div class="wf-card">
     <div class="wf-hero-num">{{ wpm or 0 }}</div>
     <div class="wf-hero-lbl">Words per minute</div>
-    {% set wpm_target = 200 %}
     {% set wpm_val = wpm or 0 %}
+    {# Adaptive ceiling: a fast dictator (>160 wpm) shouldn't peg the gauge at
+       100%. Round up to the next 100 so the arc stays a meaningful fraction. #}
+    {% set wpm_target = 200 if wpm_val < 160 else (((wpm_val // 100) + 1) * 100) %}
     {% set wpm_frac = (wpm_val / wpm_target) if wpm_val < wpm_target else 1.0 %}
     {# Arc r=70, viewBox padded to clear the stroke. Length = pi*r = 220. #}
     <div class="wf-gauge">
@@ -313,7 +322,8 @@
             <line class="wf-gauge-tick major" x1="167" y1="95" x2="175" y2="95" />
           </g>
         </svg>
-        <div class="wf-gauge-center">{{ wpm_val or '—' }}</div>
+        <span class="wf-gauge-min">0</span>
+        <span class="wf-gauge-max">{{ wpm_target }}</span>
       </div>
       <div class="wf-gauge-val">
         {% if wpm_val == 0 %}Awaiting first dictation
@@ -359,9 +369,14 @@
         Dictate to see your words add up.
       {% endif %}
     </div>
+    {% set _src = source or 'desktop' %}
     <div class="wf-source" role="tablist" aria-label="Source">
-      <button class="active" type="button" role="tab" aria-selected="true">⌨ Desktop</button>
-      <button type="button" role="tab" aria-selected="false">📱 Mobile</button>
+      <a class="wf-source-btn{% if _src == 'desktop' %} active{% endif %}"
+         role="tab" aria-selected="{{ 'true' if _src == 'desktop' else 'false' }}"
+         href="/insights?source=desktop">⌨ Desktop</a>
+      <a class="wf-source-btn{% if _src == 'mobile' %} active{% endif %}"
+         role="tab" aria-selected="{{ 'true' if _src == 'mobile' else 'false' }}"
+         href="/insights?source=mobile">📱 Mobile</a>
     </div>
   </div>
 </div>
@@ -372,7 +387,7 @@
   {# --- Desktop usage breakdown --- #}
   <div class="wf-card">
     <div class="wf-heat-head">
-      <div style="font-size:18px;font-weight:600;">Desktop usage</div>
+      <div style="font-size:18px;font-weight:600;">{{ (source or 'desktop')|capitalize }} usage</div>
       <div class="wf-heat-longest">Total apps · {{ apps|length }}</div>
     </div>
     {% if apps %}
