@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Actions — Echo Flow{% endblock %}
+{% block content %}
+<h1 class="welcome">Actions</h1>
+<div class="muted small" style="margin: 4px 0 14px;">
+  Semantic voice actions — open an app or site, search the web, summarize the
+  focused document, draft a calendar event, take a note. Allowlist-only and
+  never destructive: nothing here deletes, sends, or pays.
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+{% if not data.enabled %}
+  <div class="restart-banner">
+    Action Mode is off.
+    <a href="/settings/experimental">Enable it in Settings → Experimental</a> to start using voice actions.
+  </div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <h2>How to fire an action</h2>
+    <span class="num muted">prefix: {{ data.prefix }}</span>
+  </div>
+  <div class="sub">Speak the prefix word, then an action. Examples:</div>
+  <pre class="transform-prompt"><span class="diff-add">{{ data.prefix }}, open notepad</span>              → launches a configured app
+<span class="diff-add">{{ data.prefix }} search the web for cats</span>  → opens a web search
+<span class="diff-add">{{ data.prefix }}, summarize this pdf</span>      → local summary of the focused doc
+<span class="diff-add">{{ data.prefix }}, take a note that …</span>      → saves a note</pre>
+</div>
+
+<div class="card">
+  <h2>Supported actions <span class="muted small num">{{ data.supported|length }}</span></h2>
+  <ul class="cmd-list">
+    {% for label in data.supported %}<li>{{ label }}</li>{% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Configured apps <span class="muted small num">{{ data.apps|length }}</span></h2>
+    <span class="num muted">edit in config.yaml → experimental.action_apps</span>
+  </div>
+  {% if data.apps %}
+    <table class="kv-table">
+      <thead><tr><th>Say “open …”</th><th>Launches</th></tr></thead>
+      <tbody>
+        {% for a in data.apps %}
+          <tr><td><code>{{ a.name }}</code></td><td class="muted">{{ a.target }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted small">No apps configured. Add entries under
+      <code>experimental.action_apps</code> in config.yaml.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Recent actions <span class="muted small num">{{ data.recent|length }}</span></h2>
+  {% if data.recent %}
+    <table class="kv-table">
+      <thead>
+        <tr><th>Time</th><th>Spoken</th><th>Action</th><th>OK</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        {% for r in data.recent %}
+          <tr>
+            <td class="num">{{ r.ts_human }}</td>
+            <td>{{ r.body }}</td>
+            <td>
+              <code>{{ r.handler }}</code>
+              {% if r.label %}<span class="muted small">({{ r.label }})</span>{% endif %}
+            </td>
+            <td>
+              {% if r.ok %}<span style="color: var(--accent);">✓</span>{% else %}<span style="color: var(--danger);">✕</span>{% endif %}
+            </td>
+            <td class="muted small">{% if not r.ok and r.error %}{{ r.error }}{% else %}{{ r.args }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted small">No actions fired yet. Try saying
+      "<span class="num">{{ data.prefix }}, open notepad</span>" while Action Mode is on.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -50,6 +50,7 @@ SECTIONS = [
     ("style", "Style", "/style", "style.html"),
     ("transforms", "Transforms", "/transforms", "transforms.html"),
     ("commands", "Commands", "/commands", "commands.html"),
+    ("actions", "Actions", "/actions", "actions.html"),
     ("scratchpad", "Scratchpad", "/scratchpad", "scratchpad_list.html"),
     ("privacy", "Privacy", "/privacy", "privacy.html"),
     ("settings", "Settings", "/settings/general", "settings/general.html"),
@@ -733,6 +734,19 @@ def make_app(app_ref):
         data = _cv.page_data(app_ref.cfg, history)
         return render_template(
             "commands.html", sections=SECTIONS, active="commands",
+            theme=dcfg.get("theme", "dark"),
+            data=data, flash=_req.args.get("flash", ""),
+        )
+
+    # --- Actions (Phase 14 Action Mode — read-only panel) --------------
+    @flask_app.get("/actions")
+    def actions_page():
+        from . import actions_view as _av
+        from flask import request as _req
+        history = getattr(app_ref, "history", None)
+        data = _av.page_data(app_ref.cfg, history)
+        return render_template(
+            "actions.html", sections=SECTIONS, active="actions",
             theme=dcfg.get("theme", "dark"),
             data=data, flash=_req.args.get("flash", ""),
         )

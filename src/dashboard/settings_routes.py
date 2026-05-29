@@ -225,13 +225,17 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
     @flask_app.get("/settings/experimental")
     def settings_experimental():
         from .. import commands as _cmds
+        from .. import voice_actions as _va
         cfg = app_ref.cfg
         exp = cfg.get("experimental", {}) or {}
         return _render("experimental", values={
             "press_enter_command": bool(exp.get("press_enter_command", False)),
             "command_mode": bool(exp.get("command_mode", False)),
             "command_prefix": exp.get("command_prefix", "computer"),
-        }, supported_commands=_cmds.list_supported())
+            "action_mode": bool(exp.get("action_mode", False)),
+            "action_email_url": exp.get("action_email_url", "https://mail.google.com"),
+        }, supported_commands=_cmds.list_supported(),
+           supported_actions=_va.list_supported(cfg))
 
     @flask_app.post("/settings/experimental/save")
     def settings_experimental_save():
@@ -254,10 +258,21 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         # `experimental:` block may not exist in config.yaml on older installs;
         # we attempt the write and surface the error rather than silently
         # creating a new block (config_writer is scalar-only by design).
+        # Validate the email URL through the same guard the handler uses, so a
+        # bad value can't be persisted and silently opened later.
+        email_url = (f.get("action_email_url", "") or "").strip() or "https://mail.google.com"
+        from .. import voice_actions as _va
+        if not _va._is_safe_url(email_url):
+            return redirect(
+                "/settings/experimental?flash=email URL must be a safe "
+                "http/https/mailto address."
+            )
         errs = _save_scalars(app_ref, [
             ("experimental.press_enter_command", _checkbox(f, "press_enter_command")),
             ("experimental.command_mode", _checkbox(f, "command_mode")),
             ("experimental.command_prefix", prefix),
+            ("experimental.action_mode", _checkbox(f, "action_mode")),
+            ("experimental.action_email_url", email_url),
         ], log)
         if errs:
             return redirect(

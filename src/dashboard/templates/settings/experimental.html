@@ -36,10 +36,42 @@
         </label>
       </div>
 
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Action mode</div>
+          <div class="set-group-hint">Semantic actions behind the same prefix — open apps/sites, search, summarize the focused doc, draft an event, take a note. Allowlist-only; never destructive. <a href="/actions">View actions →</a></div>
+        </div>
+
+        <label class="set-toggle">
+          <input type="checkbox" name="action_mode" value="1" {% if values.action_mode %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Action mode
+            <small>Interpret prefixed dictations as semantic actions (runs after command mode).</small></span>
+        </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Email URL</span>
+          <input type="text" name="action_email_url" value="{{ values.action_email_url }}" placeholder="https://mail.google.com" autocomplete="off">
+          <span class="set-field-hint">Opened by “{{ values.command_prefix }}, open email”. http/https/mailto only. Apps are edited in <code>config.yaml → action_apps</code>.</span>
+        </label>
+      </div>
+
       <div class="set-actions">
         <button type="submit" class="btn primary">Save changes</button>
       </div>
     </form>
+
+    {% if supported_actions %}
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Supported voice actions</div>
+          <div class="set-group-hint">Available when Action mode is on.</div>
+        </div>
+        <ul class="cmd-list">
+          {% for label in supported_actions %}<li>{{ label }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
 
     {% if supported_commands %}
       <div class="set-group">
