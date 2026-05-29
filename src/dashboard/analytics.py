@@ -196,12 +196,21 @@ def fixes_made(
 ) -> dict:
     """How much Echo Flow has fixed.
 
-    Returns {"words_corrected": N, "dictionary_fixes": M, "total": N+M}.
+    Core counters (stable contract):
     - words_corrected: |word_count(cleaned_text) - word_count(raw_text)| summed.
       A rough but honest "Echo edited X words on your behalf."
     - dictionary_fixes: count of dictations where raw vs cleaned differ AND
       the raw word survives as a substring of the cleaned (treat as a vocab fix).
       Approximation — exact attribution requires per-token diff.
+    - total: words_corrected + dictionary_fixes.
+
+    Enrichment counters (for the premium breakdown card):
+    - total_dictations: rows with both raw + cleaned text considered.
+    - words_added / words_removed: the signed split of words_corrected
+      (words_corrected == words_added + words_removed). Echo mostly *trims*
+      filler and comma-storms, so words_removed usually dominates.
+    - chars_corrected: |len(cleaned) - len(raw)| summed (character-level churn).
+    - touch_rate: fraction of dictations Echo changed (dictionary_fixes / total).
     """
     where_src = _source_clause(include_mobile)
     cur = conn.execute(
@@ -210,15 +219,32 @@ def fixes_made(
     )
     words_corrected = 0
     dictionary_fixes = 0
+    words_added = 0
+    words_removed = 0
+    chars_corrected = 0
+    total_dictations = 0
     for raw, cleaned in cur:
+        total_dictations += 1
         rw, cw = _word_count(raw), _word_count(cleaned)
-        words_corrected += abs(cw - rw)
+        delta = cw - rw
+        words_corrected += abs(delta)
+        if delta > 0:
+            words_added += delta
+        elif delta < 0:
+            words_removed += -delta
+        chars_corrected += abs(len((cleaned or "").strip()) - len((raw or "").strip()))
         if raw.strip() != cleaned.strip():
             dictionary_fixes += 1
+    touch_rate = (dictionary_fixes / total_dictations) if total_dictations else 0.0
     return {
         "words_corrected": words_corrected,
         "dictionary_fixes": dictionary_fixes,
         "total": words_corrected + dictionary_fixes,
+        "total_dictations": total_dictations,
+        "words_added": words_added,
+        "words_removed": words_removed,
+        "chars_corrected": chars_corrected,
+        "touch_rate": touch_rate,
     }
 
 

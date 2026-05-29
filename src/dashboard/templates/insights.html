@@ -135,7 +135,43 @@
                       overflow:hidden; }
   .wf-row .sparkbar > span { display:block; height:100%;
                       background: linear-gradient(90deg, var(--accent),
-                         color-mix(in oklab, var(--accent) 60%, var(--accent-2))); }
+                         color-mix(in oklab, var(--accent) 60%, var(--accent-2)));
+                      transition: width .8s cubic-bezier(.2,.7,.2,1); }
+
+  /* Fixes card — "how Echo edits" trimmed/added split + micro-stat footer.
+     Reuses the page's accent/panel tokens so it stays on-theme in both modes. */
+  .wf-split      { margin-top: 18px; }
+  .wf-split-head { display:flex; align-items:baseline; justify-content:space-between;
+                   font-size: 11px; font-weight:600; letter-spacing:.06em;
+                   text-transform:uppercase; color: var(--muted); margin-bottom: 9px; }
+  .wf-split-head .tot { color: var(--text); font-variant-numeric: tabular-nums; }
+  .wf-split-bar  { display:flex; height: 10px; border-radius: 999px; overflow:hidden;
+                   background: color-mix(in oklab, var(--panel-2) 80%, transparent);
+                   box-shadow: inset 0 1px 2px rgba(0,0,0,.06); }
+  .wf-split-bar > span { display:block; height:100%;
+                   transition: width .8s cubic-bezier(.2,.7,.2,1); }
+  .wf-split-bar .seg-trim { background: linear-gradient(90deg,
+                      color-mix(in oklab, var(--accent) 85%, var(--accent-2) 15%), var(--accent));
+                   box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 45%, transparent); }
+  .wf-split-bar .seg-add  { background: color-mix(in oklab, var(--accent-2) 50%, var(--panel-2)); }
+  .wf-split-legend { display:flex; gap:18px; margin-top:11px;
+                   font-size: 11.5px; color: var(--muted); }
+  .wf-split-legend .k { display:inline-flex; align-items:center; gap:7px; }
+  .wf-split-legend .sw { width:8px; height:8px; border-radius:2px; flex:none; }
+  .wf-split-legend .sw.trim { background: var(--accent); }
+  .wf-split-legend .sw.add  { background: color-mix(in oklab, var(--accent-2) 50%, var(--panel-2)); }
+  .wf-split-legend strong { color: var(--text); font-weight:700;
+                   font-variant-numeric: tabular-nums; }
+
+  .wf-microstats { display:grid; grid-template-columns: 1fr 1fr; gap: 10px;
+                   margin-top: 18px; }
+  .wf-microstat  { padding: 11px 13px; border-radius: 11px;
+                   background: color-mix(in oklab, var(--panel-2) 55%, transparent);
+                   border: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
+  .wf-microstat .n { font-size: 18px; font-weight: 700; letter-spacing:-0.02em;
+                   line-height:1.1; font-variant-numeric: tabular-nums; color: var(--text); }
+  .wf-microstat .k { margin-top: 3px; font-size: 10px; font-weight:600;
+                   letter-spacing:.07em; text-transform:uppercase; color: var(--muted); }
 
   /* Source toggle (Desktop / Mobile) — segmented control */
   .wf-source { position:relative; display:grid; grid-auto-flow:column;
@@ -281,7 +317,8 @@
 
   @media (prefers-reduced-motion: reduce) {
     .wf-card, .wf-tab, .wf-cell, .wf-source button,
-    .wf-app-bar > span, .wf-gauge-fill, .wf-rank-meter > span { transition: none !important; }
+    .wf-app-bar > span, .wf-gauge-fill, .wf-rank-meter > span,
+    .wf-split-bar > span, .wf-row .sparkbar > span { transition: none !important; }
     .wf-card:hover, .wf-cell:hover { transform: none !important; }
   }
 </style>
@@ -372,15 +409,68 @@
   <div class="wf-card">
     <div class="wf-hero-num">{{ "{:,}".format(fixes.total or 0) }}</div>
     <div class="wf-hero-lbl">Fixes made by Echo</div>
+
+    {% set _wc = fixes.words_corrected or 0 %}
+    {% set _df = fixes.dictionary_fixes or 0 %}
+    {% set _td = fixes.total_dictations or 0 %}
+    {% set _added = fixes.words_added or 0 %}
+    {% set _removed = fixes.words_removed or 0 %}
+    {% set _chars = fixes.chars_corrected or 0 %}
+    {% set _rowmax = [_wc, _df, 1] | max %}
+
+    {% if _td %}
+      {% set _touch = ((fixes.touch_rate or 0) * 100) | round | int %}
+      <div class="wf-delta up">↻ Refined {{ _touch }}% of {{ "{:,}".format(_td) }} dictation{{ '' if _td == 1 else 's' }}</div>
+    {% endif %}
+
     <div class="wf-divider"></div>
-    <div class="wf-row">
-      <span class="lbl">Words corrected</span>
-      <span class="val">{{ "{:,}".format(fixes.words_corrected or 0) }}</span>
-    </div>
-    <div class="wf-row">
-      <span class="lbl">Dictionary fixes</span>
-      <span class="val">{{ "{:,}".format(fixes.dictionary_fixes or 0) }}</span>
-    </div>
+
+    {% if fixes.total %}
+      <div class="wf-row">
+        <span class="lbl"><span class="dot"></span>Words corrected</span>
+        <span class="val">
+          <span class="sparkbar"><span style="width: {{ (_wc / _rowmax * 100) | round(1) }}%;"></span></span>
+          {{ "{:,}".format(_wc) }}
+        </span>
+      </div>
+      <div class="wf-row">
+        <span class="lbl"><span class="dot"></span>Dictionary fixes</span>
+        <span class="val">
+          <span class="sparkbar"><span style="width: {{ (_df / _rowmax * 100) | round(1) }}%;"></span></span>
+          {{ "{:,}".format(_df) }}
+        </span>
+      </div>
+
+      {% if _wc %}
+        <div class="wf-split">
+          <div class="wf-split-head">
+            <span>How Echo edits</span>
+            <span class="tot">{{ "{:,}".format(_wc) }} words</span>
+          </div>
+          <div class="wf-split-bar">
+            <span class="seg-trim" style="width: {{ (_removed / _wc * 100) | round(1) }}%;"></span>
+            <span class="seg-add"  style="width: {{ (_added / _wc * 100) | round(1) }}%;"></span>
+          </div>
+          <div class="wf-split-legend">
+            <span class="k"><span class="sw trim"></span>Trimmed <strong>{{ "{:,}".format(_removed) }}</strong></span>
+            <span class="k"><span class="sw add"></span>Added <strong>{{ "{:,}".format(_added) }}</strong></span>
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="wf-microstats">
+        <div class="wf-microstat">
+          <div class="n">{{ "{:,}".format(_chars) }}</div>
+          <div class="k">Characters polished</div>
+        </div>
+        <div class="wf-microstat">
+          <div class="n">{% if _df %}{{ (_wc / _df) | round(1) }}{% else %}0{% endif %}</div>
+          <div class="k">Words per fix</div>
+        </div>
+      </div>
+    {% else %}
+      <div class="wf-empty">Echo's edits will show up here as you dictate.</div>
+    {% endif %}
   </div>
 
   {# --- Total words dictated --- #}
