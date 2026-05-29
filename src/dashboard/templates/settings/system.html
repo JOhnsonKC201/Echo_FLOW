@@ -1,27 +1,156 @@
 {% extends "base.html" %}
 {% block title %}Settings — System{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Settings — System</h2>
-    <div class="sub">Audio feedback, voice-activity detection, silence timeout.</div>
-    {% include "settings/_nav.html" %}
+  {% set s_title = "System" %}
+  {% set s_desc = "Audio cues, voice-activity detection, and silence timeout." %}
+  {% include "settings/_head.html" %}
+
+  <div class="card set-card">
     {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
-    <form method="post" action="/settings/system/save" class="settings-form">
-      <label class="check">
-        <input type="checkbox" name="sound_enabled" value="1" {% if values.sound_enabled %}checked{% endif %}>
-        <span>Play audible feedback on press/release</span>
-      </label>
-      <label class="check">
-        <input type="checkbox" name="vad_enabled" value="1" {% if values.vad_enabled %}checked{% endif %}>
-        <span>Voice-activity detection (auto-stop on silence)</span>
-      </label>
-      <label>
-        <span>Silence timeout (ms, toggle mode only)</span>
-        <input type="number" name="silence_timeout_ms" value="{{ values.silence_timeout_ms }}" min="200" max="10000" step="100">
-      </label>
-      <div class="actions">
-        <button type="submit" class="btn primary">Save</button>
+    <form method="post" action="/settings/system/save" class="settings-form set-form">
+
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Sound cues</div>
+          <div class="set-group-hint">
+            Echo plays a short sound the instant it starts listening, so you
+            know your mic is live without watching the tray. Pick a
+            <b>distinct start cue</b> and press <span class="set-kbd">Test</span>
+            to hear it.
+          </div>
+        </div>
+
+        <label class="set-toggle">
+          <input type="checkbox" name="sound_enabled" value="1" {% if values.sound_enabled %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Play sound cues
+            <small>Audible feedback so you know when Echo is listening. Off = silent; watch the tray microphone instead.</small></span>
+        </label>
+
+        <div class="set-sound">
+          <div class="set-sound-row">
+            <div class="set-sound-meta">
+              <span class="set-sound-ico">🎙️</span>
+              <div>
+                <div class="set-sound-name">Start listening</div>
+                <div class="set-sound-sub">The “I’m recording” cue — make this one unmistakable.</div>
+              </div>
+            </div>
+            <div class="set-sound-pick">
+              <input type="text" name="sound_start_alias" id="sound_start_alias"
+                     list="snd-options" value="{{ values.sound_start_alias }}"
+                     placeholder="ding.wav" autocomplete="off">
+              <button type="button" class="btn set-test" data-target="sound_start_alias">
+                <span class="set-test-ico">▶</span><span>Test</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="set-sound-row">
+            <div class="set-sound-meta">
+              <span class="set-sound-ico">⏹️</span>
+              <div>
+                <div class="set-sound-name">Stop / done</div>
+                <div class="set-sound-sub">Soft confirmation when you release the key.</div>
+              </div>
+            </div>
+            <div class="set-sound-pick">
+              <input type="text" name="sound_stop_alias" id="sound_stop_alias"
+                     list="snd-options" value="{{ values.sound_stop_alias }}"
+                     placeholder="Windows Notify Messaging.wav" autocomplete="off">
+              <button type="button" class="btn set-test" data-target="sound_stop_alias">
+                <span class="set-test-ico">▶</span><span>Test</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="set-sound-row">
+            <div class="set-sound-meta">
+              <span class="set-sound-ico">⚠️</span>
+              <div>
+                <div class="set-sound-name">Error</div>
+                <div class="set-sound-sub">Played when a dictation fails.</div>
+              </div>
+            </div>
+            <div class="set-sound-pick">
+              <input type="text" name="sound_error_alias" id="sound_error_alias"
+                     list="snd-options" value="{{ values.sound_error_alias }}"
+                     placeholder="SystemHand" autocomplete="off">
+              <button type="button" class="btn set-test" data-target="sound_error_alias">
+                <span class="set-test-ico">▶</span><span>Test</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="set-sound-foot">
+            Accepts a Windows system sound (e.g. <code>SystemAsterisk</code>),
+            a file in <code>C:\Windows\Media</code> (e.g. <code>chimes.wav</code>),
+            or a full path to a <code>.wav</code>.
+          </div>
+        </div>
+      </div>
+
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Recording</div>
+          <div class="set-group-hint">How Echo decides when you’ve finished speaking.</div>
+        </div>
+
+        <label class="set-toggle">
+          <input type="checkbox" name="vad_enabled" value="1" {% if values.vad_enabled %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Voice-activity detection
+            <small>Auto-stops recording after a pause (toggle mode).</small></span>
+        </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Silence timeout</span>
+          <span class="set-input-affix">
+            <input type="number" name="silence_timeout_ms" value="{{ values.silence_timeout_ms }}"
+                   min="200" max="10000" step="100">
+            <span class="set-affix">ms</span>
+          </span>
+          <span class="set-field-hint">How long to wait after you stop talking before ending a toggle-mode recording.</span>
+        </label>
+      </div>
+
+      <div class="set-actions">
+        <button type="submit" class="btn primary">Save changes</button>
+        <span class="set-actions-note">Applies on the next dictation.</span>
       </div>
     </form>
   </div>
+
+  <datalist id="snd-options">
+    <option value="Speech On.wav">Speech On — crisp “listening” chirp</option>
+    <option value="ding.wav">Ding — short, neutral</option>
+    <option value="chimes.wav">Chimes — soft three-note</option>
+    <option value="Windows Notify.wav">Windows Notify</option>
+    <option value="Windows Notify System Generic.wav">Windows Notify (generic)</option>
+    <option value="Windows Foreground.wav">Windows Foreground</option>
+    <option value="Windows Background.wav">Windows Background — subtle</option>
+    <option value="Windows Notify Messaging.wav">Notify Messaging</option>
+    <option value="tada.wav">Tada — celebratory</option>
+    <option value="SystemAsterisk">SystemAsterisk (alias)</option>
+    <option value="SystemExclamation">SystemExclamation (alias)</option>
+    <option value="SystemHand">SystemHand — error (alias)</option>
+  </datalist>
+
+  <script>
+    // "Test" buttons audition the chosen cue server-side (loopback only).
+    document.querySelectorAll('.set-test').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var input = document.getElementById(btn.getAttribute('data-target'));
+        var alias = (input && input.value || '').trim();
+        if (!alias) { input && input.focus(); return; }
+        btn.classList.add('playing');
+        var body = new URLSearchParams(); body.set('alias', alias);
+        fetch('/settings/system/sound-preview', { method: 'POST', body: body })
+          .catch(function () { /* playback is best-effort */ })
+          .finally(function () {
+            setTimeout(function () { btn.classList.remove('playing'); }, 650);
+          });
+      });
+    });
+  </script>
 {% endblock %}

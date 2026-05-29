@@ -1,0 +1,8 @@
+{# Premium settings masthead — eyebrow + gradient title + description, then the
+   tab rail. Panels set s_title / s_desc before including this. #}
+<div class="set-masthead">
+  <div class="set-eyebrow">Settings</div>
+  <h1 class="set-pagetitle">{{ s_title or 'Settings' }}</h1>
+  {% if s_desc %}<div class="set-pagedesc">{{ s_desc }}</div>{% endif %}
+</div>
+{% include "settings/_nav.html" %}

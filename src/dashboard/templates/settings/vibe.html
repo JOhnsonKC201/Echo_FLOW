@@ -1,75 +1,110 @@
 {% extends "base.html" %}
 {% block title %}Settings — Vibe{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Settings — Vibe</h2>
-    <div class="sub">Cleanup behavior. These changes take effect on the next dictation.</div>
-    {% include "settings/_nav.html" %}
+  {% set s_title = "Vibe" %}
+  {% set s_desc = "How Echo cleans up and rewrites what you say. Applies on the next dictation." %}
+  {% include "settings/_head.html" %}
+
+  <div class="card set-card">
     {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
-    <form method="post" action="/settings/vibe/save" class="settings-form">
-      <label class="check">
-        <input type="checkbox" name="cleanup_enabled" value="1" {% if values.cleanup_enabled %}checked{% endif %}>
-        <span>Auto Cleanup (LLM polish on every dictation)</span>
-      </label>
-      <label class="check">
-        <input type="checkbox" name="skip_when_clean" value="1" {% if values.skip_when_clean %}checked{% endif %}>
-        <span>Fast-path: skip LLM polish when Whisper output is already clean</span>
-      </label>
-      <label class="check">
-        <input type="checkbox" name="learning_enabled" value="1" {% if values.learning_enabled %}checked{% endif %}>
-        <span>Adaptive learning (use past corrections as few-shot examples)</span>
-      </label>
+    <form method="post" action="/settings/vibe/save" class="settings-form set-form">
 
-      <fieldset style="border:1px solid var(--border,#333); padding:10px 14px; margin:10px 0; border-radius:8px;">
-        <legend style="padding:0 6px;">Teacher model (distillation)</legend>
-        <div class="muted small" style="margin-bottom:8px;">
-          After each dictation, a stronger cloud LLM (Groq llama-3.3-70b by default)
-          re-cleans the raw text in the background. Its output is stored as a
-          <code>teacher</code> source pair so the system learns from a reference
-          model alongside your own edits. Needs <code>GROQ_API_KEY</code> set.
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Cleanup</div>
+          <div class="set-group-hint">Polish raw transcription — punctuation, capitalization, filler removal.</div>
         </div>
-        <label class="check">
+
+        <label class="set-toggle">
+          <input type="checkbox" name="cleanup_enabled" value="1" {% if values.cleanup_enabled %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Auto Cleanup
+            <small>Run an LLM polish pass on every dictation.</small></span>
+        </label>
+
+        <label class="set-toggle">
+          <input type="checkbox" name="skip_when_clean" value="1" {% if values.skip_when_clean %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Fast-path skip
+            <small>Skip the LLM when Whisper output is already clean — saves 200–2000ms.</small></span>
+        </label>
+
+        <label class="set-toggle">
+          <input type="checkbox" name="learning_enabled" value="1" {% if values.learning_enabled %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Adaptive learning
+            <small>Feed your past corrections back as few-shot examples.</small></span>
+        </label>
+      </div>
+
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Teacher model</div>
+          <div class="set-group-hint">
+            After each dictation, a stronger cloud LLM (Groq llama-3.3-70b by default)
+            re-cleans the raw text in the background and stores it as a
+            <code>teacher</code> pair, so the system learns toward a reference model
+            alongside your edits. Needs <code>GROQ_API_KEY</code> set.
+          </div>
+        </div>
+
+        <label class="set-toggle">
           <input type="checkbox" name="teacher_enabled" value="1" {% if values.teacher_enabled %}checked{% endif %}>
-          <span>Enable teacher-model distillation</span>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Enable teacher-model distillation
+            <small>Zero added latency — runs in a daemon thread.</small></span>
         </label>
-        <label class="check">
+
+        <label class="set-toggle">
           <input type="checkbox" name="trust_teacher" value="1" {% if values.trust_teacher %}checked{% endif %}>
-          <span>Trust teacher pairs (include in few-shot examples and personal vocabulary)</span>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Trust teacher pairs
+            <small>Include them in few-shot examples and personal vocabulary.</small></span>
         </label>
-        <label>
-          <span>Teacher model (Groq)</span>
-          <input type="text" name="teacher_model" value="{{ values.teacher_model }}" placeholder="llama-3.3-70b-versatile">
-          <div class="muted small">Blank = use the same model as PE (<code>cleanup.groq.model</code>).</div>
+
+        <label class="set-field">
+          <span class="set-field-label">Teacher model</span>
+          <input type="text" name="teacher_model" value="{{ values.teacher_model }}" placeholder="llama-3.3-70b-versatile" autocomplete="off">
+          <span class="set-field-hint">Blank = use the same model as Prompt-Engineering (<code>cleanup.groq.model</code>).</span>
         </label>
-      </fieldset>
+      </div>
 
-      <label class="check">
-        <input type="checkbox" name="prompt_engineering_enabled" value="1" {% if values.prompt_engineering_enabled %}checked{% endif %}>
-        <span>Prompt-engineering mode (one-shot hotkey rewrites dictation as engineered prompt)</span>
-      </label>
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Prompt-Engineering mode</div>
+          <div class="set-group-hint">A one-shot hotkey (Ctrl+Shift+Alt) rewrites a spoken idea into a full engineered prompt.</div>
+        </div>
 
-      <label>
-        <span>PE target audience</span>
-        <select name="prompt_engineering_audience">
-          <option value="claude-code" {% if values.prompt_engineering_audience == 'claude-code' %}selected{% endif %}>Claude Code (filesystem + shell aware)</option>
-          <option value="chatgpt"     {% if values.prompt_engineering_audience == 'chatgpt'     %}selected{% endif %}>ChatGPT / general chat</option>
-          <option value="generic"     {% if values.prompt_engineering_audience == 'generic'     %}selected{% endif %}>Generic — no framing</option>
-        </select>
-        <div class="muted small">Tailors the engineered prompt to the receiving LLM (e.g. Claude Code can reference paths and shell verbs; ChatGPT cannot).</div>
-      </label>
+        <label class="set-toggle">
+          <input type="checkbox" name="prompt_engineering_enabled" value="1" {% if values.prompt_engineering_enabled %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Enable Prompt-Engineering mode</span>
+        </label>
 
-      <label>
-        <span>PE provider</span>
-        <select name="prompt_engineering_provider">
-          <option value="groq"      {% if values.prompt_engineering_provider == 'groq'      %}selected{% endif %}>Groq (recommended — cloud, fast)</option>
-          <option value="ollama"    {% if values.prompt_engineering_provider == 'ollama'    %}selected{% endif %}>Ollama (local)</option>
-          <option value="anthropic" {% if values.prompt_engineering_provider == 'anthropic' %}selected{% endif %}>Anthropic</option>
-        </select>
-        <div class="muted small">Which LLM does the PE rewrite. Groq needs <code>GROQ_API_KEY</code> in the daemon's environment; otherwise it silently falls back to Ollama.</div>
-      </label>
+        <label class="set-field">
+          <span class="set-field-label">Target audience</span>
+          <select name="prompt_engineering_audience">
+            <option value="claude-code" {% if values.prompt_engineering_audience == 'claude-code' %}selected{% endif %}>Claude Code — filesystem &amp; shell aware</option>
+            <option value="chatgpt"     {% if values.prompt_engineering_audience == 'chatgpt'     %}selected{% endif %}>ChatGPT / general chat</option>
+            <option value="generic"     {% if values.prompt_engineering_audience == 'generic'     %}selected{% endif %}>Generic — no framing</option>
+          </select>
+          <span class="set-field-hint">Tailors the rewrite to the receiving model.</span>
+        </label>
 
-      <div class="actions">
-        <button type="submit" class="btn primary">Save</button>
+        <label class="set-field">
+          <span class="set-field-label">Provider</span>
+          <select name="prompt_engineering_provider">
+            <option value="groq"      {% if values.prompt_engineering_provider == 'groq'      %}selected{% endif %}>Groq — cloud, fast (recommended)</option>
+            <option value="ollama"    {% if values.prompt_engineering_provider == 'ollama'    %}selected{% endif %}>Ollama — local</option>
+            <option value="anthropic" {% if values.prompt_engineering_provider == 'anthropic' %}selected{% endif %}>Anthropic</option>
+          </select>
+          <span class="set-field-hint">Groq needs <code>GROQ_API_KEY</code>; otherwise it silently falls back to Ollama.</span>
+        </label>
+      </div>
+
+      <div class="set-actions">
+        <button type="submit" class="btn primary">Save changes</button>
+        <span class="set-actions-note">Applies on the next dictation.</span>
       </div>
     </form>
   </div>

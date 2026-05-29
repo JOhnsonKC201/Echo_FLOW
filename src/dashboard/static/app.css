@@ -789,3 +789,290 @@ kbd {
     scroll-behavior: auto !important;
   }
 }
+
+/* ====================================================================== *
+ * Settings — premium pass. Scoped to [data-page="settings"] so it lifts
+ * every panel (General / System / Vibe / Experimental) at once without
+ * rewiring each field. Mirrors the Outcomes masthead + card language for a
+ * consistent, hand-built feel.
+ * ====================================================================== */
+
+/* Constrain the column so forms don't sprawl on ultrawide windows. */
+[data-page="settings"] .content { max-width: 920px; }
+
+/* --- Masthead --- */
+.set-masthead { margin: 2px 0 18px; }
+.set-eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--accent);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.set-eyebrow::before {
+  content: ""; width: 14px; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+}
+.set-pagetitle {
+  font-size: 30px; font-weight: 700; letter-spacing: -0.03em;
+  margin: 8px 0 0; line-height: 1.05;
+  background: linear-gradient(180deg, var(--text),
+     color-mix(in oklab, var(--text) 78%, var(--accent) 22%));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+.set-pagedesc { margin-top: 7px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+
+/* --- Tab rail (restyle existing .settings-tabs / .settings-tab) --- */
+[data-page="settings"] .settings-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin: 0 0 20px; padding: 5px;
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--panel-2) 60%, transparent);
+  box-shadow: 0 1px 0 color-mix(in oklab, var(--text) 3%, transparent) inset;
+  width: fit-content; max-width: 100%;
+}
+[data-page="settings"] .settings-tab {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 15px; margin: 0; border: 0; border-radius: 10px;
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  background: transparent; box-shadow: none;
+  transition: color .16s ease, background .16s ease;
+}
+[data-page="settings"] .settings-tab:hover {
+  color: var(--text);
+  background: color-mix(in oklab, var(--text) 5%, transparent);
+}
+[data-page="settings"] .settings-tab.active {
+  color: var(--text); background: var(--panel); border: 0;
+  box-shadow:
+    0 1px 2px rgba(0,0,0,.10),
+    0 4px 12px -6px color-mix(in oklab, var(--accent) 30%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--accent) 22%, transparent);
+}
+.settings-tab-ico { font-size: 13px; line-height: 1; opacity: .85; }
+[data-page="settings"] .settings-tab.active .settings-tab-ico { opacity: 1; }
+
+/* --- Card --- */
+[data-page="settings"] .set-card {
+  position: relative; isolation: isolate;
+  border-radius: 16px; padding: 8px 26px 24px;
+  background: linear-gradient(180deg,
+     color-mix(in oklab, var(--panel) 92%, var(--accent) 4%), var(--panel) 55%);
+  box-shadow:
+    0 1px 0 color-mix(in oklab, var(--text) 4%, transparent) inset,
+    0 1px 2px rgba(0,0,0,.04),
+    0 16px 40px -24px color-mix(in oklab, var(--accent) 20%, rgba(0,0,0,.4));
+}
+[data-page="settings"] .set-card::before {
+  content: ""; position: absolute; inset: 0; border-radius: 16px; padding: 1px;
+  pointer-events: none; opacity: .7;
+  background: linear-gradient(140deg,
+     color-mix(in oklab, var(--accent) 28%, transparent) 0%,
+     transparent 30%, transparent 70%,
+     color-mix(in oklab, var(--accent-2) 16%, transparent) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+
+/* --- Grouped fields --- */
+.set-group { padding: 22px 0; border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
+.set-group:first-of-type { border-top: 0; }
+.set-group-head { margin-bottom: 14px; }
+.set-group-title {
+  font-size: 15px; font-weight: 650; letter-spacing: -0.01em; color: var(--text);
+  display: flex; align-items: center; gap: 9px;
+}
+.set-group-title::before {
+  content: ""; width: 3px; height: 14px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--accent),
+     color-mix(in oklab, var(--accent) 55%, var(--accent-2)));
+  box-shadow: 0 0 8px -1px color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.set-group-hint { margin-top: 7px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.set-group-hint b { color: var(--text); font-weight: 600; }
+.set-kbd {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  padding: 1px 7px; border-radius: 6px; color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 24%, transparent);
+}
+
+/* Generic field row (label above, hint below). */
+[data-page="settings"] .settings-form { gap: 0; }
+.set-field { display: flex; flex-direction: column; gap: 7px; padding: 12px 0; }
+.set-field-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.set-field-hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+/* Inputs — premium, with a clean focus ring (replaces the flat boxes). */
+[data-page="settings"] .settings-form input[type=text],
+[data-page="settings"] .settings-form input[type=number],
+[data-page="settings"] .settings-form select,
+[data-page="settings"] .set-sound-pick input,
+[data-page="settings"] .set-input-affix input {
+  background: color-mix(in oklab, var(--bg) 86%, var(--panel));
+  border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+  color: var(--text); border-radius: 10px;
+  padding: 11px 13px; font: inherit; font-size: 13.5px;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+[data-page="settings"] .settings-form input[type=text]:hover,
+[data-page="settings"] .settings-form input[type=number]:hover,
+[data-page="settings"] .set-sound-pick input:hover {
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
+}
+[data-page="settings"] .settings-form input:focus,
+[data-page="settings"] .settings-form select:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
+/* Number input with a trailing unit affix (e.g. "ms"). */
+.set-input-affix { position: relative; display: inline-flex; align-items: center; max-width: 220px; }
+.set-input-affix input { width: 100%; padding-right: 42px; }
+.set-affix {
+  position: absolute; right: 12px; font-family: var(--font-mono);
+  font-size: 11.5px; color: var(--muted); pointer-events: none;
+}
+
+/* --- Toggle switch (upgrades the bare checkboxes) --- */
+.set-toggle {
+  display: flex; align-items: flex-start; gap: 13px;
+  padding: 13px 14px; margin: 8px 0; border-radius: 12px;
+  background: color-mix(in oklab, var(--panel-2) 50%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  cursor: pointer; transition: border-color .15s ease, background .15s ease;
+}
+.set-toggle:hover { border-color: color-mix(in oklab, var(--accent) 30%, var(--border)); }
+.set-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.set-toggle-track {
+  flex: 0 0 auto; width: 38px; height: 22px; margin-top: 1px; border-radius: 999px;
+  background: color-mix(in oklab, var(--muted) 35%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  position: relative; transition: background .18s ease, border-color .18s ease;
+}
+.set-toggle-thumb {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  transition: transform .2s cubic-bezier(.3,.8,.3,1.2);
+}
+.set-toggle input:checked + .set-toggle-track {
+  background: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+}
+.set-toggle input:checked + .set-toggle-track .set-toggle-thumb { transform: translateX(16px); }
+.set-toggle input:focus-visible + .set-toggle-track {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent);
+}
+.set-toggle-label { font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
+.set-toggle-label small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--muted); }
+
+/* --- Sound picker rows --- */
+.set-sound {
+  margin-top: 6px; border-radius: 12px; overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  background: color-mix(in oklab, var(--bg) 50%, transparent);
+}
+.set-sound-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 16px;
+}
+.set-sound-row + .set-sound-row,
+.set-sound-foot { border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent); }
+.set-sound-meta { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.set-sound-ico {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 20%, transparent);
+}
+.set-sound-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+.set-sound-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.set-sound-pick { display: flex; gap: 8px; align-items: center; flex: 0 1 360px; }
+.set-sound-pick input { flex: 1; min-width: 0; }
+.set-sound-foot {
+  padding: 11px 16px; font-size: 12px; color: var(--muted); line-height: 1.55;
+  background: color-mix(in oklab, var(--panel-2) 40%, transparent);
+}
+.set-sound-foot code, .set-group-hint code {
+  font-family: var(--font-mono); font-size: 11.5px;
+  background: color-mix(in oklab, var(--panel-2) 80%, transparent);
+  padding: 1px 6px; border-radius: 5px;
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+
+/* Test button — compact, with a "playing" pulse. */
+.set-test { padding: 9px 14px; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.set-test-ico { font-size: 9px; transition: transform .15s ease; }
+.set-test.playing {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  color: var(--accent);
+}
+.set-test.playing .set-test-ico { animation: set-pulse .65s ease; }
+@keyframes set-pulse { 0%{transform:scale(1)} 40%{transform:scale(1.6)} 100%{transform:scale(1)} }
+
+/* --- Action bar --- */
+.set-actions {
+  display: flex; align-items: center; gap: 14px;
+  margin-top: 8px; padding-top: 20px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+.set-actions-note { font-size: 12px; color: var(--muted); }
+
+/* Premium fieldset (legacy Vibe markup, if any remains) */
+[data-page="settings"] .settings-form fieldset {
+  border: 1px solid color-mix(in oklab, var(--border) 75%, transparent) !important;
+  border-radius: 12px !important; padding: 14px 16px !important; margin: 14px 0 !important;
+  background: color-mix(in oklab, var(--panel-2) 35%, transparent);
+}
+[data-page="settings"] .settings-form legend {
+  font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent); padding: 0 8px !important;
+}
+
+/* Restart banner refinement + accent-color row */
+[data-page="settings"] .restart-banner { border-radius: 12px; margin-top: 14px; }
+.set-accent { display: flex; align-items: center; gap: 10px; }
+.set-accent input[type=color] {
+  width: 46px; height: 34px; padding: 2px; cursor: pointer;
+  background: color-mix(in oklab, var(--bg) 86%, var(--panel));
+  border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+  border-radius: 10px;
+}
+.set-accent input[type=color]::-webkit-color-swatch { border: none; border-radius: 6px; }
+.set-accent input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.set-accent-hex {
+  width: 110px; font-family: var(--font-mono); font-size: 12.5px;
+  background: color-mix(in oklab, var(--bg) 86%, var(--panel)) !important;
+  border: 1px solid color-mix(in oklab, var(--border) 90%, transparent) !important;
+  color: var(--text); border-radius: 10px; padding: 9px 11px;
+}
+.set-accent-hex:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--border)) !important;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+}
+.set-accent-reset { padding: 8px 14px; font-size: 12.5px; }
+
+/* Select dropdown arrow polish */
+[data-page="settings"] .settings-form select {
+  appearance: none; -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 51%, calc(100% - 13px) 51%;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  padding-right: 34px;
+}
+
+/* Entrance — masthead, tabs, card rise once. */
+@keyframes set-rise { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+.set-masthead { animation: set-rise .45s cubic-bezier(.2,.7,.2,1) both; }
+[data-page="settings"] .settings-tabs { animation: set-rise .45s cubic-bezier(.2,.7,.2,1) both; animation-delay: .05s; }
+[data-page="settings"] .set-card { animation: set-rise .5s cubic-bezier(.2,.7,.2,1) both; animation-delay: .1s; }
+@media (prefers-reduced-motion: reduce) {
+  .set-masthead,
+  [data-page="settings"] .settings-tabs,
+  [data-page="settings"] .set-card { animation: none !important; }
+}

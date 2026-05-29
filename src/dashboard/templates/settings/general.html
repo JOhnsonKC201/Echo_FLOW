@@ -1,65 +1,97 @@
 {% extends "base.html" %}
 {% block title %}Settings — General{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Settings — General</h2>
-    <div class="sub">Hotkey, language. Changes here require a daemon restart.</div>
-    {% include "settings/_nav.html" %}
+  {% set s_title = "General" %}
+  {% set s_desc = "Hotkeys, language, and appearance." %}
+  {% include "settings/_head.html" %}
+
+  <div class="card set-card">
     {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
-    <div class="restart-banner">Changes on this page take effect after restarting Echo Flow.</div>
-    <form method="post" action="/settings/general/save" class="settings-form">
-      <label>
-        <span>Push-to-talk hotkey</span>
-        <input type="text" name="hotkey_combo" id="hotkey_combo" value="{{ values.hotkey_combo }}" placeholder="ctrl+shift" data-hotkey-check>
-        <span class="hotkey-status muted small" id="hotkey_combo_status"></span>
-      </label>
-      <label>
-        <span>Hotkey mode</span>
-        <select name="hotkey_mode">
-          <option value="hold" {% if values.hotkey_mode == "hold" %}selected{% endif %}>hold (push-to-talk)</option>
-          <option value="toggle" {% if values.hotkey_mode == "toggle" %}selected{% endif %}>toggle (tap, auto-stop)</option>
-        </select>
-      </label>
-      <label>
-        <span>Re-paste last hotkey</span>
-        <input type="text" name="paste_last_combo" id="paste_last_combo" value="{{ values.paste_last_combo }}" placeholder="(blank to disable)" data-hotkey-check>
-        <span class="hotkey-status muted small" id="paste_last_combo_status"></span>
-      </label>
-      <label>
-        <span>Whisper language</span>
-        <input type="text" name="whisper_language" value="{{ values.whisper_language }}" placeholder="en">
-      </label>
-      <label style="display:flex; align-items:center; gap:10px;">
-        <span>Accent color</span>
-        <input type="color" name="accent_color" id="accent_color"
-               value="{{ values.accent_color }}"
-               style="width:48px; height:32px; padding:0; border:1px solid var(--border); border-radius:6px; background:transparent; cursor:pointer;">
-        <input type="text" id="accent_color_text" value="{{ values.accent_color }}"
-               style="width:90px; font-family:var(--font-mono); font-size:12px;">
-        <span class="muted small">Used for buttons, gauges, highlights. Reset to #3eaf6f for default.</span>
-      </label>
-      <div class="actions">
-        <button type="submit" class="btn primary">Save</button>
+    <div class="restart-banner">Hotkey changes take effect after restarting Echo Flow. Theme &amp; accent apply on the next page load.</div>
+
+    <form method="post" action="/settings/general/save" class="settings-form set-form">
+
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Hotkeys</div>
+          <div class="set-group-hint">Hold the push-to-talk combo to record; release to paste.</div>
+        </div>
+
+        <label class="set-field">
+          <span class="set-field-label">Push-to-talk hotkey</span>
+          <input type="text" name="hotkey_combo" id="hotkey_combo" value="{{ values.hotkey_combo }}"
+                 placeholder="ctrl+shift" data-hotkey-check autocomplete="off">
+          <span class="hotkey-status set-field-hint" id="hotkey_combo_status"></span>
+        </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Hotkey mode</span>
+          <select name="hotkey_mode">
+            <option value="hold" {% if values.hotkey_mode == "hold" %}selected{% endif %}>Hold — push-to-talk</option>
+            <option value="toggle" {% if values.hotkey_mode == "toggle" %}selected{% endif %}>Toggle — tap, auto-stop on silence</option>
+          </select>
+          <span class="set-field-hint">Hold is safer (no accidental recordings); toggle is hands-free.</span>
+        </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Re-paste last dictation</span>
+          <input type="text" name="paste_last_combo" id="paste_last_combo" value="{{ values.paste_last_combo }}"
+                 placeholder="(blank to disable)" data-hotkey-check autocomplete="off">
+          <span class="hotkey-status set-field-hint" id="paste_last_combo_status"></span>
+        </label>
+      </div>
+
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Transcription</div>
+        </div>
+        <label class="set-field">
+          <span class="set-field-label">Whisper language</span>
+          <span class="set-input-affix"><input type="text" name="whisper_language" value="{{ values.whisper_language }}" placeholder="en"></span>
+          <span class="set-field-hint">Two-letter code (e.g. <code>en</code>). Pinning it skips language detection for a small speed win.</span>
+        </label>
+      </div>
+
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Appearance</div>
+          <div class="set-group-hint">Used for buttons, gauges, and highlights across the dashboard.</div>
+        </div>
+        <div class="set-field">
+          <span class="set-field-label">Accent color</span>
+          <div class="set-accent">
+            <input type="color" name="accent_color" id="accent_color" value="{{ values.accent_color }}">
+            <input type="text" id="accent_color_text" value="{{ values.accent_color }}" class="set-accent-hex" spellcheck="false">
+            <button type="button" class="btn set-accent-reset" id="accent_reset">Reset</button>
+          </div>
+          <span class="set-field-hint">Hex like <code>#3eaf6f</code> (the default).</span>
+        </div>
+      </div>
+
+      <div class="set-actions">
+        <button type="submit" class="btn primary">Save changes</button>
+        <span class="set-actions-note">Restart required for hotkeys.</span>
       </div>
     </form>
   </div>
+
   <script>
-    // Keep the hex text input + the native color picker in sync.
+    // Keep the hex text input + native color picker in sync.
     (function () {
       const c = document.getElementById('accent_color');
       const t = document.getElementById('accent_color_text');
+      const r = document.getElementById('accent_reset');
       if (!c || !t) return;
       c.addEventListener('input', () => { t.value = c.value; });
       t.addEventListener('change', () => {
         if (/^#[0-9a-fA-F]{6}$/.test(t.value)) c.value = t.value.toLowerCase();
       });
+      if (r) r.addEventListener('click', () => { c.value = '#3eaf6f'; t.value = '#3eaf6f'; });
     })();
 
-    // Live hotkey conflict check. Probes /api/hotkey/check on blur and shows
-    // inline status. Empty values are not checked (blank = disabled).
+    // Live hotkey conflict check (probes /api/hotkey/check on blur).
     (function () {
-      const inputs = document.querySelectorAll('input[data-hotkey-check]');
-      inputs.forEach((el) => {
+      document.querySelectorAll('input[data-hotkey-check]').forEach((el) => {
         const status = document.getElementById(el.id + '_status');
         if (!status) return;
         el.addEventListener('blur', async () => {
@@ -68,21 +100,13 @@
           status.textContent = 'checking…';
           try {
             const r = await fetch('/api/hotkey/check', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ combo: combo }),
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ combo }),
             });
             const data = await r.json();
-            if (data.available) {
-              status.textContent = '✓ available';
-              status.style.color = 'var(--ok, #4ade80)';
-            } else {
-              status.textContent = '✗ ' + (data.reason || 'in use');
-              status.style.color = 'var(--warn, #f87171)';
-            }
-          } catch (e) {
-            status.textContent = 'check failed';
-          }
+            if (data.available) { status.textContent = '✓ available'; status.style.color = 'var(--accent)'; }
+            else { status.textContent = '✗ ' + (data.reason || 'in use'); status.style.color = 'var(--danger)'; }
+          } catch (e) { status.textContent = 'check failed'; }
         });
       });
     })();
