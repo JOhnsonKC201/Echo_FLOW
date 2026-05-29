@@ -1,5 +1,64 @@
 # Echo Flow — Read-Only Audit
 
+> **Staleness notice (updated 2026-05-29).** This document is a historical
+> snapshot from 2026-05-25. Several findings below have since been resolved
+> or intentionally reversed. Read the snapshot for the structural map, but
+> defer to the per-section deltas in this notice (and to the current
+> source) for anything actionable.
+>
+> **Resolved since 2026-05-25:**
+> - **§3 / §4 "Cloud violation" framing is obsolete for the desktop dictation
+>   path.** Cloud ASR was removed (`src/transcribe_cloud.py` deleted). The
+>   regular hotkey path is local-only. Cloud LLM calls (`_via_groq`,
+>   `_via_anthropic`) were re-added but are now scoped to two opt-in
+>   surfaces only: Prompt-Engineering mode (`prompt_engineering.provider`)
+>   and the teacher-distillation loop (`cleanup.learning.teacher_enabled`,
+>   off by default). See `config.yaml:44–93` and `src/cleanup.py:637` (`teach()`).
+> - **§9 VRAM budget.** Default polish model is now `qwen2.5:3b-instruct-q4_K_M`
+>   (~2 GB), leaving 6 GB headroom for Whisper. The 8 GB over-budget concern
+>   was the trigger; see `config.yaml:78`.
+> - **§3 Whisper decoder biasing.** `initial_prompt=` is now built from
+>   custom vocab + snippets + personal vocabulary. See the
+>   `WhisperConfig.initial_prompt` field in `src/transcribe.py`.
+> - **§6 Auto-phasing routes to cloud.** Bootstrap / Hybrid phases were
+>   deleted. Phases are now `independent` (local Whisper + Ollama) and
+>   `self_sufficient` (local Whisper + learned, LLM-free). See `src/phase.py`
+>   verbatim — much shorter than the version this audit describes.
+> - **§10 Silent exception swallowers.** The flagged sites in `audio.py`,
+>   `singleton.py`, `phase.py` were converted to `_log.exception(...)` blocks
+>   that preserve the suppression but leave a trace. The hot path still
+>   uses guarded `try`/`except` with `_log.warning` as before.
+> - **§11 Test count.** Was 9 files / ~960 LOC / claimed "81 tests".
+>   Now **43 files / ~6.6K LOC / 529 collected tests**. `tests/eval/`
+>   gained an end-to-end latency harness (`measure_e2e.py`) in addition
+>   to the existing `run_polish_evals.py`.
+>
+> **New surface area added since 2026-05-25 (not covered below):**
+> - Dashboard (`src/dashboard/`, 22 templates, Flask + PyWebView native window).
+> - Teacher-model distillation loop (`Cleaner.teach()` + `source='teacher'`
+>   rows + `learned_patterns.user_count` / `teacher_count` columns).
+> - Mobile LAN bridge (`src/bridge.py`, loopback-only by default).
+> - iOS keyboard extension (`ios/`).
+> - PE mode multi-provider support (Groq / Anthropic / Ollama), audience tailoring.
+> - Snippet inline editor, custom vocabulary table, notifications inbox,
+>   command log, scratchpad, knowledge-graph view.
+> - Source tagging on dictations (`desktop` / `mobile` / `teacher`) with
+>   trust gates in `LearningConfig.trust_mobile` and `.trust_teacher`.
+> - `_audit_cloud_keys()` startup validator + 3 DB performance indexes
+>   on `dictations(source, raw_text, style+ts)`.
+> - MIT license, GitHub Actions CI workflow.
+>
+> **Still accurate:** §1 entry-point map (modulo the new modules), §2 audio
+> capture, §5 text injection, §7 ruvector (still vestigial — the BLOB
+> column on `dictations` remains the live vector store), §8 personalization
+> mechanics (now augmented by the teacher loop).
+>
+> **Observability tooling added 2026-05-29:**
+> `scripts/teacher_health.py` prints a teacher-loop health snapshot
+> (source counts, acceptance ratio, pattern-origin breakdown, live phase
+> decision). `tests/eval/measure_e2e.py` benchmarks per-provider cleanup
+> latency (p50 / p95 / p99) across the polish corpus.
+
 Scope: Python desktop dictation app at `C:\Echo_FLOW`. Hardware target: Lenovo Legion Pro 5, Windows, RTX 5060 8GB. Local-only constraint: all cloud calls flagged as violations.
 
 ---
