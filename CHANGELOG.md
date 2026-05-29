@@ -18,6 +18,14 @@
   (50/60 → 56/60 with a tighter default system prompt).
 
 ### Added
+- **Phase 14 — Action Mode** (`experimental.action_mode`, off by default).
+  Semantic voice actions behind the shared `"computer"` prefix: `open_app`
+  (allowlisted `action_apps` map, no shell-from-voice), `open_url`
+  (http/https/mailto only), and `web_search`. Command Mode runs first and
+  falls through to Action Mode on a no-match. Every attempt is logged to the
+  new `voice_actions` table. `summarize_focused`, `draft_event`, `quick_note`,
+  and the dashboard panel are deferred to a follow-up PR; a LoRA intent
+  classifier over logged actions is noted as future work.
 - Whisper decoder biasing via `initial_prompt` built from custom
   vocabulary + snippet expansions + personal vocabulary.
 - Polish eval harness at `tests/eval/` (30 cases) plus ASR eval stub.

@@ -187,6 +187,12 @@ experimental:
   press_enter_command: false   # Phase 12 — "press enter" / "send it" trailing trigger
   command_mode: false          # Phase 13 — full voice command mode
   command_prefix: "computer"   # Phase 13 — dictations starting with this word are interpreted as commands
+  action_mode: false           # Phase 14 — semantic voice actions (open app/url, web search). Shares command_prefix.
+  action_apps:                 # name (as spoken) -> launch target: a PATH exe, Start-menu alias, or a URL
+    spotify: "spotify"
+    notepad: "notepad.exe"
+    browser: "https://www.google.com"
+  action_email_url: "https://mail.google.com"   # used by "computer, open email"
 
 logging:
   level: "INFO"

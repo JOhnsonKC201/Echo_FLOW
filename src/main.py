@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+import json
 import threading
 from pathlib import Path
 
@@ -700,14 +701,18 @@ class App:
         # Scratchpad routing: when a scratchpad is armed via dashboard, append
         # cleaned text to its body instead of pasting into the focused window.
         # Falls through to normal inject on any failure.
-        # Phase 13: Command Mode. If experimental.command_mode is on and the
-        # dictation starts with the prefix word (default "computer"), classify
-        # the remainder as a voice command and fire its allowlisted action.
-        # Always returns BEFORE inject — commands never leave a paste behind.
+        # Phase 13 + 14: Command Mode and Action Mode share the prefix word
+        # (default "computer"). Command Mode runs FIRST (keystrokes are higher-
+        # precision, lower-risk); on a no-match it falls through to Action Mode.
+        # Both always return BEFORE inject so nothing gets pasted behind them.
+        # Only when both miss under the prefix do we notify "unknown".
         exp_cfg = self.cfg.get("experimental", {}) or {}
+        prefix = exp_cfg.get("command_prefix", "computer")
+        cmd_unmatched = False   # prefix present but no Command Mode hit
+        cmd_body = ""
+
         if exp_cfg.get("command_mode"):
             from . import commands as _commands
-            prefix = exp_cfg.get("command_prefix", "computer")
             body = _commands.strip_prefix(cleaned, prefix)
             if body is not None:
                 result = _commands.classify(body)
@@ -729,19 +734,59 @@ class App:
                     if self.tray:
                         self.tray.set_state("ok" if not self._paused else "paused")
                     return
-                else:
-                    wnotify.notify("Echo Flow", f"Unknown voice command: {body[:40]}", "warning")
+                # No keystroke matched — remember it and fall through to Action
+                # Mode instead of declaring "unknown" here.
+                cmd_unmatched = True
+                cmd_body = body
+
+        # Phase 14: Action Mode — semantic handlers (open app / url / web search)
+        # behind the same prefix. Reached either directly (command_mode off) or
+        # via Command Mode fallthrough.
+        if exp_cfg.get("action_mode"):
+            from . import voice_actions as _va
+            body = _va.strip_prefix(cleaned, prefix)
+            if body is not None:
+                match = _va.classify(body, self.cfg)
+                if match is not None:
+                    ctx = _va.ActionContext(
+                        focused_title=title,
+                        focused_path=None,   # PR 2: focused_document_path()
+                        cfg=self.cfg, notify=wnotify.notify,
+                        cleaner=self.cleaner, history=self.history,
+                    )
+                    ok, msg = _va.dispatch(match, ctx)
+                    _log.info("voice action: %s (%s) ok=%s", match.label, match.name, ok)
+                    wnotify.notify("Echo Flow", msg, "info" if ok else "warning")
                     if self.history is not None:
                         try:
-                            self.history.log_command(
-                                body=body, action_type="unknown",
-                                action_value="", label=None, ok=False,
+                            self.history.log_action(
+                                body=body, handler=match.name,
+                                args_json=json.dumps(match.args),
+                                label=match.label, ok=ok,
+                                error=None if ok else msg,
                             )
                         except Exception as e:
-                            _log.warning("log_command failed: %s", e)
+                            _log.warning("log_action failed: %s", e)
                     if self.tray:
                         self.tray.set_state("ok" if not self._paused else "paused")
-                    return
+                    return   # actions never leave a paste behind
+                # Prefix present but no action matched.
+                cmd_unmatched = True
+                cmd_body = body
+
+        if cmd_unmatched:
+            wnotify.notify("Echo Flow", f"Unknown voice command: {cmd_body[:40]}", "warning")
+            if self.history is not None:
+                try:
+                    self.history.log_command(
+                        body=cmd_body, action_type="unknown",
+                        action_value="", label=None, ok=False,
+                    )
+                except Exception as e:
+                    _log.warning("log_command failed: %s", e)
+            if self.tray:
+                self.tray.set_state("ok" if not self._paused else "paused")
+            return
 
         pad_target = getattr(self, "_scratchpad_target_id", None)
         if pad_target and self.history is not None:

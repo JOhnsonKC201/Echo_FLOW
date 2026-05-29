@@ -53,6 +53,28 @@ Everything's in `config.yaml`. The interesting knobs:
 - `cleanup.provider`: `ollama` for the local LLM (default), `learned` for the LLM-free mode that uses your past corrections, `none` to skip cleanup and paste Whisper's raw output. (Regular dictation is local-only; Groq is reserved for Prompt-Engineering mode.)
 - `cleanup.profiles`: switches cleanup style based on which app is focused. Slack messages get casual punctuation, VS Code gets symbol-aware cleanup, Gmail gets fuller sentences.
 
+## Experimental
+
+Off-by-default features under the `experimental:` block in `config.yaml`. Toggle
+them on at your own risk.
+
+- **Command Mode** (`command_mode`): say the prefix word (`command_prefix`,
+  default `"computer"`) followed by an allowlisted command — "computer, select
+  all", "computer, save", "computer, scroll down" — and Echo fires the keystroke
+  instead of typing the words.
+- **Action Mode** (`action_mode`): the same prefix, but for semantic actions that
+  reach outside the keyboard. The first release ships a deliberately safe trio:
+  - "computer, open spotify" — launches an app from your `action_apps` map
+    (allowlist only; spoken text never touches a shell).
+  - "computer, open github.com" / "computer, go to docs.python.org" — opens a
+    site (http/https/mailto only).
+  - "computer, search the web for &lt;query&gt;" — opens a web search.
+  - "computer, open email" — opens `action_email_url`.
+
+  Command Mode runs first; an unrecognised command falls through to Action Mode.
+  Every action attempt (success or failure) is logged to the `voice_actions`
+  table. Nothing in Action Mode deletes, sends, or pays.
+
 ## What's in the folder
 
 ```

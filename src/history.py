@@ -114,6 +114,22 @@ class History:
             self.conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_cmdlog_ts ON command_log(ts)"
             )
+            # Action Mode log (Phase 14 — voice_actions dispatch site appends here).
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS voice_actions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts REAL NOT NULL,
+                    body TEXT NOT NULL,
+                    handler TEXT NOT NULL,
+                    args TEXT,
+                    label TEXT,
+                    ok INTEGER NOT NULL DEFAULT 1,
+                    error TEXT
+                )
+            """)
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vactions_ts ON voice_actions(ts)"
+            )
         except Exception as e:
             # Column migrations should never fail in practice (idempotent via PRAGMA check).
             # If they do, log it loudly so we don't end up with a half-migrated schema.
@@ -243,6 +259,32 @@ class History:
         )
         self.conn.commit()
         return cur.lastrowid or 0
+
+    def log_action(self, *, body: str, handler: str, args_json: str | None = None,
+                   label: str | None = None, ok: bool = True,
+                   error: str | None = None) -> int:
+        """Append a row to voice_actions (Phase 14). Best-effort — caller
+        swallows errors, mirroring log_command."""
+        cur = self.conn.execute(
+            "INSERT INTO voice_actions(ts, body, handler, args, label, ok, error) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (time.time(), body or "", handler, args_json, label,
+             1 if ok else 0, error),
+        )
+        self.conn.commit()
+        return cur.lastrowid or 0
+
+    def recent_actions(self, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, ts, body, handler, args, label, ok, error "
+            "FROM voice_actions ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [
+            {"id": r[0], "ts": r[1], "body": r[2], "handler": r[3],
+             "args": r[4], "label": r[5], "ok": bool(r[6]), "error": r[7]}
+            for r in rows
+        ]
 
     def recent_commands(self, limit: int = 50) -> list[dict]:
         rows = self.conn.execute(
