@@ -80,6 +80,21 @@ def _play_beep(freq: int, duration_ms: int) -> bool:
         return False
 
 
+def preview(alias: str) -> bool:
+    """Play an arbitrary alias/WAV once, for the Settings 'Test' button.
+
+    Unlike play(), this ignores the sound.enabled flag — it's an explicit,
+    user-initiated audition. Resolution matches _play_alias_or_file: a Windows
+    system alias (SystemAsterisk), a bare WAV name resolved against
+    C:\\Windows\\Media (ding.wav), or a full path. Returns True if a backend
+    accepted it. PlaySound runs async, so this returns promptly.
+    """
+    spec = (alias or "").strip()
+    if not spec:
+        return False
+    return _play_alias_or_file(spec)
+
+
 def play(kind: str, cfg: dict | None = None) -> None:
     """Play a named feedback sound. kind: 'start' | 'stop' | 'error' | 'ready'."""
     cfg = cfg or {}

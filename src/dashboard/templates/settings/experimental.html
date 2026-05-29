@@ -1,35 +1,56 @@
 {% extends "base.html" %}
 {% block title %}Settings — Experimental{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Settings — Experimental</h2>
-    <div class="sub">Opt-in features. Off by default; may change without notice.</div>
-    {% include "settings/_nav.html" %}
+  {% set s_title = "Experimental" %}
+  {% set s_desc = "Opt-in features. Off by default; may change without notice." %}
+  {% include "settings/_head.html" %}
+
+  <div class="card set-card">
     {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
-    <form method="post" action="/settings/experimental/save" class="settings-form">
-      <label class="check">
-        <input type="checkbox" name="press_enter_command" value="1" {% if values.press_enter_command %}checked{% endif %}>
-        <span>Press-Enter command (dictation ending with "press enter" auto-fires Enter after paste) — <em>Phase 12</em></span>
-      </label>
-      <label class="check">
-        <input type="checkbox" name="command_mode" value="1" {% if values.command_mode %}checked{% endif %}>
-        <span>Full Command Mode (voice commands without dictating)</span>
-      </label>
-      <label>
-        <span>Command prefix word</span>
-        <input type="text" name="command_prefix" value="{{ values.command_prefix }}" placeholder="computer">
-      </label>
-      <div class="actions">
-        <button type="submit" class="btn primary">Save</button>
+    <form method="post" action="/settings/experimental/save" class="settings-form set-form">
+
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Command &amp; control</div>
+          <div class="set-group-hint">Voice can never fire arbitrary keystrokes — unrecognized commands are dropped with a warning.</div>
+        </div>
+
+        <label class="set-toggle">
+          <input type="checkbox" name="press_enter_command" value="1" {% if values.press_enter_command %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Press-Enter command
+            <small>Dictation ending with “press enter” auto-fires Enter after paste.</small></span>
+        </label>
+
+        <label class="set-toggle">
+          <input type="checkbox" name="command_mode" value="1" {% if values.command_mode %}checked{% endif %}>
+          <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
+          <span class="set-toggle-label">Full command mode
+            <small>Interpret prefixed dictations as voice commands instead of text.</small></span>
+        </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Command prefix word</span>
+          <input type="text" name="command_prefix" value="{{ values.command_prefix }}" placeholder="computer" autocomplete="off">
+          <span class="set-field-hint">3+ letters, not a common word. Try <code>computer</code> or <code>jarvis</code>.</span>
+        </label>
+      </div>
+
+      <div class="set-actions">
+        <button type="submit" class="btn primary">Save changes</button>
       </div>
     </form>
 
     {% if supported_commands %}
-      <h3>Supported voice commands</h3>
-      <p class="muted">Prefix any dictation with the prefix word to trigger one of these. Unrecognized commands are dropped with a warning toast — voice can never fire arbitrary keystrokes.</p>
-      <ul class="cmd-list">
-        {% for label in supported_commands %}<li>{{ label }}</li>{% endfor %}
-      </ul>
+      <div class="set-group">
+        <div class="set-group-head">
+          <div class="set-group-title">Supported voice commands</div>
+          <div class="set-group-hint">Prefix any dictation with your prefix word to trigger one of these.</div>
+        </div>
+        <ul class="cmd-list">
+          {% for label in supported_commands %}<li>{{ label }}</li>{% endfor %}
+        </ul>
+      </div>
     {% endif %}
   </div>
 {% endblock %}

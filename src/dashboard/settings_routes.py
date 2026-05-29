@@ -50,7 +50,7 @@ def _mirror(cfg: dict, parts: list[str], value: Any) -> None:
 # ---- Route registration -----------------------------------------------------
 
 def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, log) -> None:
-    from flask import render_template, request, redirect
+    from flask import render_template, request, redirect, jsonify
 
     theme = dcfg.get("theme", "dark")
 
@@ -114,6 +114,9 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         aud = cfg.get("audio", {}) or {}
         return _render("system", values={
             "sound_enabled": bool(snd.get("enabled", True)),
+            "sound_start_alias": snd.get("start_alias", "") or "",
+            "sound_stop_alias": snd.get("stop_alias", "") or "",
+            "sound_error_alias": snd.get("error_alias", "") or "",
             "vad_enabled": bool(aud.get("vad_enabled", True)),
             "silence_timeout_ms": int(aud.get("silence_timeout_ms", 1500)),
         })
@@ -127,15 +130,46 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             return redirect("/settings/system?flash=silence_timeout_ms must be an integer")
         if not (200 <= timeout <= 10000):
             return redirect("/settings/system?flash=silence_timeout_ms must be 200..10000")
-        errs = _save_scalars(app_ref, [
+        edits = [
             ("sound.enabled", _checkbox(f, "sound_enabled")),
             ("audio.vad_enabled", _checkbox(f, "vad_enabled")),
             ("audio.silence_timeout_ms", timeout),
-        ], log)
+        ]
+        # Persist cue aliases only when the form actually submits them, so a
+        # caller posting just the toggle can't blank the user's chosen sounds.
+        for field, key in (
+            ("sound_start_alias", "sound.start_alias"),
+            ("sound_stop_alias", "sound.stop_alias"),
+            ("sound_error_alias", "sound.error_alias"),
+        ):
+            if field in f:
+                edits.append((key, (f.get(field, "") or "").strip()))
+        errs = _save_scalars(app_ref, edits, log)
         if errs:
             return redirect("/settings/system?flash=" + "; ".join(errs))
         maybe_reload_config(app_ref)
         return redirect("/settings/system?flash=Saved.")
+
+    @flask_app.post("/settings/system/sound-preview")
+    def settings_sound_preview():
+        """Audition a cue so the user can pick one that's easy to notice.
+
+        Plays server-side — the dashboard is loopback-only and runs on the same
+        machine as the daemon, so the audio comes out of the user's own
+        speakers. Best-effort: returns ok=false rather than 500 if the OS
+        rejects the alias (e.g. non-Windows).
+        """
+        if request.is_json:
+            alias = (request.get_json(silent=True) or {}).get("alias", "")
+        else:
+            alias = request.form.get("alias", "")
+        try:
+            from .. import sound
+            ok = sound.preview(alias)
+            return jsonify({"ok": bool(ok), "alias": (alias or "").strip()})
+        except Exception as e:  # pragma: no cover - OS-dependent playback
+            log.debug("sound preview failed: %s", e)
+            return jsonify({"ok": False, "error": str(e)})
 
     # ---- Vibe --------------------------------------------------------------
     @flask_app.get("/settings/vibe")

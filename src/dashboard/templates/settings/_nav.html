@@ -6,7 +6,13 @@
     ("experimental", "Experimental", "/settings/experimental"),
     ("privacy", "Privacy", "/settings/privacy"),
   ] %}
+  {% set _icons = {
+    'general': '⌨', 'system': '🔊', 'vibe': '✨',
+    'experimental': '⚗', 'privacy': '🛡'
+  } %}
   {% for key, label, url in tabs %}
-    <a class="settings-tab{% if key == sub_active %} active{% endif %}" href="{{ url }}">{{ label }}</a>
+    <a class="settings-tab{% if key == sub_active %} active{% endif %}" href="{{ url }}">
+      <span class="settings-tab-ico">{{ _icons.get(key, '•') }}</span>{{ label }}
+    </a>
   {% endfor %}
 </nav>
