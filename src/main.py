@@ -750,7 +750,7 @@ class App:
                 if match is not None:
                     ctx = _va.ActionContext(
                         focused_title=title,
-                        focused_path=None,   # PR 2: focused_document_path()
+                        focused_path=self.injector.focused_document_path(),
                         cfg=self.cfg, notify=wnotify.notify,
                         cleaner=self.cleaner, history=self.history,
                     )
@@ -759,9 +759,15 @@ class App:
                     wnotify.notify("Echo Flow", msg, "info" if ok else "warning")
                     if self.history is not None:
                         try:
+                            # SEC-3: redact sensitive args (queries, note bodies,
+                            # URLs → host) unless verbose logging is opted in.
+                            args_for_log = (
+                                match.args if exp_cfg.get("action_log_verbose")
+                                else _va.redact_args(match.name, match.args)
+                            )
                             self.history.log_action(
                                 body=body, handler=match.name,
-                                args_json=json.dumps(match.args),
+                                args_json=json.dumps(args_for_log),
                                 label=match.label, ok=ok,
                                 error=None if ok else msg,
                             )

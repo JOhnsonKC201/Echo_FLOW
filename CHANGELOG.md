@@ -26,6 +26,17 @@
   new `voice_actions` table. `summarize_focused`, `draft_event`, `quick_note`,
   and the dashboard panel are deferred to a follow-up PR; a LoRA intent
   classifier over logged actions is noted as future work.
+- **Phase 14 PR 2** — the deferred Action Mode handlers plus security
+  hardening of the shipped trio. New handlers: `summarize_focused` (local
+  Ollama only, never a cloud call; reads the focused pdf/txt/md/docx),
+  `draft_event` (writes a local `.ics` draft — never a calendar API), and
+  `quick_note` (appends to the notes store). Adds the `focused_document_path()`
+  Win32 injector helper. Hardening: `_is_safe_url` now rejects userinfo
+  spoofing, percent-encoded control chars, IDN homographs, and `mailto:`
+  header injection; `_RE_DOMAIN` is ASCII/TLD-anchored; `open_app` validates
+  target shape and the `os.startfile` fallback is restricted to alias-shaped
+  tokens; action args are redacted in the log unless
+  `experimental.action_log_verbose` is set.
 - Whisper decoder biasing via `initial_prompt` built from custom
   vocabulary + snippet expansions + personal vocabulary.
 - Polish eval harness at `tests/eval/` (30 cases) plus ASR eval stub.

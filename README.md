@@ -70,6 +70,11 @@ them on at your own risk.
     site (http/https/mailto only).
   - "computer, search the web for &lt;query&gt;" — opens a web search.
   - "computer, open email" — opens `action_email_url`.
+  - "computer, summarize this pdf" — summarizes the focused document with your
+    **local** model (never a cloud call).
+  - "computer, create an event lunch with Sam tomorrow" — writes a local `.ics`
+    **draft** and opens it (never touches a calendar API).
+  - "computer, take a note that the build is green" — saves a note.
 
   Command Mode runs first; an unrecognised command falls through to Action Mode.
   Every action attempt (success or failure) is logged to the `voice_actions`

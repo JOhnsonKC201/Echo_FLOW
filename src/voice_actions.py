@@ -78,11 +78,29 @@ _RE_SEARCH = re.compile(
     re.I,
 )
 _RE_GOTO = re.compile(r"^go\s+to\s+(.+)$", re.I)
+# PR-2 handlers. These are non-"open" verbs, so their order vs _RE_OPEN (the
+# catch-all) is safe; classify() still tries them before _RE_OPEN for clarity.
+_RE_SUMMARIZE = re.compile(
+    r"^summari[sz]e\s+(?:this|the)\s+(?:pdf|document|page|file|doc)\b", re.I
+)
+_RE_EVENT = re.compile(
+    r"^(?:create|add|make|schedule)\s+(?:an?\s+)?(?:calendar\s+)?"
+    r"(?:event|meeting|appointment)\s+"
+    r"(?:for\s+|about\s+|called\s+|titled\s+)?(.+)$", re.I
+)
+_RE_NOTE = re.compile(
+    r"^(?:take|make|add|create|write)\s+(?:a\s+|me\s+a\s+)?"
+    r"note(?:\s+(?:that|saying|about))?[:\s]+(.+)$", re.I
+)
 _RE_OPEN = re.compile(r"^open\s+(.+)$", re.I)
 
-# A bare domain like "github.com" or "docs.python.org/3/" — no scheme, no
-# spaces, no shell metacharacters (those are excluded by the char class).
-_RE_DOMAIN = re.compile(r"^[\w-]+(\.[\w-]+)+(/\S*)?$")
+# A bare domain like "github.com" or "docs.python.org/3/". SEC-7: ASCII-only
+# (re.ASCII so \w can't match unicode confusables) and anchored to a real TLD
+# label (2–24 ASCII letters), so a spoken phrase that merely contains a dot
+# ("node.js", "my.report") is NOT silently navigated to.
+_RE_DOMAIN = re.compile(
+    r"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,24}(/\S*)?$", re.ASCII
+)
 
 _DEFAULT_EMAIL_URL = "https://mail.google.com"
 
@@ -137,6 +155,24 @@ def classify(body: str, cfg: dict) -> ActionMatch | None:
             return ActionMatch("open_url", f"Open {url}", {"url": url})
         return None  # "go to <something that isn't a site>" — unknown action
 
+    if _RE_SUMMARIZE.match(b):
+        return ActionMatch("summarize_focused",
+                           "Summarize the focused document", {})
+
+    m = _RE_EVENT.match(b)
+    if m:
+        details = m.group(1).strip()
+        if details:
+            return ActionMatch("draft_event",
+                               f"Draft event: {details[:40]}",
+                               {"details": details})
+
+    m = _RE_NOTE.match(b)
+    if m:
+        note_body = m.group(1).strip()
+        if note_body:
+            return ActionMatch("quick_note", "Take a note", {"body": note_body})
+
     m = _RE_OPEN.match(b)
     if m:
         arg = m.group(1).strip()
@@ -160,13 +196,43 @@ _URL_FORBIDDEN = set(" \t\r\n<>\"'|&;`$\\^(){}[]")
 
 
 def _is_safe_url(url: str) -> bool:
+    """True only for http/https/mailto URLs with no smuggled metacharacters,
+    no userinfo spoofing, and no non-ASCII (homograph) hosts.
+
+    SEC-1/SEC-2 hardening: the raw-character blocklist alone is not enough —
+    an attacker can percent-encode control chars, hide behind userinfo
+    (``google.com@evil.com``), or use IDN-confusable hosts. So we also decode
+    before re-checking, reject userinfo, force ASCII hosts, and restrict
+    ``mailto:`` to a bare address (no ``?subject=``/``?body=``/``?cc=`` header
+    injection).
+    """
     if not url or any(c in _URL_FORBIDDEN for c in url):
         return False
     try:
         parsed = urllib.parse.urlparse(url)
     except Exception:
         return False
-    return parsed.scheme in ("http", "https", "mailto")
+    if parsed.scheme not in ("http", "https", "mailto"):
+        return False
+    # Decode percent-encoding, then re-check for control chars + metacharacters
+    # that were hidden as %0a / %3b / %00 / %26 etc.
+    decoded = urllib.parse.unquote(url)
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in decoded):
+        return False
+    if any(c in _URL_FORBIDDEN for c in decoded):
+        return False
+    if parsed.scheme == "mailto":
+        # SEC-2: bare address only — no query parameters of any kind.
+        return parsed.query == "" and "?" not in url and "@" in parsed.path
+    # http / https
+    host = parsed.hostname or ""
+    if not host or parsed.username is not None or parsed.password is not None:
+        return False   # block userinfo spoofing (google.com@evil.com)
+    try:
+        host.encode("ascii")   # defeat IDN homographs
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 # --- Handlers ----------------------------------------------------------------
@@ -179,7 +245,7 @@ def _h_open_url(args: dict, ctx: ActionContext) -> tuple[bool, str]:
         return (False, "That isn't a URL I can safely open.")
     try:
         import webbrowser
-        if webbrowser.open(url):
+        if webbrowser.open(url, new=2, autoraise=True):
             return (True, f"Opened {url}")
         return (False, f"Couldn't open {url}")
     except Exception as e:  # noqa: BLE001 — handlers must never raise
@@ -190,10 +256,11 @@ def _h_web_search(args: dict, ctx: ActionContext) -> tuple[bool, str]:
     query = ((args or {}).get("query") or "").strip()
     if not query:
         return (False, "There was nothing to search for.")
+    query = query[:512]   # SEC-8: bound the query length
     url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
     try:
         import webbrowser
-        if webbrowser.open(url):
+        if webbrowser.open(url, new=2, autoraise=True):
             return (True, f"Searching the web for “{query}”.")
         return (False, "Couldn't open the browser.")
     except Exception as e:  # noqa: BLE001
@@ -203,14 +270,31 @@ def _h_web_search(args: dict, ctx: ActionContext) -> tuple[bool, str]:
 def _h_open_app(args: dict, ctx: ActionContext) -> tuple[bool, str]:
     app = ((args or {}).get("app") or "").strip().lower()
     apps = (ctx.cfg.get("experimental", {}) or {}).get("action_apps", {}) or {}
-    # Case-insensitive key match against the configured allowlist.
-    target = None
+    # SEC-4: normalize the allowlist once (case-fold + strip). A collision
+    # (two keys folding to the same name) is logged so it isn't silent.
+    norm: dict[str, str] = {}
     for key, val in apps.items():
-        if str(key).strip().lower() == app:
-            target = str(val).strip()
-            break
+        k = str(key).strip().lower()
+        if k in norm:
+            try:
+                ctx.notify("Echo Flow",
+                           f"action_apps has a duplicate key “{k}” — using the first.",
+                           "warning")
+            except Exception:
+                pass
+            continue
+        norm[k] = str(val).strip()
+    target = norm.get(app)
     if not target:
         return (False, f"I don't have an app called “{app}” configured.")
+
+    # SEC-4: reject a configured target that smuggles shell syntax / arguments,
+    # unless it is a real file on disk. Voice never reaches here, but a bad
+    # config value shouldn't become a command line either.
+    if not os.path.isfile(target) and (
+        any(c in target for c in "&|<>^") or re.search(r"\s/\w", target)
+    ):
+        return (False, f"The configured target for “{app}” looks unsafe.")
 
     # A configured target may itself be a URL (e.g. browser → a homepage).
     if _is_safe_url(target):
@@ -241,7 +325,11 @@ def _launch_executable(app: str, target: str) -> tuple[bool, str]:
     except FileNotFoundError:
         # Windows: fall back to the shell association / Start-menu App Execution
         # Alias (how "spotify" resolves when it isn't a plain PATH executable).
-        if sys.platform == "win32":
+        # SEC-5: only for alias-shaped tokens or an existing file — never for a
+        # composed command string like "cmd /c calc".
+        alias_ok = bool(re.fullmatch(r"[\w.+-]+(\.exe)?", target))
+        path_ok = os.path.isfile(target)
+        if sys.platform == "win32" and (alias_ok or path_ok):
             try:
                 os.startfile(target)  # type: ignore[attr-defined]
                 return (True, f"Opened {app}.")
@@ -252,10 +340,166 @@ def _launch_executable(app: str, target: str) -> tuple[bool, str]:
         return (False, f"Couldn't launch {app}: {e}")
 
 
+_SUMMARY_EXTS = {".pdf", ".txt", ".md", ".docx"}
+
+
+def _extract_text(path: str, ext: str) -> str:
+    """Best-effort text extraction. Lazy-imports heavy parsers and returns ""
+    (never raises) when a dependency is missing or the file can't be read."""
+    try:
+        if ext in (".txt", ".md"):
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        if ext == ".pdf":
+            try:
+                import fitz  # PyMuPDF
+            except ImportError:
+                return ""
+            parts = []
+            with fitz.open(path) as doc:
+                for page in doc:
+                    parts.append(page.get_text())
+            return "\n".join(parts)
+        if ext == ".docx":
+            try:
+                import docx
+            except ImportError:
+                return ""
+            return "\n".join(p.text for p in docx.Document(path).paragraphs)
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
+
+
+def _h_summarize_focused(args: dict, ctx: ActionContext) -> tuple[bool, str]:
+    """Summarize the currently focused document via the LOCAL cleaner only.
+
+    Operates on ctx.focused_path (never a spoken path). Reuses the Ollama
+    cleanup path with a summarizer system prompt — no cloud call ever.
+    """
+    path = ctx.focused_path
+    if not path or not os.path.isfile(path):
+        return (False, "No document I can read is focused.")
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in _SUMMARY_EXTS:
+        return (False, "I can only summarize PDF, txt, md, or docx files.")
+    text = _extract_text(path, ext)
+    if not text.strip():
+        return (False, "I couldn't read any text from that document.")
+    cap = int((ctx.cfg.get("experimental", {}) or {}).get(
+        "action_summary_max_chars", 6000))
+    text = text[:cap]
+    cleaner = ctx.cleaner
+    if cleaner is None:
+        return (False, "The summarizer isn't available right now.")
+    sys_prompt = (
+        "You are a concise summarizer. Summarize the following document in "
+        "3–5 sentences. Output only the summary, no preamble."
+    )
+    try:
+        # provider_override='ollama' pins local; system_prompt_override swaps
+        # the cleanup prompt for a summarization prompt.
+        summary, skipped = cleaner.clean(
+            text, system_prompt_override=sys_prompt, provider_override="ollama")
+    except Exception as e:  # noqa: BLE001
+        return (False, f"Summarization failed: {e}")
+    summary = (summary or "").strip()
+    if skipped or not summary:
+        return (False, "Couldn't summarize that document right now.")
+    if ctx.history is not None:
+        try:
+            ctx.history.add_note(
+                dictation_id=None,
+                title=f"Summary: {os.path.basename(path)}",
+                description=summary,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+    short = summary if len(summary) <= 180 else summary[:177] + "…"
+    return (True, short)
+
+
+def _ics_escape(s: str) -> str:
+    return (s.replace("\\", "\\\\").replace(";", "\\;")
+             .replace(",", "\\,").replace("\n", "\\n"))
+
+
+def _h_draft_event(args: dict, ctx: ActionContext) -> tuple[bool, str]:
+    """Write a LOCAL .ics draft and open it — never a calendar API. Draft only."""
+    import datetime as _dt
+
+    details = ((args or {}).get("details") or "").strip()
+    if not details:
+        return (False, "What should the event be?")
+
+    when = None
+    try:
+        import dateparser
+        when = dateparser.parse(details, settings={"PREFER_DATES_FROM": "future"})
+    except Exception:  # noqa: BLE001 — missing dep or parse failure
+        when = None
+    used_default = when is None
+    if used_default:
+        when = (_dt.datetime.now() + _dt.timedelta(days=1)).replace(
+            hour=9, minute=0, second=0, microsecond=0)
+
+    dtstart = when.strftime("%Y%m%dT%H%M%S")
+    dtend = (when + _dt.timedelta(hours=1)).strftime("%Y%m%dT%H%M%S")
+    stamp = _dt.datetime.now().strftime("%Y%m%dT%H%M%SZ")
+    uid = f"echoflow-{when.strftime('%Y%m%d%H%M%S')}@local"
+    ics = "\r\n".join([
+        "BEGIN:VCALENDAR", "VERSION:2.0",
+        "PRODID:-//Echo Flow//Action Mode//EN", "BEGIN:VEVENT",
+        f"UID:{uid}", f"DTSTAMP:{stamp}",
+        f"DTSTART:{dtstart}", f"DTEND:{dtend}",
+        f"SUMMARY:{_ics_escape(details)}", "END:VEVENT", "END:VCALENDAR",
+    ]) + "\r\n"
+
+    # Relative path: frozen builds chdir to USER_ROOT, so don't hardcode a root.
+    drafts = os.path.join("data", "drafts")
+    try:
+        os.makedirs(drafts, exist_ok=True)
+        safe = re.sub(r"[^\w.-]+", "_", details)[:50] or "event"   # traversal guard
+        fname = os.path.join(drafts, f"{safe}-{when.strftime('%Y%m%d%H%M')}.ics")
+        with open(fname, "w", encoding="utf-8") as f:
+            f.write(ics)
+    except Exception as e:  # noqa: BLE001
+        return (False, f"Couldn't write the event draft: {e}")
+
+    if sys.platform == "win32":
+        try:
+            os.startfile(os.path.abspath(fname))  # type: ignore[attr-defined]
+        except Exception:  # noqa: BLE001
+            pass
+    note = " (defaulted to tomorrow 9am — couldn't parse a time)" if used_default else ""
+    return (True,
+            f"Drafted “{details[:40]}” for "
+            f"{when.strftime('%a %b %d, %I:%M %p')}{note}.")
+
+
+def _h_quick_note(args: dict, ctx: ActionContext) -> tuple[bool, str]:
+    """Append a note to the local notes store. No network, no filesystem."""
+    body = ((args or {}).get("body") or "").strip()
+    if not body:
+        return (False, "What should the note say?")
+    if ctx.history is None:
+        return (False, "Notes aren't available right now.")
+    try:
+        from . import notes as _notes
+        title = _notes._auto_title(body)
+        ctx.history.add_note(dictation_id=None, title=title, description=body)
+    except Exception as e:  # noqa: BLE001
+        return (False, f"Couldn't save the note: {e}")
+    return (True, f"Noted: {title}")
+
+
 _HANDLERS: dict[str, Handler] = {
     "open_url": _h_open_url,
     "web_search": _h_web_search,
     "open_app": _h_open_app,
+    "summarize_focused": _h_summarize_focused,
+    "draft_event": _h_draft_event,
+    "quick_note": _h_quick_note,
 }
 
 
@@ -270,6 +514,24 @@ def dispatch(match: ActionMatch, ctx: ActionContext) -> tuple[bool, str]:
         return (False, f"Action failed: {e}")
 
 
+def redact_args(name: str, args: dict) -> dict:
+    """SEC-3: minimize sensitive fields before they hit the voice_actions log.
+    Queries / note bodies / event details become length placeholders; URLs are
+    reduced to scheme+host. Used at the dispatch log site unless the user opts
+    into verbose logging."""
+    a = dict(args or {})
+    if name == "web_search" and "query" in a:
+        a["query"] = "<redacted len=%d>" % len(str(a["query"]))
+    elif name == "open_url" and "url" in a:
+        s = urllib.parse.urlsplit(str(a["url"]))
+        a["url"] = f"{s.scheme}://{s.hostname or ''}"
+    elif name == "quick_note" and "body" in a:
+        a["body"] = "<redacted len=%d>" % len(str(a["body"]))
+    elif name == "draft_event" and "details" in a:
+        a["details"] = "<redacted len=%d>" % len(str(a["details"]))
+    return a
+
+
 def list_supported(cfg: dict) -> list[str]:
     """For the dashboard's experimental panel."""
     labels = [
@@ -277,6 +539,9 @@ def list_supported(cfg: dict) -> list[str]:
         "Open an app  (“open <name>”)",
         "Open a website  (“open <site>” / “go to <site>”)",
         "Search the web  (“search the web for <query>”)",
+        "Summarize the focused document  (“summarize this pdf”)",
+        "Draft a calendar event  (“create an event …”) — local .ics draft",
+        "Take a note  (“take a note that …”)",
     ]
     apps = sorted((cfg.get("experimental", {}) or {}).get("action_apps", {}) or {})
     if apps:

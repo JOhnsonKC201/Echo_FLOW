@@ -68,7 +68,7 @@ def test_action_mode_off_pastes_text():
 def test_action_mode_on_fires_and_suppresses_paste(temp_db, monkeypatch):
     history, _path = temp_db
     opened = []
-    monkeypatch.setattr("webbrowser.open", lambda u: opened.append(u) or True)
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: opened.append(u) or True)
     monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
 
     cfg = _base_cfg(command_mode=False, action_mode=True, command_prefix="computer")
@@ -88,7 +88,7 @@ def test_action_mode_on_fires_and_suppresses_paste(temp_db, monkeypatch):
 
 def test_plain_dictation_never_triggers_action(monkeypatch):
     called = []
-    monkeypatch.setattr("webbrowser.open", lambda u: called.append(u) or True)
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: called.append(u) or True)
     monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
 
     cfg = _base_cfg(command_mode=False, action_mode=True, command_prefix="computer")
@@ -99,3 +99,33 @@ def test_plain_dictation_never_triggers_action(monkeypatch):
     assert called == []
     app.injector.inject.assert_called_once()
     assert app.injector.inject.call_args.args[0] == "open the spotify app and play something"
+
+
+def test_command_mode_runs_before_action(monkeypatch):
+    # Both modes on; a real Command Mode hit ("go to the top" → Ctrl+Home) must
+    # fire the keystroke and NOT fall through to Action Mode.
+    monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
+    cfg = _base_cfg(command_mode=True, action_mode=True, command_prefix="computer")
+    app = _make_app(cfg, "computer go to the top")
+    app.injector.send_hotkey.return_value = True
+    app._do_dictation(_audio())
+    app.injector.send_hotkey.assert_called_once_with("ctrl+home")
+    app.injector.inject.assert_not_called()
+
+
+def test_command_miss_falls_through_to_action(temp_db, monkeypatch):
+    # "go to github.com" isn't a Command Mode keystroke → falls through to
+    # Action Mode, which opens the URL. One action, no paste.
+    history, _path = temp_db
+    opened = []
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: opened.append(u) or True)
+    monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
+    cfg = _base_cfg(command_mode=True, action_mode=True, command_prefix="computer")
+    app = _make_app(cfg, "computer go to github.com", history=history)
+    app._do_dictation(_audio())
+    assert opened == ["https://github.com"]
+    app.injector.inject.assert_not_called()
+    rows = history.recent_actions()
+    assert rows and rows[0]["handler"] == "open_url"
+    # SEC-3: the logged URL arg is reduced to scheme+host (here already host-only).
+    assert "github.com" in (rows[0]["args"] or "")

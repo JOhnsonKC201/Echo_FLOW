@@ -17,7 +17,7 @@ def _ctx(apps=None):
 
 def test_open_url_calls_webbrowser(monkeypatch):
     opened = []
-    monkeypatch.setattr("webbrowser.open", lambda u: opened.append(u) or True)
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: opened.append(u) or True)
     m = va.ActionMatch("open_url", "Open", {"url": "https://example.com"})
     ok, msg = va.dispatch(m, _ctx())
     assert ok is True
@@ -32,7 +32,7 @@ def test_open_url_calls_webbrowser(monkeypatch):
 ])
 def test_open_url_rejects_unsafe_schemes_and_metachars(monkeypatch, bad):
     called = []
-    monkeypatch.setattr("webbrowser.open", lambda u: called.append(u) or True)
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: called.append(u) or True)
     m = va.ActionMatch("open_url", "Open", {"url": bad})
     ok, msg = va.dispatch(m, _ctx())
     assert ok is False
@@ -43,7 +43,7 @@ def test_open_url_rejects_unsafe_schemes_and_metachars(monkeypatch, bad):
 
 def test_web_search_urlencodes_query(monkeypatch):
     opened = []
-    monkeypatch.setattr("webbrowser.open", lambda u: opened.append(u) or True)
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: opened.append(u) or True)
     m = va.ActionMatch("web_search", "Search", {"query": "best pizza & beer"})
     ok, msg = va.dispatch(m, _ctx())
     assert ok is True
@@ -72,7 +72,7 @@ def test_open_app_launches_configured_exe_no_shell(monkeypatch):
 
 def test_open_app_url_target_uses_browser(monkeypatch):
     opened = []
-    monkeypatch.setattr("webbrowser.open", lambda u: opened.append(u) or True)
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: opened.append(u) or True)
     m = va.ActionMatch("open_app", "Open browser", {"app": "browser"})
     ok, msg = va.dispatch(m, _ctx(apps={"browser": "https://www.google.com"}))
     assert ok is True
@@ -99,7 +99,7 @@ def test_dispatch_unknown_handler_returns_false():
 
 
 def test_handler_exception_is_swallowed(monkeypatch):
-    def boom(u):
+    def boom(u, **k):
         raise RuntimeError("browser exploded")
     monkeypatch.setattr("webbrowser.open", boom)
     m = va.ActionMatch("open_url", "Open", {"url": "https://example.com"})

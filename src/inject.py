@@ -1,8 +1,11 @@
 """Text injection at the focused cursor."""
 from __future__ import annotations
 
-import time
+import os
+import re
 import sys
+import time
+from pathlib import Path
 
 import pyperclip
 
@@ -18,6 +21,39 @@ def _focused_window_title() -> str:
         return ""
 
 
+# A document filename embedded in a window title, e.g. "report.pdf - Adobe".
+_DOC_TOKEN = re.compile(r"([\w \-.()]+\.(?:pdf|txt|md|docx|doc))", re.IGNORECASE)
+
+
+def _focused_document_path() -> str | None:
+    """Best-effort path of the foreground window's document. Returns None when
+    it can't resolve — callers MUST tolerate None. Never raises; only runs when
+    an action actually fires, so it's off the dictation hot path.
+
+    Heuristic: pull a filename token out of the window title and look for it in
+    the usual places (cwd, Documents, Desktop, Downloads). Deliberately
+    conservative — a guess that resolves to a real file, or nothing.
+    """
+    title = _focused_window_title()
+    if not title:
+        return None
+    m = _DOC_TOKEN.search(title)
+    if not m:
+        return None
+    name = m.group(1).strip()
+    bases = [Path.cwd()]
+    home = Path.home()
+    bases += [home / sub for sub in ("Documents", "Desktop", "Downloads")]
+    for base in bases:
+        try:
+            p = base / name
+            if p.is_file():
+                return str(p)
+        except Exception:
+            continue
+    return None
+
+
 class Injector:
     def __init__(self, method: str = "paste", restore_clipboard: bool = True, trailing_space: bool = True):
         self.method = method
@@ -26,6 +62,11 @@ class Injector:
 
     def focused_title(self) -> str:
         return _focused_window_title()
+
+    def focused_document_path(self) -> str | None:
+        """Best-effort path of the foreground document (Phase 14 Action Mode).
+        Returns None when unresolved; only called when an action fires."""
+        return _focused_document_path()
 
     def inject(self, text: str):
         if not text:
