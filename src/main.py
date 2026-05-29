@@ -753,6 +753,7 @@ class App:
                         focused_path=self.injector.focused_document_path(),
                         cfg=self.cfg, notify=wnotify.notify,
                         cleaner=self.cleaner, history=self.history,
+                        injector=self.injector,
                     )
                     ok, msg = _va.dispatch(match, ctx)
                     _log.info("voice action: %s (%s) ok=%s", match.label, match.name, ok)

@@ -58,6 +58,7 @@ class ActionContext:
     notify: Callable
     cleaner: object | None = None
     history: object | None = None
+    injector: object | None = None   # for keystroke-based handlers (media/volume)
 
 
 # --- Prefix stripping (parity with commands.strip_prefix) --------------------
@@ -92,6 +93,17 @@ _RE_NOTE = re.compile(
     r"^(?:take|make|add|create|write)\s+(?:a\s+|me\s+a\s+)?"
     r"note(?:\s+(?:that|saying|about))?[:\s]+(.+)$", re.I
 )
+# PR-4 catalog. Media/volume map to OS media keys via the injector; folder/clip
+# are "open …" forms so classify() must try them before the _RE_OPEN catch-all.
+_RE_PLAYPAUSE = re.compile(r"^(?:play|pause|resume)(?:\s+(?:music|the\s+music|media|song|playback))?$", re.I)
+_RE_NEXT      = re.compile(r"^(?:next|skip)(?:\s+(?:track|song))?$", re.I)
+_RE_PREV      = re.compile(r"^(?:previous|prev|last)(?:\s+(?:track|song))$", re.I)
+_RE_MUTE      = re.compile(r"^(?:un)?mute(?:\s+(?:it|sound|the\s+sound|volume))?$", re.I)
+_RE_VOLUP     = re.compile(r"^(?:volume\s+up|turn\s+(?:it\s+|the\s+volume\s+)?up|louder)$", re.I)
+_RE_VOLDOWN   = re.compile(r"^(?:volume\s+down|turn\s+(?:it\s+|the\s+volume\s+)?down|quieter|lower\s+(?:the\s+)?volume)$", re.I)
+_RE_CLIP      = re.compile(r"^open\s+(?:the\s+)?(?:link|url)\s+(?:in\s+|from\s+)?(?:the\s+)?clipboard$|^open\s+clipboard\s+(?:link|url)$", re.I)
+_RE_FOLDER    = re.compile(r"^open\s+(?:the\s+)?(.+?)\s+folder$|^open\s+folder\s+(.+)$", re.I)
+
 _RE_OPEN = re.compile(r"^open\s+(.+)$", re.I)
 
 # A bare domain like "github.com" or "docs.python.org/3/". SEC-7: ASCII-only
@@ -172,6 +184,28 @@ def classify(body: str, cfg: dict) -> ActionMatch | None:
         note_body = m.group(1).strip()
         if note_body:
             return ActionMatch("quick_note", "Take a note", {"body": note_body})
+
+    # PR-4 catalog (media / volume / clipboard / folder).
+    if _RE_PLAYPAUSE.match(b):
+        return ActionMatch("media_key", "Play / pause", {"key": "playpause"})
+    if _RE_NEXT.match(b):
+        return ActionMatch("media_key", "Next track", {"key": "nexttrack"})
+    if _RE_PREV.match(b):
+        return ActionMatch("media_key", "Previous track", {"key": "prevtrack"})
+    if _RE_MUTE.match(b):
+        return ActionMatch("media_key", "Mute", {"key": "volumemute"})
+    if _RE_VOLUP.match(b):
+        return ActionMatch("volume", "Volume up", {"dir": "up"})
+    if _RE_VOLDOWN.match(b):
+        return ActionMatch("volume", "Volume down", {"dir": "down"})
+    if _RE_CLIP.match(b):
+        return ActionMatch("open_clipboard_link", "Open clipboard link", {})
+    m = _RE_FOLDER.match(b)
+    if m:
+        folder = (m.group(1) or m.group(2) or "").strip()
+        if folder:
+            return ActionMatch("open_folder", f"Open {folder} folder",
+                               {"folder": folder.lower()})
 
     m = _RE_OPEN.match(b)
     if m:
@@ -493,6 +527,83 @@ def _h_quick_note(args: dict, ctx: ActionContext) -> tuple[bool, str]:
     return (True, f"Noted: {title}")
 
 
+_MEDIA_LABELS = {
+    "playpause": "Toggled play/pause.",
+    "nexttrack": "Skipped to the next track.",
+    "prevtrack": "Went to the previous track.",
+    "volumemute": "Toggled mute.",
+}
+
+
+def _h_media_key(args: dict, ctx: ActionContext) -> tuple[bool, str]:
+    """Fire a single OS media key via the injector. Keys are a fixed allowlist,
+    never spoken text."""
+    key = (args or {}).get("key", "")
+    if key not in _MEDIA_LABELS:
+        return (False, "Unknown media key.")
+    inj = ctx.injector
+    if inj is None or not hasattr(inj, "send_key"):
+        return (False, "Media keys aren't available right now.")
+    ok = bool(inj.send_key(key))
+    return (ok, _MEDIA_LABELS[key] if ok else "Couldn't send the media key.")
+
+
+def _h_volume(args: dict, ctx: ActionContext) -> tuple[bool, str]:
+    """Nudge system volume up/down by a fixed number of steps. Step count is
+    hardcoded — never parsed from spoken text."""
+    direction = (args or {}).get("dir", "")
+    key = {"up": "volumeup", "down": "volumedown"}.get(direction)
+    if key is None:
+        return (False, "Unknown volume direction.")
+    inj = ctx.injector
+    if inj is None or not hasattr(inj, "send_key"):
+        return (False, "Volume control isn't available right now.")
+    steps = 3   # fixed; clamp guards against accidental change
+    steps = max(1, min(steps, 5))
+    ok = True
+    for _ in range(steps):
+        ok = bool(inj.send_key(key)) and ok
+    return (ok, f"Volume {direction}." if ok else "Couldn't change the volume.")
+
+
+def _h_open_folder(args: dict, ctx: ActionContext) -> tuple[bool, str]:
+    """Open a folder from the configured action_folders allowlist. The spoken
+    name is a lookup key — voice can never open an arbitrary path."""
+    name = ((args or {}).get("folder") or "").strip().lower()
+    folders = (ctx.cfg.get("experimental", {}) or {}).get("action_folders", {}) or {}
+    target = None
+    for key, val in folders.items():
+        if str(key).strip().lower() == name:
+            target = os.path.expanduser(os.path.expandvars(str(val).strip()))
+            break
+    if not target:
+        return (False, f"I don't have a folder called “{name}” configured.")
+    if not os.path.isdir(target):
+        return (False, f"That folder doesn't exist: {target}")
+    if sys.platform == "win32":
+        try:
+            os.startfile(target)  # type: ignore[attr-defined]
+            return (True, f"Opened the {name} folder.")
+        except Exception as e:  # noqa: BLE001
+            return (False, f"Couldn't open the folder: {e}")
+    return (False, "Opening folders is only supported on Windows.")
+
+
+def _h_open_clipboard_link(args: dict, ctx: ActionContext) -> tuple[bool, str]:
+    """Open the clipboard contents ONLY if they parse as a safe URL."""
+    try:
+        import pyperclip
+        text = (pyperclip.paste() or "").strip()
+    except Exception:  # noqa: BLE001
+        return (False, "Couldn't read the clipboard.")
+    if not text:
+        return (False, "The clipboard is empty.")
+    url = text if _is_safe_url(text) else _domain_to_url(text)
+    if not url or not _is_safe_url(url):
+        return (False, "The clipboard doesn't contain a safe link.")
+    return _h_open_url({"url": url}, ctx)
+
+
 _HANDLERS: dict[str, Handler] = {
     "open_url": _h_open_url,
     "web_search": _h_web_search,
@@ -500,6 +611,10 @@ _HANDLERS: dict[str, Handler] = {
     "summarize_focused": _h_summarize_focused,
     "draft_event": _h_draft_event,
     "quick_note": _h_quick_note,
+    "media_key": _h_media_key,
+    "volume": _h_volume,
+    "open_folder": _h_open_folder,
+    "open_clipboard_link": _h_open_clipboard_link,
 }
 
 
@@ -542,6 +657,10 @@ def list_supported(cfg: dict) -> list[str]:
         "Summarize the focused document  (“summarize this pdf”)",
         "Draft a calendar event  (“create an event …”) — local .ics draft",
         "Take a note  (“take a note that …”)",
+        "Media controls  (“play”, “pause”, “next track”, “previous track”)",
+        "Volume  (“volume up” / “volume down” / “mute”)",
+        "Open a folder  (“open downloads folder”)",
+        "Open a clipboard link  (“open the link in the clipboard”)",
     ]
     apps = sorted((cfg.get("experimental", {}) or {}).get("action_apps", {}) or {})
     if apps:

@@ -195,6 +195,10 @@ experimental:
   action_email_url: "https://mail.google.com"   # used by "computer, open email"
   action_summary_max_chars: 6000   # cap text sent to the local summarizer ("summarize this pdf")
   action_log_verbose: false        # log full action args (queries/notes/urls); default redacts to length/host
+  action_folders:                  # name (as spoken) -> folder path. "open <name> folder"
+    downloads: "%USERPROFILE%\\Downloads"
+    documents: "%USERPROFILE%\\Documents"
+    desktop: "%USERPROFILE%\\Desktop"
 
 logging:
   level: "INFO"
