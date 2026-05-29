@@ -122,18 +122,9 @@
   </div>
 
   <datalist id="snd-options">
-    <option value="Speech On.wav">Speech On — crisp “listening” chirp</option>
-    <option value="ding.wav">Ding — short, neutral</option>
-    <option value="chimes.wav">Chimes — soft three-note</option>
-    <option value="Windows Notify.wav">Windows Notify</option>
-    <option value="Windows Notify System Generic.wav">Windows Notify (generic)</option>
-    <option value="Windows Foreground.wav">Windows Foreground</option>
-    <option value="Windows Background.wav">Windows Background — subtle</option>
-    <option value="Windows Notify Messaging.wav">Notify Messaging</option>
-    <option value="tada.wav">Tada — celebratory</option>
-    <option value="SystemAsterisk">SystemAsterisk (alias)</option>
-    <option value="SystemExclamation">SystemExclamation (alias)</option>
-    <option value="SystemHand">SystemHand — error (alias)</option>
+    {% for c in sound_choices %}
+      <option value="{{ c.value }}">{{ c.label }}{% if not c.available %} — (not found on this PC){% endif %}</option>
+    {% endfor %}
   </datalist>
 
   <script>

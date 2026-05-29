@@ -112,6 +112,7 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         cfg = app_ref.cfg
         snd = cfg.get("sound", {}) or {}
         aud = cfg.get("audio", {}) or {}
+        from .. import sound as _sound
         return _render("system", values={
             "sound_enabled": bool(snd.get("enabled", True)),
             "sound_start_alias": snd.get("start_alias", "") or "",
@@ -119,7 +120,7 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "sound_error_alias": snd.get("error_alias", "") or "",
             "vad_enabled": bool(aud.get("vad_enabled", True)),
             "silence_timeout_ms": int(aud.get("silence_timeout_ms", 1500)),
-        })
+        }, sound_choices=_sound.list_choices())
 
     @flask_app.post("/settings/system/save")
     def settings_system_save():
