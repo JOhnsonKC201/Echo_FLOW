@@ -1,8 +1,41 @@
 # Echo Flow
 
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20iOS-1f6fd0)
+![audio](https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a)
+![cloud](https://img.shields.io/badge/cloud-opt--in%20only-6c6a62)
+![tests](https://img.shields.io/badge/tests-690%20passing-3eaf6f)
+![license](https://img.shields.io/badge/license-MIT-green)
+
 A dictation app I built for my own machine because the commercial ones charge monthly fees and send my audio to their servers. This one runs entirely on your computer — your audio never leaves the machine unless you explicitly opt into a cloud feature.
 
 Hold Ctrl+Shift, talk, release. The text shows up wherever your cursor is.
+
+## How it works
+
+Everything in the dashed box runs **on your machine**. The only paths that leave it are opt-in and gated behind your own API key.
+
+```mermaid
+flowchart LR
+    A["🎙️ Hold Ctrl+Shift<br/>push to talk"] --> B["Whisper STT<br/>local CPU / GPU"]
+    B --> C{"Cleanup"}
+    C -->|"default · local"| D["Ollama LLM"]
+    C -.->|"PE mode · opt-in"| E["Groq / Anthropic<br/>☁ cloud, your key"]
+    D --> F["📋 Paste at cursor"]
+    E -.-> F
+    F --> G[("history.db<br/>local — learns from you")]
+    G -.->|"few-shot examples"| C
+    P["📱 iOS keyboard"] -.->|"Wi-Fi bridge"| B
+    DB["🖥️ Dashboard<br/>127.0.0.1:8766"] --- G
+
+    subgraph LOCAL["🔒 Your machine — no network"]
+        B
+        C
+        D
+        F
+        G
+        DB
+    end
+```
 
 ## Setup (Windows)
 
