@@ -41,7 +41,9 @@ def test_page_data_off_by_default(tmp_path):
     data = actions_view.page_data(cfg, h)
     assert data["enabled"] is False
     assert data["prefix"] == "computer"
-    assert data["apps"] == [{"name": "spotify", "target": "spotify"}]
+    assert data["apps"] == [
+        {"name": "spotify", "target": "spotify", "source": "config", "shadows": False}
+    ]
     assert isinstance(data["supported"], list) and len(data["supported"]) >= 5
     assert data["recent"] == []
 
@@ -78,9 +80,12 @@ def test_actions_page_renders(tmp_path):
 
 
 def test_actions_page_shows_disabled_banner_when_off(tmp_path):
-    client, _ = _client(tmp_path)
+    client, app_ref = _client(tmp_path)
+    # Force the mode off so this tests the banner logic regardless of what the
+    # shipped config.yaml currently has action_mode set to.
+    app_ref.cfg.setdefault("experimental", {})["action_mode"] = False
     r = client.get("/actions", headers=HOST)
-    assert b"Action Mode is off" in r.data   # config.yaml ships action_mode: false
+    assert b"Action Mode is off" in r.data
 
 
 def test_actions_page_renders_recent_log(tmp_path):
@@ -131,3 +136,86 @@ def test_experimental_save_rejects_unsafe_email_url(tmp_path):
     # Redirected back with a flash; the bad URL is not persisted.
     cfg = yaml.safe_load(Path(app_ref.cfg_path).read_text(encoding="utf-8"))
     assert cfg["experimental"]["action_email_url"] != "javascript:alert(1)"
+
+
+# --- Editor: add / edit / delete app & folder shortcuts ----------------------
+
+def test_actions_save_app_adds_shortcut(tmp_path):
+    client, app_ref = _client(tmp_path)
+    r = client.post("/actions/save", headers=HOST,
+                    data={"kind": "app", "name": "figma", "target": "figma.exe"})
+    assert r.status_code in (302, 303)
+    rows = app_ref.history.list_action_targets("app")
+    assert {"figma": "figma.exe"} == {x["name"]: x["target"] for x in rows}
+
+
+def test_actions_save_shows_on_page_and_resolves(tmp_path):
+    client, app_ref = _client(tmp_path)
+    client.post("/actions/save", headers=HOST,
+                data={"kind": "app", "name": "figma", "target": "figma.exe"})
+    r = client.get("/actions", headers=HOST)
+    assert b"figma" in r.data
+    # Read-through: the voice layer sees it immediately.
+    from src import voice_actions as va
+    m = va.classify("open figma", app_ref.cfg)
+    assert va.resolves(m, app_ref.cfg, app_ref.history) is True
+
+
+def test_actions_save_rejects_bad_name(tmp_path):
+    client, app_ref = _client(tmp_path)
+    client.post("/actions/save", headers=HOST,
+                data={"kind": "app", "name": "bad/name!", "target": "x.exe"})
+    assert app_ref.history.list_action_targets("app") == []
+
+
+def test_actions_save_rejects_shell_target(tmp_path):
+    client, app_ref = _client(tmp_path)
+    client.post("/actions/save", headers=HOST,
+                data={"kind": "app", "name": "evil", "target": "calc & del *"})
+    assert app_ref.history.list_action_targets("app") == []
+
+
+def test_actions_delete_removes_shortcut(tmp_path):
+    client, app_ref = _client(tmp_path)
+    app_ref.history.set_action_target("folder", "projects", r"%USERPROFILE%\Projects")
+    r = client.post("/actions/delete", headers=HOST,
+                    data={"kind": "folder", "name": "projects"})
+    assert r.status_code in (302, 303)
+    assert app_ref.history.list_action_targets("folder") == []
+
+
+def test_actions_save_edits_config_default_as_override(tmp_path):
+    # Saving a name that exists in config.yaml creates a user override row.
+    client, app_ref = _client(tmp_path)
+    client.post("/actions/save", headers=HOST,
+                data={"kind": "app", "name": "spotify", "target": r"C:\Spotify\Spotify.exe"})
+    data = actions_view.page_data(app_ref.cfg, app_ref.history)
+    spotify = next(a for a in data["apps"] if a["name"] == "spotify")
+    assert spotify["source"] == "user" and spotify["shadows"] is True
+    assert spotify["target"].endswith("Spotify.exe")
+
+
+# --- Audit fixes: save-time validation parity with launch-time guards --------
+
+def test_actions_save_rejects_app_command_flag(tmp_path):
+    client, app_ref = _client(tmp_path)
+    client.post("/actions/save", headers=HOST,
+                data={"kind": "app", "name": "evil", "target": "notepad /k calc"})
+    assert app_ref.history.list_action_targets("app") == []
+
+
+def test_actions_save_rejects_unc_folder(tmp_path):
+    client, app_ref = _client(tmp_path)
+    bs = chr(92)  # backslash — UNC is two leading backslashes
+    unc = bs + bs + "attacker" + bs + "share"
+    client.post("/actions/save", headers=HOST,
+                data={"kind": "folder", "name": "share", "target": unc})
+    assert app_ref.history.list_action_targets("folder") == []
+
+
+def test_actions_save_url_target_ok(tmp_path):
+    client, app_ref = _client(tmp_path)
+    client.post("/actions/save", headers=HOST,
+                data={"kind": "app", "name": "mail", "target": "https://mail.proton.me"})
+    rows = {r["name"]: r["target"] for r in app_ref.history.list_action_targets("app")}
+    assert rows == {"mail": "https://mail.proton.me"}

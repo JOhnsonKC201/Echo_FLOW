@@ -138,3 +138,14 @@ def test_primary_screen_size_returns_two_ints():
     w, h = W._primary_screen_size()
     assert isinstance(w, int) and isinstance(h, int)
     assert w > 0 and h > 0
+
+
+# --- icon resolution -------------------------------------------------------
+
+def test_icon_path_resolves_to_existing_file():
+    """From source, _icon_path() returns a real bundled icon (or None if the
+    assets are absent — never a path that doesn't exist)."""
+    import os
+    from src.dashboard import window as W
+    p = W._icon_path()
+    assert p is None or os.path.exists(p)

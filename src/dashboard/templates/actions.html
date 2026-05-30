@@ -22,11 +22,24 @@
     <h2>How to fire an action</h2>
     <span class="num muted">prefix: {{ data.prefix }}</span>
   </div>
-  <div class="sub">Speak the prefix word, then an action. Examples:</div>
+  {% if data.require_prefix %}
+  <div class="sub">Say the prefix word, then an action. Examples:</div>
   <pre class="transform-prompt"><span class="diff-add">{{ data.prefix }}, open notepad</span>              → launches a configured app
 <span class="diff-add">{{ data.prefix }} search the web for cats</span>  → opens a web search
-<span class="diff-add">{{ data.prefix }}, summarize this pdf</span>      → local summary of the focused doc
+<span class="diff-add">{{ data.prefix }}, open downloads folder</span>    → opens a folder
 <span class="diff-add">{{ data.prefix }}, take a note that …</span>      → saves a note</pre>
+  {% else %}
+  <div class="sub">Just say it — no prefix needed. A shortcut fires only when it
+    resolves; anything else types normally. Examples:</div>
+  <pre class="transform-prompt"><span class="diff-add">open spotify</span>            → launches a configured app
+<span class="diff-add">go to github.com</span>        → opens a site
+<span class="diff-add">open downloads folder</span>   → opens a folder
+<span class="diff-add">search the web for cats</span> → opens a web search</pre>
+  <div class="muted small" style="margin-top:8px;">
+    Media, notes, and events still want the prefix
+    (“<span class="num">{{ data.prefix }}</span>”) so everyday words aren’t caught.
+  </div>
+  {% endif %}
 </div>
 
 <div class="card">
@@ -36,25 +49,62 @@
   </ul>
 </div>
 
+{% macro target_editor(kind, rows, label, say, add_ph) %}
 <div class="card">
   <div class="card-header">
-    <h2>Configured apps <span class="muted small num">{{ data.apps|length }}</span></h2>
-    <span class="num muted">edit in config.yaml → experimental.action_apps</span>
+    <h2>{{ label }} <span class="muted small num">{{ rows|length }}</span></h2>
+    <span class="num muted">say “{{ say }}”</span>
   </div>
-  {% if data.apps %}
+  {% if rows %}
     <table class="kv-table">
-      <thead><tr><th>Say “open …”</th><th>Launches</th></tr></thead>
+      <thead><tr><th style="width:30%;">{{ say }}</th><th>Opens</th><th></th></tr></thead>
       <tbody>
-        {% for a in data.apps %}
-          <tr><td><code>{{ a.name }}</code></td><td class="muted">{{ a.target }}</td></tr>
+        {% for r in rows %}
+          <tr>
+            <td>
+              <code>{{ r.name }}</code>
+              {% if r.source == 'config' and not r.shadows %}<span class="pill">default</span>
+              {% elif r.shadows %}<span class="pill warn">edited</span>{% endif %}
+            </td>
+            <td>
+              <form method="post" action="/actions/save" class="row-form" style="gap:6px;">
+                <input type="hidden" name="kind" value="{{ kind }}">
+                <input type="hidden" name="name" value="{{ r.name }}">
+                <input type="text" name="target" value="{{ r.target }}"
+                       aria-label="Target for {{ r.name }}">
+                <button class="btn" type="submit">Save</button>
+              </form>
+            </td>
+            <td class="row-actions">
+              {% if r.source == 'user' %}
+                <form method="post" action="/actions/delete" class="inline">
+                  <input type="hidden" name="kind" value="{{ kind }}">
+                  <input type="hidden" name="name" value="{{ r.name }}">
+                  <button class="link-danger" type="submit"
+                          title="{{ 'Revert to default' if r.shadows else 'Remove' }}">✕</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
   {% else %}
-    <div class="muted small">No apps configured. Add entries under
-      <code>experimental.action_apps</code> in config.yaml.</div>
+    <div class="muted small">None yet — add one below.</div>
   {% endif %}
+  <div class="hairline"></div>
+  <form method="post" action="/actions/save" class="row-form" style="gap:8px;">
+    <input type="hidden" name="kind" value="{{ kind }}">
+    <input type="text" name="name" placeholder="name (say “{{ say }}”)"
+           style="max-width:200px;" aria-label="New {{ kind }} name">
+    <input type="text" name="target" placeholder="{{ add_ph }}" aria-label="New {{ kind }} target">
+    <button class="btn primary" type="submit">Add {{ kind }}</button>
+  </form>
 </div>
+{% endmacro %}
+
+{{ target_editor('app', data.apps, 'Apps', 'open …', 'app name, path, or https URL') }}
+{{ target_editor('folder', data.folders, 'Folders', 'open … folder', 'C:\\path or %USERPROFILE%\\Downloads') }}
 
 <div class="card">
   <h2>Recent actions <span class="muted small num">{{ data.recent|length }}</span></h2>

@@ -131,6 +131,33 @@ def _domain_to_url(token: str) -> str | None:
     return None
 
 
+def user_targets(kind: str, cfg: dict, history=None) -> dict:
+    """Merge the config allowlist for `kind` ('app'|'folder') with the
+    dashboard-managed shortcuts stored in SQLite.
+
+    config.yaml supplies the factory defaults; user rows (read THROUGH at call
+    time, never cached) override by name — so a shortcut added or edited in the
+    dashboard takes effect immediately, even when the daemon and dashboard are
+    separate processes sharing the WAL database. Keys are lower-cased.
+    """
+    key = "action_apps" if kind == "app" else "action_folders"
+    merged: dict[str, str] = {}
+
+    def _nk(name: str) -> str:  # normalize a lookup key: collapse spaces, lower
+        return re.sub(r"\s+", " ", str(name)).strip().lower()
+
+    base = (cfg.get("experimental", {}) or {}).get(key, {}) or {}
+    for k, v in base.items():
+        merged[_nk(k)] = str(v).strip()
+    if history is not None:
+        try:
+            for row in history.list_action_targets(kind):
+                merged[_nk(row["name"])] = str(row["target"]).strip()
+        except Exception:  # noqa: BLE001 — storage must never break dispatch
+            pass
+    return merged
+
+
 def classify(body: str, cfg: dict) -> ActionMatch | None:
     """Match a prefix-stripped command body against the action table.
 
@@ -144,6 +171,12 @@ def classify(body: str, cfg: dict) -> ActionMatch | None:
     b = body.strip().rstrip(" .!?,")
     if not b:
         return None
+    # For command-style matches (media/volume/folder/clipboard/open) also drop a
+    # trailing politeness word so "open spotify please" / "pause thanks" still
+    # match their $-anchored patterns. Free-text actions (note/search/event) keep
+    # the full `b` so their captured content is never truncated.
+    b_cmd = re.sub(r"[\s,]+(?:please|thanks|thank you|thank u)\s*$", "",
+                   b, flags=re.I).strip() or b
 
     if _RE_EMAIL.match(b):
         url = (cfg.get("experimental", {}) or {}).get(
@@ -185,31 +218,34 @@ def classify(body: str, cfg: dict) -> ActionMatch | None:
         if note_body:
             return ActionMatch("quick_note", "Take a note", {"body": note_body})
 
-    # PR-4 catalog (media / volume / clipboard / folder).
-    if _RE_PLAYPAUSE.match(b):
+    # PR-4 catalog (media / volume / clipboard / folder). These are $-anchored
+    # command phrases, so match against the politeness-trimmed text.
+    if _RE_PLAYPAUSE.match(b_cmd):
         return ActionMatch("media_key", "Play / pause", {"key": "playpause"})
-    if _RE_NEXT.match(b):
+    if _RE_NEXT.match(b_cmd):
         return ActionMatch("media_key", "Next track", {"key": "nexttrack"})
-    if _RE_PREV.match(b):
+    if _RE_PREV.match(b_cmd):
         return ActionMatch("media_key", "Previous track", {"key": "prevtrack"})
-    if _RE_MUTE.match(b):
+    if _RE_MUTE.match(b_cmd):
         return ActionMatch("media_key", "Mute", {"key": "volumemute"})
-    if _RE_VOLUP.match(b):
+    if _RE_VOLUP.match(b_cmd):
         return ActionMatch("volume", "Volume up", {"dir": "up"})
-    if _RE_VOLDOWN.match(b):
+    if _RE_VOLDOWN.match(b_cmd):
         return ActionMatch("volume", "Volume down", {"dir": "down"})
-    if _RE_CLIP.match(b):
+    if _RE_CLIP.match(b_cmd):
         return ActionMatch("open_clipboard_link", "Open clipboard link", {})
-    m = _RE_FOLDER.match(b)
+    m = _RE_FOLDER.match(b_cmd)
     if m:
-        folder = (m.group(1) or m.group(2) or "").strip()
+        # Collapse STT-doubled spaces so a multi-word folder name ("my  big")
+        # matches its single-spaced config key.
+        folder = re.sub(r"\s+", " ", (m.group(1) or m.group(2) or "")).strip()
         if folder:
             return ActionMatch("open_folder", f"Open {folder} folder",
                                {"folder": folder.lower()})
 
-    m = _RE_OPEN.match(b)
+    m = _RE_OPEN.match(b_cmd)
     if m:
-        arg = m.group(1).strip()
+        arg = re.sub(r"\s+", " ", m.group(1)).strip()
         url = _domain_to_url(arg)
         if url:
             return ActionMatch("open_url", f"Open {url}", {"url": url})
@@ -303,7 +339,7 @@ def _h_web_search(args: dict, ctx: ActionContext) -> tuple[bool, str]:
 
 def _h_open_app(args: dict, ctx: ActionContext) -> tuple[bool, str]:
     app = ((args or {}).get("app") or "").strip().lower()
-    apps = (ctx.cfg.get("experimental", {}) or {}).get("action_apps", {}) or {}
+    apps = user_targets("app", ctx.cfg, ctx.history)
     # SEC-4: normalize the allowlist once (case-fold + strip). A collision
     # (two keys folding to the same name) is logged so it isn't silent.
     norm: dict[str, str] = {}
@@ -573,7 +609,7 @@ def _h_open_folder(args: dict, ctx: ActionContext) -> tuple[bool, str]:
     """Open a folder from the configured action_folders allowlist. The spoken
     name is a lookup key — voice can never open an arbitrary path."""
     name = ((args or {}).get("folder") or "").strip().lower()
-    folders = (ctx.cfg.get("experimental", {}) or {}).get("action_folders", {}) or {}
+    folders = user_targets("folder", ctx.cfg, ctx.history)
     target = None
     for key, val in folders.items():
         if str(key).strip().lower() == name:
@@ -581,6 +617,10 @@ def _h_open_folder(args: dict, ctx: ActionContext) -> tuple[bool, str]:
             break
     if not target:
         return (False, f"I don't have a folder called “{name}” configured.")
+    # Refuse UNC paths — os.startfile on \\host\share triggers an outbound SMB
+    # auth (NetNTLM leak). A configured local folder never needs this form.
+    if target[:2] in ("\\\\", "//"):
+        return (False, "That folder location isn't allowed.")
     if not os.path.isdir(target):
         return (False, f"That folder doesn't exist: {target}")
     if sys.platform == "win32":
@@ -630,6 +670,33 @@ def dispatch(match: ActionMatch, ctx: ActionContext) -> tuple[bool, str]:
         return handler(match.args, ctx)
     except Exception as e:  # noqa: BLE001 — defense in depth; handlers shouldn't raise
         return (False, f"Action failed: {e}")
+
+
+def resolves(match: ActionMatch, cfg: dict, history=None) -> bool:
+    """True only if `match` would do something real — checked WITHOUT any side
+    effect. Used for prefix-free triggering: when an *unprefixed* dictation
+    classifies as an action but doesn't resolve, the caller types it as normal
+    text instead of swallowing it.
+
+    Scoped on purpose to the self-validating actions (a configured app/folder,
+    or a syntactically valid URL/search). Verbs that are common bare words —
+    "play", "next", "last", "mute", note/event/etc. — still require the prefix,
+    so plain dictation can't be hijacked by a single spoken word.
+
+    `history` (optional) folds in dashboard-managed app/folder shortcuts so a
+    user-taught "open <name>" fires prefix-free just like a config one.
+    """
+    name = match.name
+    args = match.args or {}
+    if name == "open_app":
+        return str(args.get("app", "")).strip().lower() in user_targets("app", cfg, history)
+    if name == "open_folder":
+        return str(args.get("folder", "")).strip().lower() in user_targets("folder", cfg, history)
+    if name == "open_url":
+        return _is_safe_url(str(args.get("url", "")))
+    if name == "web_search":
+        return bool(str(args.get("query", "")).strip())
+    return False
 
 
 def redact_args(name: str, args: dict) -> dict:

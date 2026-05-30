@@ -141,3 +141,130 @@ def test_list_supported_non_empty():
     labels = va.list_supported(_cfg(apps={"spotify": "spotify", "notepad": "notepad.exe"}))
     assert any("Search the web" in s for s in labels)
     assert any("spotify" in s for s in labels)
+
+
+# --- resolves(): prefix-free triggering gate ---------------------------------
+# A bare verb may fire an action without the wake-word ONLY when it resolves to
+# a configured app/folder or a valid URL/search; otherwise it must type normally.
+
+def test_resolves_configured_app_true():
+    cfg = _cfg(apps={"spotify": "spotify"})
+    m = va.classify("open spotify", cfg)
+    assert m.name == "open_app" and va.resolves(m, cfg) is True
+
+
+def test_resolves_unconfigured_app_false():
+    cfg = _cfg(apps={"spotify": "spotify"})
+    m = va.classify("open the door and walk in", cfg)
+    assert m.name == "open_app" and va.resolves(m, cfg) is False
+
+
+def test_resolves_valid_url_true():
+    cfg = _cfg()
+    m = va.classify("go to github.com", cfg)
+    assert m.name == "open_url" and va.resolves(m, cfg) is True
+
+
+def test_resolves_web_search_true():
+    cfg = _cfg()
+    m = va.classify("search the web for cats", cfg)
+    assert m.name == "web_search" and va.resolves(m, cfg) is True
+
+
+def test_resolves_configured_folder_true():
+    cfg = _cfg()
+    cfg["experimental"]["action_folders"] = {"downloads": r"%USERPROFILE%\Downloads"}
+    m = va.classify("open downloads folder", cfg)
+    assert m.name == "open_folder" and va.resolves(m, cfg) is True
+
+
+def test_resolves_unconfigured_folder_false():
+    cfg = _cfg()
+    m = va.classify("open projects folder", cfg)
+    assert m.name == "open_folder" and va.resolves(m, cfg) is False
+
+
+@pytest.mark.parametrize("text", ["play", "next", "mute", "volume up", "take a note that hi"])
+def test_resolves_ambiguous_verbs_require_prefix(text):
+    # Media/volume/note never fire prefix-free — they'd hijack common words.
+    cfg = _cfg()
+    m = va.classify(text, cfg)
+    assert m is not None and va.resolves(m, cfg) is False
+
+
+# --- Fuzzy prefix: tolerate a mis-heard wake word ----------------------------
+
+def test_strip_prefix_fuzzy_catches_misheard_wakeword():
+    # Whisper mangling "jarvis" → "zalvis"/"jervis" still strips to the command.
+    assert cm.strip_prefix_fuzzy("zalvis open email", "jarvis") == "open email"
+    assert cm.strip_prefix_fuzzy("Jervis, open email", "jarvis") == "open email"
+
+
+def test_strip_prefix_fuzzy_exact_still_works():
+    assert cm.strip_prefix_fuzzy("jarvis open spotify", "jarvis") == "open spotify"
+
+
+def test_strip_prefix_fuzzy_ignores_unrelated_first_word():
+    # A normal sentence must not look like a wake word.
+    assert cm.strip_prefix_fuzzy("I love Paris in spring", "jarvis") is None
+    assert cm.strip_prefix_fuzzy("Marcus opened the door", "jarvis") is None
+
+
+def test_strip_prefix_fuzzy_needs_a_body():
+    assert cm.strip_prefix_fuzzy("zalvis", "jarvis") is None
+
+
+def test_strip_prefix_fuzzy_short_prefix_disabled():
+    # Too-short prefixes are too collision-prone to fuzzy-match.
+    assert cm.strip_prefix_fuzzy("cat open email", "go") is None
+
+
+# --- Audit fixes: politeness, whitespace, multi-word prefix, validation ------
+
+@pytest.mark.parametrize("text,app", [
+    ("open spotify please", "spotify"),
+    ("open spotify thanks", "spotify"),
+    ("open  spotify", "spotify"),
+])
+def test_trailing_politeness_and_spaces_for_open(text, app):
+    m = va.classify(text, _cfg(apps={"spotify": "spotify"}))
+    assert m is not None and m.name == "open_app" and m.args == {"app": app}
+
+
+def test_politeness_not_stripped_from_note_body():
+    m = va.classify("take a note that call mom please", _cfg())
+    assert m.name == "quick_note"
+    assert m.args["body"] == "call mom please"   # free text kept intact
+
+
+def test_multiword_app_name_collapses_spaces():
+    cfg = _cfg(apps={"visual studio": "devenv.exe"})
+    m = va.classify("open  visual   studio", cfg)
+    assert m.args == {"app": "visual studio"}
+    assert va.resolves(m, cfg) is True
+
+
+def test_folder_with_trailing_politeness():
+    cfg = _cfg()
+    cfg["experimental"]["action_folders"] = {"downloads": r"%USERPROFILE%\Downloads"}
+    m = va.classify("open downloads folder please", cfg)
+    assert m.name == "open_folder" and m.args == {"folder": "downloads"}
+    assert va.resolves(m, cfg) is True
+
+
+def test_pause_with_politeness_matches_media():
+    m = va.classify("pause please", _cfg())
+    assert m is not None and m.name == "media_key"
+
+
+def test_fuzzy_multiword_prefix_uses_exact_only():
+    # Exact multi-word prefix still strips; the fuzzy fallback bails (no mis-strip).
+    assert cm.strip_prefix_fuzzy("hey echo, open spotify", "hey echo") == "open spotify"
+    # A misheard multi-word prefix simply doesn't fuzzy-match (returns None).
+    assert cm.strip_prefix_fuzzy("hey eko open spotify", "hey echo") is None
+
+
+def test_user_targets_collapses_config_key_spaces():
+    cfg = _cfg(apps={"visual  studio": "devenv.exe"})
+    targets = va.user_targets("app", cfg, None)
+    assert "visual studio" in targets

@@ -100,6 +100,58 @@ def strip_prefix(text: str, prefix_word: str = "computer") -> str | None:
     return text[m.end():].strip()
 
 
+def _edit_distance(a: str, b: str) -> int:
+    """Levenshtein distance — small, dependency-free."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1,
+                           prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def strip_prefix_fuzzy(text: str, prefix_word: str, max_dist: int = 2) -> str | None:
+    """Like strip_prefix, but tolerant of a MIS-HEARD wake word.
+
+    Speech-to-text routinely mangles an uncommon prefix ("jarvis" → "Zalvis",
+    "Jervis", "Travis"). An exact match would then drop the command silently.
+    This compares the first spoken token to the prefix by edit distance and,
+    if close enough, returns the remainder.
+
+    Conservative by design: only for prefixes of 4+ letters, only a first token
+    of a similar length, and distance strictly less than the prefix length.
+    Callers must still gate on the remainder actually resolving to an action —
+    a fuzzy hit alone must never swallow plain dictation.
+    """
+    exact = strip_prefix(text, prefix_word)
+    if exact is not None:
+        return exact
+    pw = (prefix_word or "").strip().lower()
+    if len(pw) < 4 or " " in pw:
+        # Single-token fuzzy only — a multi-word prefix ("hey echo") is handled
+        # exactly above; fuzzy-matching just its first word would mis-strip.
+        return None
+    m = re.match(r"^\s*([A-Za-z']+)[\s,.:;\-]+(.+)$", text or "")
+    if not m:
+        return None
+    first = m.group(1).lower()
+    rest = m.group(2).strip()
+    if not rest or abs(len(first) - len(pw)) > 2:
+        return None
+    dist = _edit_distance(first, pw)
+    if dist <= max_dist and dist < len(pw):
+        return rest
+    return None
+
+
 def classify(command_text: str) -> tuple[str, str, str] | None:
     """Match the prefix-stripped command body against the allowlist.
 

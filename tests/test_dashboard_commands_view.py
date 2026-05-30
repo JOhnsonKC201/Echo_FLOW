@@ -78,9 +78,11 @@ def test_commands_page_renders(tmp_path):
 
 
 def test_commands_page_shows_disabled_banner_when_off(tmp_path):
-    client, _ = _client(tmp_path)
+    client, app_ref = _client(tmp_path)
+    # Force the mode off so this tests the banner logic regardless of what the
+    # shipped config.yaml currently has command_mode set to.
+    app_ref.cfg.setdefault("experimental", {})["command_mode"] = False
     r = client.get("/commands", headers=HOST)
-    # config.yaml has command_mode: false out of the box.
     assert b"Command Mode is off" in r.data
 
 

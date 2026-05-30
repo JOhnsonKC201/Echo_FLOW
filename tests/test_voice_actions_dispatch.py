@@ -106,3 +106,15 @@ def test_handler_exception_is_swallowed(monkeypatch):
     ok, msg = va.dispatch(m, _ctx())
     assert ok is False
     assert "exploded" in msg or "Couldn't" in msg
+
+
+def test_open_folder_rejects_unc_target():
+    from src import voice_actions as va
+    bs = chr(92)  # UNC = two leading backslashes
+    cfg = {"experimental": {"action_folders": {"share": bs + bs + "host" + bs + "share"}}}
+    ctx = va.ActionContext(focused_title=None, focused_path=None, cfg=cfg,
+                           notify=lambda *a, **k: None)
+    ok, msg = va.dispatch(va.ActionMatch("open_folder", "Open share folder",
+                                         {"folder": "share"}), ctx)
+    assert ok is False
+    assert "isn't allowed" in msg   # the UNC guard, not "doesn't exist"

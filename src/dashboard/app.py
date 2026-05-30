@@ -751,6 +751,77 @@ def make_app(app_ref):
             data=data, flash=_req.args.get("flash", ""),
         )
 
+    def _validate_action_target(kind: str, target: str) -> tuple[bool, str]:
+        """Save-time check that mirrors the launch-time guards in voice_actions'
+        handlers, so a value the dashboard accepts is one the handler will run."""
+        import os as _os
+        import re as _re2
+        from .. import voice_actions as _va
+        t = (target or "").strip()
+        if not t:
+            return False, "Target is required."
+        if len(t) > 400 or any(ord(c) < 0x20 for c in t):
+            return False, "Target is too long or has control characters."
+        if _va._is_safe_url(t):
+            return True, ""
+        if any(c in t for c in "&|<>^`$;"):
+            return False, "Target can't contain shell characters (& | < > ^ ` $ ;)."
+        if kind == "folder":
+            # UNC paths trigger outbound SMB auth — block them (handler does too).
+            if t[:2] in ("\\\\", "//"):
+                return False, "Network (UNC) folder paths aren't allowed."
+        elif kind == "app":
+            # Mirror _h_open_app: a non-file target with a command-line flag
+            # ("notepad /k x") is rejected so it can't persist then fail at launch.
+            if not _os.path.isfile(t) and _re2.search(r"\s/\w", t):
+                return False, "App target can't contain command-line flags."
+        return True, ""
+
+    @flask_app.post("/actions/save")
+    def actions_save():
+        from flask import request as _req, redirect
+        from urllib.parse import quote_plus as _qp
+        import re as _re
+        def _back(msg):  # URL-encode so a value with & / # can't split the query
+            return redirect("/actions?flash=" + _qp(msg))
+        kind = (_req.form.get("kind", "") or "").strip().lower()
+        name = (_req.form.get("name", "") or "").strip().lower()
+        target = (_req.form.get("target", "") or "").strip()
+        if kind not in ("app", "folder"):
+            return _back("Unknown shortcut type.")
+        if not _re.fullmatch(r"[a-z0-9][a-z0-9 '\-]{0,39}", name):
+            return _back("Name must be 1–40 letters/numbers "
+                         "(the word you'll say after “open”).")
+        ok, msg = _validate_action_target(kind, target)
+        if not ok:
+            return _back(msg)
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return _back("History disabled — can't save shortcuts.")
+        try:
+            history.set_action_target(kind, name, target)
+        except Exception as e:
+            _log.warning("actions save failed: %s", e)
+            return _back(f"Error: {e}")
+        verb = "app" if kind == "app" else "folder"
+        return _back(f"Saved {verb} “{name}” — say “open {name}”.")
+
+    @flask_app.post("/actions/delete")
+    def actions_delete():
+        from flask import request as _req, redirect
+        from urllib.parse import quote_plus as _qp
+        kind = (_req.form.get("kind", "") or "").strip().lower()
+        name = (_req.form.get("name", "") or "").strip().lower()
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return redirect("/actions?flash=" + _qp("History disabled."))
+        try:
+            removed = history.delete_action_target(kind, name)
+        except Exception as e:
+            _log.warning("actions delete failed: %s", e)
+            return redirect("/actions?flash=" + _qp(f"Error: {e}"))
+        return redirect("/actions?flash=" + _qp("Removed." if removed else "Nothing to remove."))
+
     # --- Privacy (PR-E first-class promotion) ---------------------------
     @flask_app.get("/privacy")
     def privacy_page():

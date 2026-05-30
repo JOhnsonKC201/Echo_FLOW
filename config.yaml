@@ -184,10 +184,11 @@ dashboard:
 # Settings → Experimental panel. These ship in later phases; toggling
 # them now persists the preference but has no runtime effect yet.
 experimental:
-  press_enter_command: false   # Phase 12 — "press enter" / "send it" trailing trigger
-  command_mode: false          # Phase 13 — full voice command mode
-  command_prefix: "computer"   # Phase 13 — dictations starting with this word are interpreted as commands
-  action_mode: false           # Phase 14 — semantic voice actions (open app/url, web search). Shares command_prefix.
+  press_enter_command: true   # Phase 12 — "press enter" / "send it" trailing trigger
+  command_mode: true          # Phase 13 — full voice command mode
+  command_prefix: jarvis   # Phase 13 — dictations starting with this word are interpreted as commands
+  action_mode: true           # Phase 14 — semantic voice actions (open app/url, web search). Shares command_prefix.
+  action_require_prefix: false # false = say the verb alone ("open spotify"); fires only when it resolves (configured app/folder or valid URL/search), else types normally. true = require the prefix word.
   action_apps:                 # name (as spoken) -> launch target: a PATH exe, Start-menu alias, or a URL
     spotify: "spotify"
     notepad: "notepad.exe"

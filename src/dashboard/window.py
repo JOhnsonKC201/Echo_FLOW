@@ -22,6 +22,21 @@ from pathlib import Path
 _STATE_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "dashboard_window.json"
 
 
+def _icon_path() -> str | None:
+    """Best-effort path to the window/taskbar icon. Prefers the multi-size
+    .ico (crisp at every taskbar scale); falls back to the .png. Resolves
+    against the PyInstaller bundle when frozen, else the repo root."""
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    else:
+        base = Path(__file__).resolve().parent.parent.parent
+    for rel in ("assets/icon.ico", "assets/icon.png", "src/dashboard/static/logo.png"):
+        p = base / rel
+        if p.exists():
+            return str(p)
+    return None
+
+
 _SPLASH_HTML = """<!doctype html>
 <html><head><meta charset='utf-8'><title>Echo Flow</title>
 <style>
@@ -154,6 +169,15 @@ def main(argv: list[str] | None = None) -> int:
         webbrowser.open(url)
         return 0
 
+    # Windows taskbar: give the process its own AppUserModelID so it groups
+    # under the Echo Flow icon instead of the generic python.exe pin, and the
+    # taskbar uses our icon rather than the interpreter's.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("EchoFlow.Dashboard")
+    except Exception:
+        pass
+
     try:
         state = _load_window_state()
         width = int(state.get("width", 1280))
@@ -183,7 +207,14 @@ def main(argv: list[str] | None = None) -> int:
                 win.load_url(url)
             except Exception:
                 pass
-        webview.start(func=_swap_to_dashboard)
+        # Pass our icon so the window + taskbar show the Echo Flow mark even when
+        # running from source (where the default would be the python.exe icon).
+        # `icon` is accepted by current PyWebView; tolerate older builds.
+        icon = _icon_path()
+        try:
+            webview.start(func=_swap_to_dashboard, icon=icon)
+        except TypeError:
+            webview.start(func=_swap_to_dashboard)
     except Exception as e:
         # WebView2 runtime missing or similar — graceful fallback.
         print(f"echoflow-dashboard: PyWebView failed ({e}); opening in browser.",

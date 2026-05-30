@@ -78,9 +78,9 @@
   .wf-delta.up   { color: var(--accent);
                    background: color-mix(in oklab, var(--accent) 10%, transparent);
                    border-color: color-mix(in oklab, var(--accent) 25%, transparent); }
-  .wf-delta.down { color: #d97777;
-                   background: color-mix(in oklab, #d97777 8%, transparent);
-                   border-color: color-mix(in oklab, #d97777 22%, transparent); }
+  .wf-delta.down { color: var(--danger);
+                   background: color-mix(in oklab, var(--danger) 8%, transparent);
+                   border-color: color-mix(in oklab, var(--danger) 22%, transparent); }
   .wf-divider  { height:1px; margin: 18px 0;
                  background: linear-gradient(90deg, transparent, var(--border) 12%,
                     var(--border) 88%, transparent); }
@@ -263,23 +263,36 @@
                           var(--accent));
                         border: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
 
-  /* Quality trajectory — premium sparkline */
+  /* Quality trajectory — premium sparkline.
+     The plot stretches to full width (preserveAspectRatio="none"), so every
+     stroke uses vector-effect:non-scaling-stroke to keep an even weight and the
+     SVG clips to its own box — no filters bleed past the card. End/start points
+     are CSS pucks layered over the plot so they stay perfectly round despite the
+     horizontal stretch. */
   .wf-trajectory { padding: 4px 0 0; }
-  .wf-trajectory svg { width:100%; height: 120px; display:block; margin-top: 10px;
-                       overflow: visible; }
+  .wf-traj-plot  { position: relative; margin-top: 12px; }
+  .wf-traj-plot svg { width:100%; height: 116px; display:block;
+                      overflow: hidden; border-radius: 8px; }
   .wf-trajectory .area { fill: url(#wf-traj-area); }
   .wf-trajectory .line { fill:none; stroke: url(#wf-traj-line); stroke-width: 2.2;
                          stroke-linecap: round; stroke-linejoin: round;
-                         filter: drop-shadow(0 2px 6px color-mix(in oklab, var(--accent) 35%, transparent)); }
+                         vector-effect: non-scaling-stroke; }
   .wf-trajectory .baseline { stroke: color-mix(in oklab, var(--muted) 50%, transparent);
-                             stroke-width: 1; stroke-dasharray: 3 4; }
-  .wf-trajectory .grid { stroke: color-mix(in oklab, var(--border) 70%, transparent);
-                         stroke-width: 1; }
-  .wf-trajectory .dot { fill: var(--accent);
-                        filter: drop-shadow(0 0 4px color-mix(in oklab, var(--accent) 70%, transparent)); }
-  .wf-trajectory .dot-ring { fill: none;
-                             stroke: color-mix(in oklab, var(--accent) 55%, transparent);
-                             stroke-width: 1.5; }
+                             stroke-width: 1; stroke-dasharray: 3 4;
+                             vector-effect: non-scaling-stroke; }
+  .wf-trajectory .grid { stroke: color-mix(in oklab, var(--border) 65%, transparent);
+                         stroke-width: 1; vector-effect: non-scaling-stroke; }
+  /* Endpoint pucks — round regardless of the plot's horizontal stretch. */
+  .wf-traj-marker { position:absolute; border-radius:50%; pointer-events:none; }
+  .wf-traj-marker.start { left:0; width:8px; height:8px;
+                          transform: translate(-50%,-50%);
+                          background: color-mix(in oklab, var(--accent) 55%, var(--panel));
+                          border: 1.5px solid color-mix(in oklab, var(--accent) 70%, transparent); }
+  .wf-traj-marker.end   { right:0; width:11px; height:11px;
+                          transform: translate(50%,-50%);
+                          background: var(--accent);
+                          box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 16%, transparent),
+                                      0 2px 10px -2px color-mix(in oklab, var(--accent) 55%, transparent); }
 
   .wf-empty { color: var(--muted); font-size: 12.5px; padding: 14px 0; }
 
@@ -315,6 +328,18 @@
                    box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 45%, transparent);
                    transition: width .8s cubic-bezier(.2,.7,.2,1); }
 
+  /* Shared SVG gradient stops — a luminous green ramp used by the WPM gauge
+     and the quality-trajectory line. Kept green-only so they stay cohesive
+     with the page's sage palette instead of fading through the secondary blue. */
+  .gstop-0 { stop-color: color-mix(in oklab, var(--accent) 55%, white); }
+  .gstop-1 { stop-color: var(--accent); }
+
+  /* Graceful degradation on narrow windows — the dashboard is desktop-first,
+     but a single column keeps the cards readable if the window is shrunk. */
+  @media (max-width: 940px) {
+    .wf-grid-top, .wf-grid-bot { grid-template-columns: 1fr; }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .wf-card, .wf-tab, .wf-cell, .wf-source button,
     .wf-app-bar > span, .wf-gauge-fill, .wf-rank-meter > span,
@@ -325,13 +350,16 @@
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    {# Gauge + trajectory share one luminous green ramp (light → accent) so they
+       stay on-palette with the rest of the page. Stop colours live in CSS
+       (.gstop-*) so color-mix() resolves reliably. #}
     <linearGradient id="wf-gauge-grad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="var(--accent-2)" />
-      <stop offset="100%" stop-color="var(--accent)" />
+      <stop class="gstop-0" offset="0%" />
+      <stop class="gstop-1" offset="100%" />
     </linearGradient>
     <linearGradient id="wf-traj-line" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="var(--accent-2)" />
-      <stop offset="100%" stop-color="var(--accent)" />
+      <stop class="gstop-0" offset="0%" />
+      <stop class="gstop-1" offset="100%" />
     </linearGradient>
     <linearGradient id="wf-traj-area" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28" />
@@ -370,7 +398,8 @@
     {# Arc r=70, viewBox padded to clear the stroke. Length = pi*r = 220. #}
     <div class="wf-gauge">
       <div class="wf-gauge-wrap">
-        <svg width="200" height="120" viewBox="0 0 200 110">
+        <svg width="200" height="120" viewBox="0 0 200 110"
+             role="img" aria-label="Words per minute: {{ wpm_val }} of {{ wpm_target }}">
           <path class="wf-gauge-track" d="M 25 95 A 75 75 0 0 1 175 95" />
           <path class="wf-gauge-fill"  d="M 25 95 A 75 75 0 0 1 175 95"
                 stroke-dasharray="236" stroke-dashoffset="{{ 236 * (1 - wpm_frac) }}" />
@@ -592,14 +621,17 @@
     {% set tmax = (trend | max) | round | int %}
     {% set tmin = (trend | min) | round | int %}
     {% set span = tmax - tmin if (tmax - tmin) >= 12 else 12 %}
-    {% set ymin = tmin - 4 %}
-    {% set ymax = ymin + span + 8 %}
+    {# Pad the value range by ~22% each side so peaks and troughs never kiss the
+       card edges — gives the line room to breathe. #}
+    {% set pad = (span * 22) // 100 %}{% set pad = pad if pad >= 6 else 6 %}
+    {% set ymin = tmin - pad %}
+    {% set ymax = tmax + pad %}
     <div class="wf-context" style="margin: 0;">
       Q <strong style="color:var(--text)">{{ first }}</strong>
       → <strong style="color:var(--text)">{{ last }}</strong>
       {% set delta = last - first %}
       {% if delta > 0 %}<span style="color:var(--accent)">↑ {{ delta }}</span>
-      {% elif delta < 0 %}<span style="color:#d97777">↓ {{ delta * -1 }}</span>
+      {% elif delta < 0 %}<span style="color:var(--danger)">↓ {{ delta * -1 }}</span>
       {% else %}<span style="color:var(--muted)">· steady</span>{% endif %}
       <span class="muted small" style="margin-left:8px;">range {{ tmin }}–{{ tmax }}</span>
     </div>
@@ -608,25 +640,27 @@
     {% set last_x = (n - 1) * (w / (n - 1 if n > 1 else 1)) %}
     {% set last_y = h - ((last - ymin) / (ymax - ymin)) * h %}
     {% set first_y = h - ((first - ymin) / (ymax - ymin)) * h %}
-    <svg viewBox="0 0 {{ w }} {{ h }}" preserveAspectRatio="none">
-      {# vertical grid hashes at 25/50/75% #}
-      <line class="grid" x1="{{ w * 0.25 }}" y1="0" x2="{{ w * 0.25 }}" y2="{{ h }}" />
-      <line class="grid" x1="{{ w * 0.50 }}" y1="0" x2="{{ w * 0.50 }}" y2="{{ h }}" />
-      <line class="grid" x1="{{ w * 0.75 }}" y1="0" x2="{{ w * 0.75 }}" y2="{{ h }}" />
-      {# median baseline #}
-      <line class="baseline" x1="0" y1="{{ median_y }}" x2="{{ w }}" y2="{{ median_y }}" />
-      <polygon class="area"
-               points="0,{{ h }} {%- for q in trend -%}
-                 {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
-               {%- endfor -%} {{ w }},{{ h }}"/>
-      <polyline class="line"
-                points="{%- for q in trend -%}
-                  {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
-                {%- endfor -%}"/>
-      <circle class="dot" cx="0" cy="{{ first_y }}" r="3" />
-      <circle class="dot" cx="{{ last_x }}" cy="{{ last_y }}" r="4" />
-      <circle class="dot-ring" cx="{{ last_x }}" cy="{{ last_y }}" r="8" />
-    </svg>
+    <div class="wf-traj-plot">
+      <svg viewBox="0 0 {{ w }} {{ h }}" preserveAspectRatio="none"
+           role="img" aria-label="Quality trajectory: {{ first }} to {{ last }} across the last {{ n }} dictations">
+        {# vertical grid hashes at 25/50/75% #}
+        <line class="grid" x1="{{ w * 0.25 }}" y1="0" x2="{{ w * 0.25 }}" y2="{{ h }}" />
+        <line class="grid" x1="{{ w * 0.50 }}" y1="0" x2="{{ w * 0.50 }}" y2="{{ h }}" />
+        <line class="grid" x1="{{ w * 0.75 }}" y1="0" x2="{{ w * 0.75 }}" y2="{{ h }}" />
+        {# median baseline #}
+        <line class="baseline" x1="0" y1="{{ median_y }}" x2="{{ w }}" y2="{{ median_y }}" />
+        <polygon class="area"
+                 points="0,{{ h }} {%- for q in trend -%}
+                   {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
+                 {%- endfor -%} {{ w }},{{ h }}"/>
+        <polyline class="line"
+                  points="{%- for q in trend -%}
+                    {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
+                  {%- endfor -%}"/>
+      </svg>
+      <span class="wf-traj-marker start" style="top: {{ (first_y / h * 100) | round(2) }}%;"></span>
+      <span class="wf-traj-marker end"   style="top: {{ (last_y / h * 100) | round(2) }}%;"></span>
+    </div>
   </div>
 {% endif %}
 {% endif %}{# end if tab == 'usage' #}

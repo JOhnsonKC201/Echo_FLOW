@@ -130,6 +130,19 @@ class History:
             self.conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_vactions_ts ON voice_actions(ts)"
             )
+            # Action Mode user targets (Phase 14+ — dashboard-managed app/folder
+            # shortcuts). `kind` is 'app' or 'folder'; (kind, name) is unique so
+            # saving an existing name updates it. Read-through at dispatch time
+            # so edits in the dashboard take effect without a daemon restart.
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS action_targets (
+                    kind TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (kind, name)
+                )
+            """)
         except Exception as e:
             # Column migrations should never fail in practice (idempotent via PRAGMA check).
             # If they do, log it loudly so we don't end up with a half-migrated schema.
@@ -285,6 +298,55 @@ class History:
              "args": r[4], "label": r[5], "ok": bool(r[6]), "error": r[7]}
             for r in rows
         ]
+
+    # --- Action Mode user targets (dashboard-managed app/folder shortcuts) ----
+
+    def set_action_target(self, kind: str, name: str, target: str) -> None:
+        """Insert or update an app/folder shortcut. `name` is the spoken key
+        (stored lower-cased); `kind` is 'app' or 'folder'. Raises ValueError on
+        bad input so the caller can surface a clean message."""
+        kind = (kind or "").strip().lower()
+        if kind not in ("app", "folder"):
+            raise ValueError("kind must be 'app' or 'folder'")
+        name = (name or "").strip().lower()
+        target = (target or "").strip()
+        if not name or not target:
+            raise ValueError("name and target are required")
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO action_targets(kind, name, target, updated_at) "
+                "VALUES (?,?,?,?) "
+                "ON CONFLICT(kind, name) DO UPDATE SET "
+                "target=excluded.target, updated_at=excluded.updated_at",
+                (kind, name, target, time.time()),
+            )
+
+    def delete_action_target(self, kind: str, name: str) -> bool:
+        """Remove a shortcut. Returns True if a row was deleted."""
+        kind = (kind or "").strip().lower()
+        name = (name or "").strip().lower()
+        with self.conn:
+            cur = self.conn.execute(
+                "DELETE FROM action_targets WHERE kind=? AND name=?",
+                (kind, name),
+            )
+        return cur.rowcount > 0
+
+    def list_action_targets(self, kind: str | None = None) -> list[dict]:
+        """List shortcuts, optionally filtered by kind. Newest first."""
+        if kind:
+            rows = self.conn.execute(
+                "SELECT kind, name, target, updated_at FROM action_targets "
+                "WHERE kind=? ORDER BY name",
+                ((kind or "").strip().lower(),),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT kind, name, target, updated_at FROM action_targets "
+                "ORDER BY kind, name"
+            ).fetchall()
+        return [{"kind": r[0], "name": r[1], "target": r[2], "updated_at": r[3]}
+                for r in rows]
 
     def recent_commands(self, limit: int = 50) -> list[dict]:
         rows = self.conn.execute(

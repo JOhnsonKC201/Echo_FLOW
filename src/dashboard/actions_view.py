@@ -25,10 +25,38 @@ def page_data(cfg: dict, history) -> dict:
     from .. import voice_actions as _va
     exp = (cfg or {}).get("experimental", {}) or {}
     enabled = bool(exp.get("action_mode", False))
+    require_prefix = bool(exp.get("action_require_prefix", True))
     prefix = exp.get("command_prefix", "computer")
     email_url = exp.get("action_email_url", "https://mail.google.com")
-    apps_map = exp.get("action_apps", {}) or {}
-    apps = [{"name": str(k), "target": str(v)} for k, v in apps_map.items()]
+
+    # Merge config defaults with dashboard-managed (SQLite) shortcuts. User rows
+    # override config by name and are the only ones the editor can remove; config
+    # rows show as read-only defaults.
+    def _rows(kind: str, cfg_key: str) -> list[dict]:
+        cfg_map = {str(k).strip().lower(): str(v)
+                   for k, v in (exp.get(cfg_key, {}) or {}).items()}
+        user_map: dict[str, str] = {}
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                for r in history.list_action_targets(kind):
+                    user_map[str(r["name"]).strip().lower()] = str(r["target"])
+            except Exception:
+                user_map = {}
+        out = []
+        for name in sorted(set(cfg_map) | set(user_map)):
+            is_user = name in user_map
+            out.append({
+                "name": name,
+                "target": user_map.get(name, cfg_map.get(name, "")),
+                "source": "user" if is_user else "config",
+                # A user row that shadows a config default reverts (not deletes)
+                # back to the config value when removed.
+                "shadows": is_user and name in cfg_map,
+            })
+        return out
+
+    apps = _rows("app", "action_apps")
+    folders = _rows("folder", "action_folders")
 
     recent: list[dict] = []
     if history is not None and getattr(history, "conn", None) is not None:
@@ -46,9 +74,11 @@ def page_data(cfg: dict, history) -> dict:
 
     return {
         "enabled": enabled,
+        "require_prefix": require_prefix,
         "prefix": prefix,
         "email_url": email_url,
         "apps": apps,
+        "folders": folders,
         "supported": _va.list_supported(cfg),
         "recent": recent,
     }

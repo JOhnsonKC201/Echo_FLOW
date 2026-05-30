@@ -711,10 +711,20 @@ class App:
         cmd_unmatched = False   # prefix present but no Command Mode hit
         cmd_body = ""
 
-        if exp_cfg.get("command_mode"):
+        # The command/action prefix is a control token, not prose — so detect it
+        # on the RAW transcript first. The cleanup pass strips filler words and
+        # repunctuates, which can silently swallow a prefix like "hey" (or
+        # rewrite "computer, open X" → "Open X.") and hide the command from
+        # classify(). Prefer raw when it carries the prefix; else use cleaned.
+        cmd_text = cleaned
+        if exp_cfg.get("command_mode") or exp_cfg.get("action_mode"):
             from . import commands as _commands
-            body = _commands.strip_prefix(cleaned, prefix)
-            if body is not None:
+            if _commands.strip_prefix(raw, prefix) is not None:
+                cmd_text = raw
+
+        if exp_cfg.get("command_mode"):
+            body = _commands.strip_prefix(cmd_text, prefix)
+            if body:   # non-empty: a bare "computer," (no command) is ignored
                 result = _commands.classify(body)
                 if result is not None:
                     action_type, action_value, label = result
@@ -744,9 +754,36 @@ class App:
         # via Command Mode fallthrough.
         if exp_cfg.get("action_mode"):
             from . import voice_actions as _va
-            body = _va.strip_prefix(cleaned, prefix)
-            if body is not None:
+            # Prefix path: an explicit wake-word ("hey/computer, open X") shows
+            # intent, so a miss is reported as "unknown".
+            # Prefix-free path (action_require_prefix: false): act on a bare
+            # verb ("open spotify") ONLY when it confidently resolves — a
+            # configured app/folder or a valid URL/search. Anything else falls
+            # through and is typed normally, so plain dictation is never eaten.
+            body = _va.strip_prefix(cmd_text, prefix)
+            prefixed = bool(body)   # empty body (bare "jarvis,") is not a command
+            match = None
+            if prefixed:
                 match = _va.classify(body, self.cfg)
+            elif not exp_cfg.get("action_require_prefix", True):
+                free_body = (raw or cleaned or "").strip()
+                # Try the LITERAL utterance first, then the same utterance with a
+                # (possibly mis-heard) leading wake word stripped — "Zalvis open
+                # email" → "open email". Literal-first means a prefix that sounds
+                # like a real verb can't mis-strip and reroute. Both are fail-safe:
+                # fire only when the candidate resolves, so a false strip can never
+                # swallow plain dictation.
+                fuzzy = _commands.strip_prefix_fuzzy(free_body, prefix)
+                seen: set[str] = set()
+                for cb in (free_body, fuzzy):
+                    if not cb or cb in seen:
+                        continue
+                    seen.add(cb)
+                    cand = _va.classify(cb, self.cfg)
+                    if cand is not None and _va.resolves(cand, self.cfg, self.history):
+                        match, body = cand, cb
+                        break
+            if match is not None or prefixed:
                 if match is not None:
                     ctx = _va.ActionContext(
                         focused_title=title,
@@ -772,7 +809,7 @@ class App:
                             # at-rest / on the dashboard next to already-redacted args.
                             body_for_log = (
                                 body if verbose
-                                else "<redacted len=%d>" % len(body)
+                                else "<redacted len=%d>" % len(body or "")
                             )
                             self.history.log_action(
                                 body=body_for_log, handler=match.name,
@@ -785,7 +822,9 @@ class App:
                     if self.tray:
                         self.tray.set_state("ok" if not self._paused else "paused")
                     return   # actions never leave a paste behind
-                # Prefix present but no action matched.
+                # Prefix present but no action matched → report as unknown.
+                # (Unreachable when unprefixed: the guard above only lets a
+                # prefixed miss fall through here.)
                 cmd_unmatched = True
                 cmd_body = body
 
