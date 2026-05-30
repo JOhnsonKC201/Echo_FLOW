@@ -3,7 +3,7 @@
 Phones POST a WAV (or text) to this server; the desktop PC runs the same
 Transcriber + Cleaner + History + Learner singletons that the hotkey path uses.
 Result comes back as JSON and lands in the phone's clipboard via an iOS
-Shortcut or Android Tasker recipe (see MOBILE_BRIDGE.md).
+Shortcut or Android Tasker recipe (see docs/MOBILE_BRIDGE.md).
 
 Local-first: nothing here calls the internet. If the user has Echo Flow
 configured for fully-local mode (local Whisper + Ollama), the bridge works

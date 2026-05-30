@@ -1428,7 +1428,7 @@ class App:
         threading.Thread(target=_wire_notify, daemon=True).start()
 
         # Mobile bridge: optional HTTP server so the user's phone can hit the
-        # same pipeline over local Wi-Fi (see MOBILE_BRIDGE.md).
+        # same pipeline over local Wi-Fi (see docs/MOBILE_BRIDGE.md).
         mobile_cfg = self.cfg.get("mobile", {})
         if mobile_cfg.get("enabled"):
             try:

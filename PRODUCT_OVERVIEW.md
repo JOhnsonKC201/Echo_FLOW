@@ -167,9 +167,9 @@ phase, and which optional features are wired — without exposing keys.
 | Doc | Covers |
 |---|---|
 | [`README.md`](README.md) | Install, hotkeys, configuration, troubleshooting |
-| [`DASHBOARD.md`](DASHBOARD.md) | Dashboard architecture, security, and rollout |
+| [`docs/DASHBOARD.md`](docs/DASHBOARD.md) | Dashboard architecture, security, and rollout |
 | [`CHANGELOG.md`](CHANGELOG.md) | Full feature history by version |
-| [`MOBILE_SETUP.md`](MOBILE_SETUP.md) / [`MOBILE_BRIDGE.md`](MOBILE_BRIDGE.md) | iOS pairing and the local bridge |
-| [`docs/`](docs/) | Developer specs & roadmaps (e.g. the Phase 14 Action Layer) |
+| [`docs/MOBILE_SETUP.md`](docs/MOBILE_SETUP.md) / [`docs/MOBILE_BRIDGE.md`](docs/MOBILE_BRIDGE.md) | iOS pairing and the local bridge |
+| [`docs/`](docs/) | Developer specs, audits & roadmaps (e.g. the Phase 14 Action Layer) |
 
 *License: MIT.*

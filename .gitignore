@@ -25,3 +25,6 @@ build/
 dist/
 .claude/
 *.spec.bak
+
+# Local icon backups (originals preserved in git history)
+assets/_original_icons/

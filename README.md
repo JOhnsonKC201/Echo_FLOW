@@ -62,35 +62,56 @@ them on at your own risk.
   default `"computer"`) followed by an allowlisted command — "computer, select
   all", "computer, save", "computer, scroll down" — and Echo fires the keystroke
   instead of typing the words.
-- **Action Mode** (`action_mode`): the same prefix, but for semantic actions that
-  reach outside the keyboard. The first release ships a deliberately safe trio:
-  - "computer, open spotify" — launches an app from your `action_apps` map
-    (allowlist only; spoken text never touches a shell).
-  - "computer, open github.com" / "computer, go to docs.python.org" — opens a
-    site (http/https/mailto only).
-  - "computer, search the web for &lt;query&gt;" — opens a web search.
-  - "computer, open email" — opens `action_email_url`.
-  - "computer, summarize this pdf" — summarizes the focused document with your
-    **local** model (never a cloud call).
-  - "computer, create an event lunch with Sam tomorrow" — writes a local `.ics`
-    **draft** and opens it (never touches a calendar API).
-  - "computer, take a note that the build is green" — saves a note.
+- **Action Mode** (`action_mode`): the same prefix, but for semantic actions
+  that reach outside the keyboard. Manage your shortcuts right in the dashboard
+  **Actions** page — add, edit, and remove apps and folders without touching
+  `config.yaml`:
+  - "open spotify" — launches an app from your shortcuts (allowlist only;
+    spoken text never touches a shell).
+  - "open github.com" / "go to docs.python.org" — opens a site (http/https/mailto only).
+  - "search the web for &lt;query&gt;" — opens a web search.
+  - "open email" — opens your configured mail URL.
+  - "open downloads folder" — opens a folder shortcut.
+  - "play" / "pause" / "next track" / "previous track" / "mute" / "volume up" — media + volume keys.
+  - "open the link in the clipboard" — opens a clipboard URL, only if it's safe.
+  - "summarize this pdf" — summarizes the focused document with your **local**
+    model (never a cloud call).
+  - "create an event lunch with Sam tomorrow" — writes a local `.ics` **draft**.
+  - "take a note that the build is green" — saves a note.
+
+  **Prefix-free** (`action_require_prefix: false`): say the verb with no wake
+  word at all ("open spotify"). It fires *only* when it resolves to a real
+  shortcut/URL/search — anything else just types normally, so plain dictation is
+  never swallowed. Media, notes, and events still want the prefix so everyday
+  words aren't caught. A mis-heard wake word (Whisper hearing `jarvis` as
+  "Zalvis") is tolerated via fuzzy matching.
 
   Command Mode runs first; an unrecognised command falls through to Action Mode.
   Every action attempt (success or failure) is logged to the `voice_actions`
   table. Nothing in Action Mode deletes, sends, or pays.
 
-## What's in the folder
+## Repository layout
 
 ```
-src/         the actual app
-tests/       run with scripts\run_tests.bat
-data/        your history.db lives here, and the knowledge graph HTML
-logs/        debug output
-scripts/     setup, helpers, utility scripts you'll rarely need
-ios/         iOS keyboard-extension port — see ios/README.md
-config.yaml  the only thing you should normally edit
+src/          the app — daemon, dashboard, voice pipeline
+tests/        pytest suite — run with scripts\run_tests.bat
+data/         your history.db lives here, and the knowledge-graph HTML
+logs/         debug output
+scripts/      setup, helpers, utility scripts you'll rarely need
+assets/       app icons
+installer/    Windows installer + code-signing
+ios/          iOS keyboard-extension port — see ios/README.md
+docs/         architecture, mobile setup, audits, action-layer specs
+config.yaml   the only thing you should normally edit
+app.py        entry point
+*.bat / *.vbs Windows launchers (run / install / restart / uninstall)
+*.spec        PyInstaller build specs
 ```
+
+Start with [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md) for the big picture, then
+[`CHANGELOG.md`](CHANGELOG.md) for the feature history. Deeper docs live in
+[`docs/`](docs/) — [`DASHBOARD.md`](docs/DASHBOARD.md),
+[`MOBILE_BRIDGE.md`](docs/MOBILE_BRIDGE.md), and the Phase 14 Action Layer specs.
 
 ## iOS
 
@@ -129,7 +150,7 @@ Review the pairs at `http://127.0.0.1:8766/teacher` before you trust the loop wh
 
 - **Local by default.** No telemetry, no analytics, no auto-update phone-home. All audio, transcripts, embeddings, and learning data live in `data/history.db` on your machine.
 - **Cloud features are opt-in and explicitly gated.** Prompt-Engineering mode (Ctrl+Shift+Alt) and the teacher loop are the only paths that call a cloud API. Both require an API key you set yourself and both are off until you flip the toggle.
-- **Bridge stays loopback-only** unless you change `mobile.bind_address`. Read `MOBILE_BRIDGE.md` before exposing to LAN.
+- **Bridge stays loopback-only** unless you change `mobile.bind_address`. Read [`docs/MOBILE_BRIDGE.md`](docs/MOBILE_BRIDGE.md) before exposing to LAN.
 - **Dashboard stays loopback-only** on `127.0.0.1:8766`. Same trust model as local browser tabs.
 - **No keys are ever logged.** Startup audits which cloud features are enabled and warns if their key is missing, without printing the key itself.
 
