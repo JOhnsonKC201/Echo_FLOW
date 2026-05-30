@@ -97,7 +97,7 @@ _RE_NOTE = re.compile(
 # are "open …" forms so classify() must try them before the _RE_OPEN catch-all.
 _RE_PLAYPAUSE = re.compile(r"^(?:play|pause|resume)(?:\s+(?:music|the\s+music|media|song|playback))?$", re.I)
 _RE_NEXT      = re.compile(r"^(?:next|skip)(?:\s+(?:track|song))?$", re.I)
-_RE_PREV      = re.compile(r"^(?:previous|prev|last)(?:\s+(?:track|song))$", re.I)
+_RE_PREV      = re.compile(r"^(?:previous|prev|last)(?:\s+(?:track|song))?$", re.I)
 _RE_MUTE      = re.compile(r"^(?:un)?mute(?:\s+(?:it|sound|the\s+sound|volume))?$", re.I)
 _RE_VOLUP     = re.compile(r"^(?:volume\s+up|turn\s+(?:it\s+|the\s+volume\s+)?up|louder)$", re.I)
 _RE_VOLDOWN   = re.compile(r"^(?:volume\s+down|turn\s+(?:it\s+|the\s+volume\s+)?down|quieter|lower\s+(?:the\s+)?volume)$", re.I)
@@ -493,8 +493,11 @@ def _h_draft_event(args: dict, ctx: ActionContext) -> tuple[bool, str]:
     drafts = os.path.join("data", "drafts")
     try:
         os.makedirs(drafts, exist_ok=True)
-        safe = re.sub(r"[^\w.-]+", "_", details)[:50] or "event"   # traversal guard
-        fname = os.path.join(drafts, f"{safe}-{when.strftime('%Y%m%d%H%M')}.ics")
+        # SEC-3: name the draft from creation time only — never from spoken
+        # `details`. Keeps sensitive event text out of the at-rest filename and
+        # makes path traversal structurally impossible (no user data in the path).
+        created = _dt.datetime.now().strftime("%Y%m%d%H%M%S")
+        fname = os.path.join(drafts, f"event-{created}.ics")
         with open(fname, "w", encoding="utf-8") as f:
             f.write(ics)
     except Exception as e:  # noqa: BLE001

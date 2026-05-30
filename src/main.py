@@ -762,12 +762,20 @@ class App:
                         try:
                             # SEC-3: redact sensitive args (queries, note bodies,
                             # URLs → host) unless verbose logging is opted in.
+                            verbose = exp_cfg.get("action_log_verbose")
                             args_for_log = (
-                                match.args if exp_cfg.get("action_log_verbose")
+                                match.args if verbose
                                 else _va.redact_args(match.name, match.args)
                             )
+                            # `body` is the full spoken utterance — redact it too
+                            # unless verbose, so the raw transcription doesn't land
+                            # at-rest / on the dashboard next to already-redacted args.
+                            body_for_log = (
+                                body if verbose
+                                else "<redacted len=%d>" % len(body)
+                            )
                             self.history.log_action(
-                                body=body, handler=match.name,
+                                body=body_for_log, handler=match.name,
                                 args_json=json.dumps(args_for_log),
                                 label=match.label, ok=ok,
                                 error=None if ok else msg,

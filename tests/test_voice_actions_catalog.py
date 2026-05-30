@@ -36,6 +36,9 @@ def _ctx(folders=None, injector=None):
     ("next track", "media_key", {"key": "nexttrack"}),
     ("skip", "media_key", {"key": "nexttrack"}),
     ("previous track", "media_key", {"key": "prevtrack"}),
+    ("previous", "media_key", {"key": "prevtrack"}),   # bare form (suffix optional, like 'next')
+    ("prev", "media_key", {"key": "prevtrack"}),
+    ("last", "media_key", {"key": "prevtrack"}),
     ("mute", "media_key", {"key": "volumemute"}),
     ("volume up", "volume", {"dir": "up"}),
     ("louder", "volume", {"dir": "up"}),
