@@ -22,6 +22,7 @@ import re
 import sqlite3
 import webbrowser
 from collections import Counter, defaultdict
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -80,15 +81,14 @@ def _load_rows(db_path: str, limit: int = 1500, min_quality: float = 30.0) -> li
     """
     if not Path(db_path).exists():
         return []
-    conn = sqlite3.connect(db_path)
     try:
-        cur = conn.execute(
-            "SELECT id, ts, style, raw_text, cleaned_text, embedding, quality_score "
-            "FROM dictations WHERE raw_text IS NOT NULL AND raw_text != '' "
-            "ORDER BY ts DESC LIMIT ?",
-            (limit,),
-        )
-        rows = cur.fetchall()
+        with closing(sqlite3.connect(db_path)) as conn:
+            rows = conn.execute(
+                "SELECT id, ts, style, raw_text, cleaned_text, embedding, quality_score "
+                "FROM dictations WHERE raw_text IS NOT NULL AND raw_text != '' "
+                "ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     except Exception:
         return []
     out = []
@@ -350,15 +350,27 @@ def build_notes_graph(db_path: str, rows: list[dict]) -> dict[str, Any]:
     """
     if not Path(db_path).exists():
         return {"nodes": [], "links": [], "kind": "notes"}
+    tags_by_dict: dict[int, list[str]] = {}
     try:
-        conn = sqlite3.connect(db_path)
-        notes = conn.execute(
-            "SELECT id, dictation_id, title, description, created_at, updated_at "
-            "FROM notes ORDER BY updated_at DESC"
-        ).fetchall()
+        with closing(sqlite3.connect(db_path)) as conn:
+            notes = conn.execute(
+                "SELECT id, dictation_id, title, description, created_at, updated_at "
+                "FROM notes ORDER BY updated_at DESC"
+            ).fetchall()
+            if not notes:
+                return {"nodes": [], "links": [], "kind": "notes"}
+            # Pull all confirmed tags in one pass (avoids a per-note query and a
+            # leaked connection) and index by dictation id.
+            try:
+                for d_id, name in conn.execute(
+                    "SELECT dt.dictation_id, t.name FROM dictation_tags dt "
+                    "JOIN tags t ON t.id = dt.tag_id WHERE dt.confirmed = 1"
+                ).fetchall():
+                    tags_by_dict.setdefault(d_id, []).append(name)
+            except Exception as e:
+                import logging
+                logging.getLogger("wispr.graph").warning("note tag lookup failed: %s", e)
     except Exception:
-        return {"nodes": [], "links": [], "kind": "notes"}
-    if not notes:
         return {"nodes": [], "links": [], "kind": "notes"}
 
     # Build lookup of dictations by id from `rows`
@@ -371,18 +383,8 @@ def build_notes_graph(db_path: str, rows: list[dict]) -> dict[str, Any]:
 
     for n_id, d_id, title, desc, c_at, u_at in notes:
         note_ids.add(int(n_id))
-        # Pull tags for the note's source dictation
-        tag_names: list[str] = []
-        try:
-            tag_rows = conn.execute(
-                "SELECT t.name FROM dictation_tags dt JOIN tags t ON t.id = dt.tag_id "
-                "WHERE dt.dictation_id = ? AND dt.confirmed = 1",
-                (d_id,),
-            ).fetchall()
-            tag_names = [r[0] for r in tag_rows]
-        except Exception as e:
-            import logging
-            logging.getLogger("wispr.graph").warning("note tag lookup failed: %s", e)
+        # Tags for the note's source dictation (pre-loaded above).
+        tag_names = tags_by_dict.get(d_id, [])
         nodes.append({
             "id": f"note:{n_id}",
             "kind": "note",
@@ -427,12 +429,12 @@ def build_notes_graph(db_path: str, rows: list[dict]) -> dict[str, Any]:
 def _all_confirmed_tags(db_path: str) -> list[tuple[str, int]]:
     """Returns [(tag_name, usage_count), ...] for all confirmed tags."""
     try:
-        conn = sqlite3.connect(db_path)
-        rows = conn.execute(
-            "SELECT t.name, COUNT(*) AS n FROM tags t "
-            "JOIN dictation_tags dt ON dt.tag_id = t.id "
-            "WHERE dt.confirmed = 1 GROUP BY t.name ORDER BY n DESC"
-        ).fetchall()
+        with closing(sqlite3.connect(db_path)) as conn:
+            rows = conn.execute(
+                "SELECT t.name, COUNT(*) AS n FROM tags t "
+                "JOIN dictation_tags dt ON dt.tag_id = t.id "
+                "WHERE dt.confirmed = 1 GROUP BY t.name ORDER BY n DESC"
+            ).fetchall()
         return [(r[0], int(r[1])) for r in rows]
     except Exception:
         return []
@@ -441,11 +443,11 @@ def _all_confirmed_tags(db_path: str) -> list[tuple[str, int]]:
 def _tags_index(db_path: str) -> dict[int, list[str]]:
     """Returns {dictation_id: [confirmed_tag_names...]}"""
     try:
-        conn = sqlite3.connect(db_path)
-        rows = conn.execute(
-            "SELECT dt.dictation_id, t.name FROM dictation_tags dt "
-            "JOIN tags t ON t.id = dt.tag_id WHERE dt.confirmed = 1"
-        ).fetchall()
+        with closing(sqlite3.connect(db_path)) as conn:
+            rows = conn.execute(
+                "SELECT dt.dictation_id, t.name FROM dictation_tags dt "
+                "JOIN tags t ON t.id = dt.tag_id WHERE dt.confirmed = 1"
+            ).fetchall()
     except Exception:
         return {}
     out: dict[int, list[str]] = {}
