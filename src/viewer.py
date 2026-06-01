@@ -67,11 +67,11 @@ HTML_TMPL = """<!doctype html>
     rowsEl.innerHTML = filtered.map(r => `
       <div class="row">
         <div class="meta">
-          <span>${r.ts}</span>
-          <span class="tag">${r.lang}</span>
-          <span class="tag">${r.style}</span>
-          <span class="tag">${r.dur}ms</span>
-          ${r.window ? `<span class="tag" title="window">${r.window}</span>` : ''}
+          <span>${escapeHtml(String(r.ts))}</span>
+          <span class="tag">${escapeHtml(r.lang)}</span>
+          <span class="tag">${escapeHtml(r.style)}</span>
+          <span class="tag">${escapeHtml(String(r.dur))}ms</span>
+          ${r.window ? `<span class="tag" title="window">${escapeHtml(r.window)}</span>` : ''}
         </div>
         <div class="pair">
           <div>
