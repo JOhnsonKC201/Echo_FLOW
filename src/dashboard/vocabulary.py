@@ -71,11 +71,18 @@ def bulk_import(conn: sqlite3.Connection, raw: str) -> dict:
             continue
         seen_lower.add(low)
         try:
-            new_id = add_term(conn, term)
-            if new_id > 0:
-                added += 1
-            else:
+            # add_term is idempotent: for a term already in the DB it returns
+            # the EXISTING id (> 0), so new_id > 0 cannot distinguish "inserted"
+            # from "already present". Check existence first so pre-existing
+            # terms count as duplicates, not additions.
+            exists = conn.execute(
+                "SELECT 1 FROM custom_vocabulary WHERE term = ? LIMIT 1", (term,)
+            ).fetchone()
+            if exists:
                 skipped_dup += 1
+                continue
+            add_term(conn, term)
+            added += 1
         except ValueError:
             skipped_invalid += 1
     return {"added": added, "duplicates": skipped_dup, "invalid": skipped_invalid,

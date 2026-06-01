@@ -54,6 +54,19 @@ def test_bulk_import_mixed_separators(tmp_path):
     assert "node2vec" in terms
 
 
+def test_bulk_import_counts_preexisting_db_term_as_duplicate(tmp_path):
+    """A term already in the DB (but not repeated in the paste batch) must be
+    counted as a duplicate, not an addition — add_term returns the existing id
+    so it cannot be distinguished by id alone."""
+    h = _h(tmp_path)
+    vocab.add_term(h.conn, "Supabase")  # pre-existing in the DB
+    result = vocab.bulk_import(h.conn, "Supabase\nKafka")
+    assert result["added"] == 1        # only Kafka is new
+    assert result["duplicates"] == 1   # Supabase already existed
+    terms = [t["term"] for t in vocab.list_terms(h.conn)]
+    assert sorted(t for t in terms if t in {"Supabase", "Kafka"}) == ["Kafka", "Supabase"]
+
+
 def test_list_terms_alphabetical_case_insensitive(tmp_path):
     h = _h(tmp_path)
     vocab.add_term(h.conn, "zoo")
