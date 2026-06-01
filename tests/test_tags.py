@@ -61,6 +61,38 @@ def test_apply_suggestions_persists_to_dictation_tags(tmp_path):
     assert all(t[3] == 0 for t in tags)
 
 
+class _FakeRetriever:
+    """Returns a fixed neighbor list with explicit ids (no raw_text re-query)."""
+    def __init__(self, results):
+        self._results = results
+    def search_with_ids(self, query_text, style=None):
+        return self._results
+
+
+def test_similar_signal_uses_matched_id_not_raw_text_collision(tmp_path):
+    """Two dictations share identical raw_text but have DIFFERENT confirmed
+    tags. The neighbor the embedding matched is the OLDER row (id=1). The old
+    raw_text re-query would have resolved to the most-recent row (id=2) and
+    inherited the WRONG tags; search_with_ids must inherit id=1's tags."""
+    from src.tags import _similar_signal, SIMILAR_THRESHOLD
+    h = History(str(tmp_path / "h.db"))
+    # Two rows, same raw_text, different ids.
+    h.conn.execute("INSERT INTO dictations(id, ts, raw_text, cleaned_text) "
+                   "VALUES (1, 1.0, 'ship it', 'Ship it.')")
+    h.conn.execute("INSERT INTO dictations(id, ts, raw_text, cleaned_text) "
+                   "VALUES (2, 2.0, 'ship it', 'Ship it.')")
+    h.conn.commit()
+    h.set_tag(1, "release", source="manual", confidence=1.0, confirmed=True)   # OLD row
+    h.set_tag(2, "wrongtag", source="manual", confidence=1.0, confirmed=True)  # NEW row
+
+    sim = max(SIMILAR_THRESHOLD + 0.05, 0.5)
+    retr = _FakeRetriever([(1, "ship it", "Ship it.", sim)])  # matched id=1
+    suggestions = _similar_signal(retr, "Ship it.", h)
+    names = {s.name for s in suggestions}
+    assert "release" in names
+    assert "wrongtag" not in names
+
+
 def test_set_tag_manual_marks_confirmed(tmp_path):
     db = str(tmp_path / "h.db")
     h = History(db)

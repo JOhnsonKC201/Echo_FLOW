@@ -64,9 +64,10 @@ def _similar_signal(retriever, cleaned_text: str, history) -> list[TagSuggestion
     if retriever is None or history is None:
         return []
     try:
-        # Retriever.search returns [(raw, cleaned, sim), ...] without ids,
-        # so we re-query the DB by raw_text to recover the dictation ids.
-        results = retriever.search(cleaned_text)
+        # search_with_ids returns the actual dictation primary key for each
+        # neighbor. Do NOT re-query by raw_text — it is not unique, so repeated
+        # utterances collide and the wrong row's tags get inherited.
+        results = retriever.search_with_ids(cleaned_text)
     except Exception:
         return []
     if not results:
@@ -74,20 +75,11 @@ def _similar_signal(retriever, cleaned_text: str, history) -> list[TagSuggestion
     # Aggregate tag votes weighted by similarity.
     votes: dict[str, float] = defaultdict(float)
     counts: Counter[str] = Counter()
-    for raw, _cleaned, sim in results[:SIMILAR_K]:
+    for rid, _raw, _cleaned, sim in results[:SIMILAR_K]:
         if sim < SIMILAR_THRESHOLD:
             continue
-        try:
-            row = history.conn.execute(
-                "SELECT id FROM dictations WHERE raw_text = ? ORDER BY ts DESC LIMIT 1",
-                (raw,),
-            ).fetchone()
-        except Exception:
-            continue
-        if not row:
-            continue
         for name, _src, _conf, confirmed in history.get_tags_for_dictation(
-            int(row[0]), confirmed_only=True
+            int(rid), confirmed_only=True
         ):
             votes[name] += float(sim)
             counts[name] += 1

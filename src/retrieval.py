@@ -174,3 +174,50 @@ class Retriever:
                 continue
         scored.sort(key=lambda x: x[2], reverse=True)
         return scored[: self.cfg.k]
+
+    def search_with_ids(
+        self, query_text: str, style: str | None = None
+    ) -> list[tuple[int, str, str, float]]:
+        """Like search(), but returns [(id, raw, cleaned, similarity), …].
+
+        Callers that need to look up the matched row (e.g. to inherit its tags)
+        must use the actual primary key — recovering it by re-querying on
+        raw_text is wrong, because raw_text is not unique and collides across
+        repeated utterances, attributing the wrong row's tags.
+        """
+        if not self.cfg.enabled:
+            return []
+        qv = self.embed_text(query_text)
+        if qv is None:
+            return []
+        source_filter = "" if self.cfg.trust_mobile else " AND source != 'mobile'"
+        try:
+            conn = self._conn()
+            if style:
+                rows = conn.execute(
+                    "SELECT id, raw_text, cleaned_text, embedding FROM dictations "
+                    "WHERE embedding IS NOT NULL AND style = ? AND raw_text != cleaned_text"
+                    + source_filter,
+                    (style,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, raw_text, cleaned_text, embedding FROM dictations "
+                    "WHERE embedding IS NOT NULL AND raw_text != cleaned_text"
+                    + source_filter
+                ).fetchall()
+        except Exception:
+            return []
+        if not rows:
+            return []
+        scored: list[tuple[int, str, str, float]] = []
+        for rid, raw, cleaned, blob in rows:
+            try:
+                v = from_blob(blob)
+                sim = float(np.dot(qv, v))   # both are L2-normalized → cosine
+                if sim >= self.cfg.min_similarity:
+                    scored.append((int(rid), raw, cleaned, sim))
+            except Exception:
+                continue
+        scored.sort(key=lambda x: x[3], reverse=True)
+        return scored[: self.cfg.k]
