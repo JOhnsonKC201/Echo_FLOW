@@ -7,9 +7,12 @@ import time
 from dataclasses import dataclass
 
 import numpy as np
-import sounddevice as sd
 
 from . import log as wlog
+
+# sounddevice (PortAudio) is imported lazily inside start() so this module and
+# its importers (src.main, the dashboard, the test suite) load on machines
+# without PortAudio / an audio backend installed.
 
 _log = wlog.get("audio")
 
@@ -46,6 +49,7 @@ class Recorder:
         self._q.put(indata.copy())
 
     def start(self):
+        import sounddevice as sd
         if self._recording:
             return
         self._q = queue.Queue()

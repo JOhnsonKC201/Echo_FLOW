@@ -1,11 +1,14 @@
 """Global hotkey listener (push-to-talk or toggle)."""
 from __future__ import annotations
 
-from pynput import keyboard
+# pynput is imported lazily inside the functions that need it so pure-logic
+# and dashboard code paths (and the test suite) can import this module's
+# callers on machines without a display/input backend installed.
 
 
 def _parse_combo(combo: str):
     """'ctrl+alt+space' -> set of pynput keys."""
+    from pynput import keyboard
     mapping = {
         "ctrl": keyboard.Key.ctrl,
         "control": keyboard.Key.ctrl,
@@ -59,6 +62,7 @@ class HotkeyListener:
         self._active = False
 
     def _norm(self, key):
+        from pynput import keyboard
         # Normalize l/r modifiers
         if key in (keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
             return keyboard.Key.ctrl
@@ -105,5 +109,6 @@ class HotkeyListener:
                 self._active = False
 
     def run(self):
+        from pynput import keyboard
         with keyboard.Listener(on_press=self._on_press, on_release=self._on_release) as listener:
             listener.join()

@@ -32,7 +32,10 @@ def test_primary_fails_fallback_runs(monkeypatch):
         provider_override="ollama",
         fallback_provider="learned",
     )
-    assert out == "FALLBACK_OK"
+    # Successful cleanup output is now casing/punctuation-normalized (the skip
+    # path always did this; it now also covers the provider path). The chain
+    # still returns the fallback's content — modulo that final polish.
+    assert out.rstrip(".") == "FALLBACK_OK"
     assert skipped is False
 
 
