@@ -63,9 +63,19 @@ class Recorder:
     def stop(self) -> np.ndarray:
         if not self._recording:
             return np.zeros(0, dtype=np.float32)
-        self._stream.stop()
-        self._stream.close()
-        self._recording = False
+        # try/finally: if _stream.stop() raises (e.g. PortAudio error on device
+        # removal), we must still close the stream and clear _recording —
+        # otherwise the handle leaks AND start() early-returns forever, wedging
+        # the recorder until restart.
+        try:
+            if self._stream is not None:
+                self._stream.stop()
+                self._stream.close()
+        except Exception as e:
+            _log.warning("audio stream stop/close failed: %s", e)
+        finally:
+            self._stream = None
+            self._recording = False
         chunks = []
         while not self._q.empty():
             chunks.append(self._q.get())
@@ -86,22 +96,38 @@ class Recorder:
             _log.exception(f"Suppressed in record_until_silence (torch import): {e}")
             vad = None
 
-        # Simple energy-based fallback if VAD missing
+        # Drain the queue each tick into `collected` (thread-safe via
+        # get_nowait — never reach into self._q.queue while the audio callback
+        # thread is appending to it, which can raise "deque mutated during
+        # iteration"). Keep a rolling window of the last 10 chunks for VAD.
+        collected: list[np.ndarray] = []
         while self._recording and (time.time() - start_t) < max_seconds:
             time.sleep(0.05)
-            # Peek queue without draining
-            if self._q.empty():
+            drained = False
+            while True:
+                try:
+                    collected.append(self._q.get_nowait())
+                    drained = True
+                except queue.Empty:
+                    break
+            if not drained:
                 continue
-            recent = list(self._q.queue)[-10:]
-            if not recent:
-                continue
+            recent = collected[-10:]
             sample = np.concatenate(recent, axis=0).flatten().astype(np.float32)
             voiced = self._is_voiced(sample, vad)
             if voiced:
                 last_voice_t = time.time()
             elif (time.time() - last_voice_t) * 1000 > self.cfg.silence_timeout_ms:
                 break
-        return self.stop()
+        # Stop the stream and append any chunks that arrived after the last
+        # drain, then return the full recording.
+        tail = self.stop()
+        if collected:
+            head = np.concatenate(collected, axis=0).flatten().astype(np.float32)
+            if tail.size:
+                return np.concatenate([head, tail], axis=0).astype(np.float32)
+            return head
+        return tail
 
     def _is_voiced(self, sample: np.ndarray, vad) -> bool:
         if vad is None:
