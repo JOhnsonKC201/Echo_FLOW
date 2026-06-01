@@ -51,11 +51,33 @@ def _render_scalar(value: Any) -> str:
     sv = str(value)
     if sv == "":
         return '""'
-    # Quote if contains YAML-special characters or starts with one.
-    needs_quote = any(c in sv for c in ':#{}[]&*!|>%@`,?') or sv[0] in " '\"-"
+    # Quote if it contains YAML-special chars, starts with one, contains a
+    # control char (newline/tab/CR — a bare scalar would span lines and be
+    # invalid), OR would re-parse as a non-string scalar. Without that last
+    # check a string like "no"/"off"/"123"/"true"/"null" is written bare and
+    # reloads as a bool/int/None — silent type corruption.
+    needs_quote = (
+        any(c in sv for c in ':#{}[]&*!|>%@`,?')
+        or any(c in sv for c in "\n\t\r")
+        or sv[0] in " '\"-"
+        or _reparses_as_non_string(sv)
+    )
     if needs_quote:
-        return '"' + sv.replace("\\", "\\\\").replace('"', '\\"') + '"'
+        escaped = (
+            sv.replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
+        )
+        return '"' + escaped + '"'
     return sv
+
+
+def _reparses_as_non_string(sv: str) -> bool:
+    """True if `sv` rendered bare would not round-trip back to the same string
+    (e.g. it parses as a bool/int/float/None or fails to parse)."""
+    try:
+        return yaml.safe_load(sv) != sv
+    except Exception:
+        return True
 
 
 def set_scalar(path: Path, dotted_key: str, value: Any) -> None:
@@ -87,6 +109,15 @@ def set_scalar(path: Path, dotted_key: str, value: Any) -> None:
                     f"post-edit key {dotted_key!r} missing — refusing to save"
                 )
             cur = cur[p]
+        # Verify the round-tripped VALUE matches, not just that the key exists,
+        # so silent type coercion (e.g. "off" -> False) is caught before we
+        # commit the write.
+        if cur != value:
+            raise ConfigWriteError(
+                f"post-edit value for {dotted_key!r} is {cur!r} "
+                f"(type {type(cur).__name__}), expected {value!r} "
+                f"(type {type(value).__name__}) — refusing to save"
+            )
         _atomic_write(path, new_text)
 
 
