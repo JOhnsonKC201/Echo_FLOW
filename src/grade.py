@@ -15,6 +15,7 @@ import json
 import math
 import re
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass, asdict
 
 
@@ -182,9 +183,9 @@ def _ensure_weights_table(conn: sqlite3.Connection) -> None:
 
 def load_weights(db_path: str) -> dict:
     try:
-        conn = sqlite3.connect(db_path)
-        _ensure_weights_table(conn)
-        rows = conn.execute("SELECT signal, weight FROM grading_weights").fetchall()
+        with closing(sqlite3.connect(db_path)) as conn:
+            _ensure_weights_table(conn)
+            rows = conn.execute("SELECT signal, weight FROM grading_weights").fetchall()
     except Exception:
         return dict(DEFAULT_WEIGHTS)
     if not rows:
@@ -197,14 +198,14 @@ def load_weights(db_path: str) -> dict:
 
 def save_weights(db_path: str, weights: dict) -> None:
     try:
-        conn = sqlite3.connect(db_path)
-        _ensure_weights_table(conn)
-        for k, v in weights.items():
-            conn.execute(
-                "INSERT OR REPLACE INTO grading_weights(signal, weight) VALUES (?, ?)",
-                (k, float(v)),
-            )
-        conn.commit()
+        with closing(sqlite3.connect(db_path)) as conn:
+            _ensure_weights_table(conn)
+            for k, v in weights.items():
+                conn.execute(
+                    "INSERT OR REPLACE INTO grading_weights(signal, weight) VALUES (?, ?)",
+                    (k, float(v)),
+                )
+            conn.commit()
     except Exception:
         pass
 
@@ -225,17 +226,17 @@ def update_weights_from_edits(db_path: str, sample: int = 50) -> dict | None:
     enough edited dictations exist to learn from (< 10).
     """
     try:
-        conn = sqlite3.connect(db_path)
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(dictations)").fetchall()]
-        if "original_cleaned" not in cols or "quality_breakdown" not in cols:
-            return None
-        rows = conn.execute(
-            "SELECT quality_breakdown, original_cleaned, cleaned_text FROM dictations "
-            "WHERE quality_breakdown IS NOT NULL AND original_cleaned IS NOT NULL "
-            "AND original_cleaned != cleaned_text "
-            "ORDER BY ts DESC LIMIT ?",
-            (sample,),
-        ).fetchall()
+        with closing(sqlite3.connect(db_path)) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(dictations)").fetchall()]
+            if "original_cleaned" not in cols or "quality_breakdown" not in cols:
+                return None
+            rows = conn.execute(
+                "SELECT quality_breakdown, original_cleaned, cleaned_text FROM dictations "
+                "WHERE quality_breakdown IS NOT NULL AND original_cleaned IS NOT NULL "
+                "AND original_cleaned != cleaned_text "
+                "ORDER BY ts DESC LIMIT ?",
+                (sample,),
+            ).fetchall()
     except Exception:
         return None
     if len(rows) < 10:
@@ -288,17 +289,17 @@ def calibrate_from_edits(db_path: str, sample: int = 100) -> float | None:
     (higher quality → smaller correction edit).
     """
     try:
-        conn = sqlite3.connect(db_path)
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(dictations)").fetchall()]
-        if "original_cleaned" not in cols or "quality_score" not in cols:
-            return None
-        rows = conn.execute(
-            "SELECT quality_score, original_cleaned, cleaned_text FROM dictations "
-            "WHERE quality_score IS NOT NULL AND original_cleaned IS NOT NULL "
-            "AND original_cleaned != cleaned_text "
-            "ORDER BY ts DESC LIMIT ?",
-            (sample,),
-        ).fetchall()
+        with closing(sqlite3.connect(db_path)) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(dictations)").fetchall()]
+            if "original_cleaned" not in cols or "quality_score" not in cols:
+                return None
+            rows = conn.execute(
+                "SELECT quality_score, original_cleaned, cleaned_text FROM dictations "
+                "WHERE quality_score IS NOT NULL AND original_cleaned IS NOT NULL "
+                "AND original_cleaned != cleaned_text "
+                "ORDER BY ts DESC LIMIT ?",
+                (sample,),
+            ).fetchall()
     except Exception:
         return None
     if len(rows) < 5:
