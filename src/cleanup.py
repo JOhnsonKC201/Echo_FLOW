@@ -251,21 +251,19 @@ class Cleaner:
         self._retriever = retriever
 
     def clean_with(self, provider: str, text: str, style: str = "default", augmentation: str = "") -> tuple[str, bool]:
-        """Run cleanup with a specific provider override (for A/B testing).
+        """Run cleanup with a specific provider (for A/B testing).
 
-        Thread-safe-ish: mutates self.provider, but only callers from main.py's
-        synchronous _do_dictation use this, plus the A/B shadow thread. For the
-        per-style provider override used by prompt engineering, prefer the
-        `provider_override` kwarg on clean() instead.
+        Thread-safe: routes the provider through clean()'s ``provider_override``
+        kwarg rather than mutating the shared ``self.provider`` attribute. The
+        A/B shadow runs this on a background thread concurrently with the main
+        dictation path; mutating self.provider here would let the shadow's
+        temporary value leak into (or be clobbered by) a concurrent real
+        dictation, misrouting it to the wrong LLM provider.
 
         Returns (text, polish_skipped) — passes the skip bool through.
         """
-        saved = self.provider
-        self.provider = provider
-        try:
-            return self.clean(text, style=style, augmentation=augmentation)
-        finally:
-            self.provider = saved
+        return self.clean(text, style=style, augmentation=augmentation,
+                           provider_override=provider)
 
     def set_style_provider(self, provider) -> None:
         """Inject a callable (window_title: str) -> style: str.
