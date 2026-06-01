@@ -35,9 +35,15 @@ def _re_embed_if_possible(db_path: str, row_id: int, raw_text: str):
     threading.Thread(target=worker, daemon=True).start()
 
 
-def open_editor(db_path: str, row_id: int | None = None) -> None:
+def open_editor(db_path: str, row_id: int | None = None,
+                learn_casing: bool = True) -> None:
     """Open the edit dialog. Must run on the main thread on macOS;
-    Windows is fine from any thread."""
+    Windows is fine from any thread.
+
+    learn_casing mirrors cleanup.casing.learn_from_edits — when False, a saved
+    correction still updates cleaned_text but is NOT mined into the casing
+    canon, so casing learning is fully off end-to-end.
+    """
     import tkinter as tk
     from tkinter import ttk, messagebox
 
@@ -283,12 +289,13 @@ def open_editor(db_path: str, row_id: int | None = None) -> None:
             # Learn canonical casings from this edit (e.g. "tiktok" -> "TikTok")
             # so future dictations of the same word get the user's casing and
             # are protected from the de-Title-Case pass. Best-effort: a learning
-            # hiccup must never block saving the correction.
-            try:
-                from .learn import PatternMiner
-                PatternMiner(db_path).record_casing(cleaned or "", corrected)
-            except Exception:
-                pass
+            # hiccup must never block saving the correction. Gated by config.
+            if learn_casing:
+                try:
+                    from .learn import PatternMiner
+                    PatternMiner(db_path).record_casing(cleaned or "", corrected)
+                except Exception:
+                    pass
             status_var.set(f"✓ Saved. Future dictations will learn from this correction.")
             root.after(900, root.destroy)
         except Exception as e:

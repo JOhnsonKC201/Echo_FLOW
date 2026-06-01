@@ -1160,9 +1160,14 @@ class App:
         # Tk must run on its own main thread; spawn a subprocess so it gets one.
         db = self.cfg["history"]["db_path"]
         row_arg = str(self._last_row_id) if self._last_row_id else "last"
+        cmd = [sys.executable, "-m", "src.editor_cli", db, row_arg]
+        # Honor cleanup.casing.learn_from_edits end-to-end: when off, the editor
+        # subprocess won't mine the correction into the casing canon.
+        if not ((self.cfg.get("cleanup", {}).get("casing") or {}).get("learn_from_edits", True)):
+            cmd.append("--no-learn-casing")
         import subprocess
         subprocess.Popen(
-            [sys.executable, "-m", "src.editor_cli", db, row_arg],
+            cmd,
             cwd=str(Path(__file__).resolve().parent.parent),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
