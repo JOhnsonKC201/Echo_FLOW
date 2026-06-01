@@ -24,7 +24,13 @@ def _parse_combo(combo: str):
         if part in mapping:
             keys.add(mapping[part])
         elif part.startswith("f") and part[1:].isdigit():
-            keys.add(getattr(keyboard.Key, part))
+            # pynput only defines f1..f20. getattr on f0/f25/f99 raises
+            # AttributeError; convert to the intended ValueError so callers
+            # catching ValueError surface a friendly "bad hotkey" message.
+            fkey = getattr(keyboard.Key, part, None)
+            if fkey is None:
+                raise ValueError(f"Unknown key: {part}")
+            keys.add(fkey)
         elif len(part) == 1:
             keys.add(keyboard.KeyCode.from_char(part))
         else:
