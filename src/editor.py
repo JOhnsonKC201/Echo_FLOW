@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from contextlib import closing
 
 
 def _re_embed_if_possible(db_path: str, row_id: int, raw_text: str):
@@ -23,12 +24,12 @@ def _re_embed_if_possible(db_path: str, row_id: int, raw_text: str):
         try:
             from .retrieval import embed, to_blob
             vec = embed(raw_text)
-            conn = sqlite3.connect(db_path)
-            conn.execute(
-                "UPDATE dictations SET embedding = ? WHERE id = ?",
-                (to_blob(vec), row_id),
-            )
-            conn.commit()
+            with closing(sqlite3.connect(db_path)) as conn:
+                conn.execute(
+                    "UPDATE dictations SET embedding = ? WHERE id = ?",
+                    (to_blob(vec), row_id),
+                )
+                conn.commit()
         except Exception as e:
             print(f"[editor] re-embed failed: {e}")
     threading.Thread(target=worker, daemon=True).start()
@@ -52,6 +53,7 @@ def open_editor(db_path: str, row_id: int | None = None) -> None:
             (row_id,),
         ).fetchone()
     if not row:
+        conn.close()
         # Show a tiny error dialog
         root = tk.Tk(); root.withdraw()
         messagebox.showinfo("Echo Flow", "No dictations yet — speak something first.")
@@ -294,6 +296,10 @@ def open_editor(db_path: str, row_id: int | None = None) -> None:
     root.bind("<Control-Return>", lambda e: save())
     root.bind("<Escape>", lambda e: cancel())
     root.mainloop()
+    try:
+        conn.close()
+    except Exception:
+        pass
 
 
 def pin_last_dialog(db_path: str) -> None:
@@ -307,6 +313,7 @@ def pin_last_dialog(db_path: str) -> None:
         "SELECT id, cleaned_text FROM dictations ORDER BY ts DESC LIMIT 1"
     ).fetchone()
     if not row:
+        conn.close()
         root = tk.Tk(); root.withdraw()
         messagebox.showinfo("Echo Flow", "No dictations to pin yet.")
         root.destroy()
@@ -318,6 +325,7 @@ def pin_last_dialog(db_path: str) -> None:
         "SELECT id, title FROM notes WHERE dictation_id = ? LIMIT 1", (rid,)
     ).fetchone()
     if existing:
+        conn.close()
         root = tk.Tk(); root.withdraw()
         messagebox.showinfo("Echo Flow",
                             f"Already pinned as Note #{existing[0]}: {existing[1]}")
@@ -334,6 +342,7 @@ def pin_last_dialog(db_path: str) -> None:
         parent=root,
     )
     if title is None or not title.strip():
+        conn.close()
         root.destroy()
         return
     import time as _t
@@ -344,7 +353,9 @@ def pin_last_dialog(db_path: str) -> None:
         (rid, title.strip(), None, now, now),
     )
     conn.commit()
-    messagebox.showinfo("Echo Flow", f"✓ Pinned as Note #{cur.lastrowid}: {title.strip()}")
+    lastrowid = cur.lastrowid
+    conn.close()
+    messagebox.showinfo("Echo Flow", f"✓ Pinned as Note #{lastrowid}: {title.strip()}")
     root.destroy()
 
 
@@ -359,18 +370,18 @@ def open_review_queue(db_path: str, n: int = 20) -> None:
     from tkinter import ttk, messagebox
 
     def fetch_queue() -> list[tuple]:
-        conn = sqlite3.connect(db_path)
         try:
-            return conn.execute(
-                "SELECT id, ts, quality_score, raw_text, cleaned_text "
-                "FROM dictations "
-                "WHERE quality_score IS NOT NULL "
-                "AND original_cleaned IS NOT NULL "
-                "AND cleaned_text = original_cleaned "
-                "AND raw_text != '' "
-                "ORDER BY quality_score ASC LIMIT ?",
-                (n,),
-            ).fetchall()
+            with closing(sqlite3.connect(db_path)) as conn:
+                return conn.execute(
+                    "SELECT id, ts, quality_score, raw_text, cleaned_text "
+                    "FROM dictations "
+                    "WHERE quality_score IS NOT NULL "
+                    "AND original_cleaned IS NOT NULL "
+                    "AND cleaned_text = original_cleaned "
+                    "AND raw_text != '' "
+                    "ORDER BY quality_score ASC LIMIT ?",
+                    (n,),
+                ).fetchall()
         except Exception:
             return []
 
