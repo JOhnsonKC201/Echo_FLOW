@@ -292,8 +292,18 @@ def _is_safe_url(url: str) -> bool:
     if any(c in _URL_FORBIDDEN for c in decoded):
         return False
     if parsed.scheme == "mailto":
-        # SEC-2: bare address only — no query parameters of any kind.
-        return parsed.query == "" and "?" not in url and "@" in parsed.path
+        # SEC-2: bare address only — no query parameters of any kind. Also
+        # enforce the same homograph/userinfo protections as http/https:
+        # exactly one '@' (reject a@b@evil.com) and an ASCII-only address
+        # (reject IDN-confusable hosts like a@еxample.com).
+        addr = parsed.path
+        if parsed.query != "" or "?" in url or addr.count("@") != 1:
+            return False
+        try:
+            addr.encode("ascii")
+        except UnicodeEncodeError:
+            return False
+        return True
     # http / https
     host = parsed.hostname or ""
     if not host or parsed.username is not None or parsed.password is not None:

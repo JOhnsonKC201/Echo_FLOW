@@ -32,6 +32,8 @@ def test_safe_urls_pass(url):
     "mailto:a@b.com?subject=x",        # SEC-2 mailto header injection
     "mailto:a@b.com?body=secret",      # SEC-2
     "mailto:a@b.com?attach=/etc/passwd",  # SEC-2
+    "mailto:a@b@evil.com",             # SEC-2 multiple '@'
+    "mailto:a@еxample.com",            # SEC-2 IDN homograph (cyrillic 'е')
 ])
 def test_unsafe_urls_rejected(url):
     assert va._is_safe_url(url) is False
