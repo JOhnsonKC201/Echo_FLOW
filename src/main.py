@@ -918,6 +918,13 @@ class App:
         # perceived latency. The tray polls _last_quality, so it's OK that
         # the score lands a few hundred ms after the paste.
         if self.history:
+            # Per-dictation handoff of the logged row id from _log_async to
+            # _post_process. Using a closure-local box (not the shared
+            # self._last_row_id) prevents a second, overlapping dictation from
+            # clobbering the id between commit and read — which would attach
+            # THIS dictation's tags/action-items to the wrong row.
+            _row_ready = threading.Event()
+            _row_box: list[int] = []
             def _log_async():
                 try:
                     # H5: grade off the hot path. Skip in prompt mode — the
@@ -959,6 +966,9 @@ class App:
                         quality_score=q_score, quality_breakdown=q_breakdown,
                         latency_ms=latency_e2e_ms,
                     )
+                    # Hand THIS row id to _post_process (see _row_box above).
+                    _row_box.append(self._last_row_id)
+                    _row_ready.set()
                     if self.learner:
                         self.learner.invalidate_cache()
                     # Mine token-level substitutions for the LLM-free provider.
@@ -984,16 +994,11 @@ class App:
             # Runs in its own thread so it doesn't block the next dictation.
             def _post_process():
                 try:
-                    # Wait briefly for _log_async to commit the row so we can
-                    # reference its id; if it hasn't yet, skip this round.
-                    import time as _t
-                    for _ in range(15):
-                        if self._last_row_id:
-                            break
-                        _t.sleep(0.05)
-                    if not self._last_row_id:
+                    # Wait briefly for _log_async to commit THIS dictation's row
+                    # and publish its id; if it doesn't within the window, skip.
+                    if not _row_ready.wait(timeout=0.75) or not _row_box:
                         return
-                    rid = self._last_row_id
+                    rid = _row_box[0]
                     # Tag suggestions
                     sugg = tags_mod.suggest_tags(
                         cleaned, retriever=self.retriever, history=self.history,
