@@ -145,15 +145,47 @@
                    font-size: 11px; font-weight:600; letter-spacing:.06em;
                    text-transform:uppercase; color: var(--muted); margin-bottom: 9px; }
   .wf-split-head .tot { color: var(--text); font-variant-numeric: tabular-nums; }
-  .wf-split-bar  { display:flex; height: 10px; border-radius: 999px; overflow:hidden;
-                   background: color-mix(in oklab, var(--panel-2) 80%, transparent);
-                   box-shadow: inset 0 1px 2px rgba(0,0,0,.06); }
-  .wf-split-bar > span { display:block; height:100%;
+  /* shared glint sweep used by every fill bar on the page */
+  @keyframes wf-sheen { 0% { transform: translateX(-130%); }
+                        45% { transform: translateX(130%); }
+                        100% { transform: translateX(130%); } }
+
+  .wf-split-bar  { display:flex; height: 11px; border-radius: 999px; overflow:hidden;
+                   background:
+                      linear-gradient(180deg,
+                         color-mix(in oklab, black 7%, transparent), transparent 55%),
+                      color-mix(in oklab, var(--panel-2) 85%, transparent);
+                   box-shadow: inset 0 1px 2px color-mix(in oklab, black 14%, transparent),
+                               inset 0 0 0 1px color-mix(in oklab, var(--border) 45%, transparent); }
+  .wf-split-bar > span { display:block; height:100%; position:relative; overflow:hidden;
                    transition: width .8s cubic-bezier(.2,.7,.2,1); }
-  .wf-split-bar .seg-trim { background: linear-gradient(90deg,
-                      color-mix(in oklab, var(--accent) 85%, var(--accent-2) 15%), var(--accent));
-                   box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 45%, transparent); }
-  .wf-split-bar .seg-add  { background: color-mix(in oklab, var(--accent-2) 50%, var(--panel-2)); }
+  .wf-split-bar .seg-trim {
+                   background:
+                      linear-gradient(180deg,
+                         color-mix(in oklab, white 40%, transparent) 0%,
+                         color-mix(in oklab, white 8%, transparent) 42%,
+                         transparent 62%,
+                         color-mix(in oklab, black 12%, transparent) 100%),
+                      linear-gradient(90deg,
+                         color-mix(in oklab, var(--accent) 72%, var(--accent-2) 28%),
+                         var(--accent) 62%,
+                         color-mix(in oklab, var(--accent) 82%, white 18%));
+                   box-shadow:
+                      inset 0 1px 0 color-mix(in oklab, white 48%, transparent),
+                      inset 0 -1px 2px color-mix(in oklab, black 18%, transparent),
+                      0 0 10px -2px color-mix(in oklab, var(--accent) 50%, transparent); }
+  .wf-split-bar .seg-trim::after { content:""; position:absolute; inset:0;
+                   background: linear-gradient(115deg, transparent 32%,
+                      color-mix(in oklab, white 55%, transparent) 50%, transparent 68%);
+                   transform: translateX(-130%);
+                   animation: wf-sheen 5s ease-in-out infinite; }
+  .wf-split-bar .seg-add  {
+                   background:
+                      linear-gradient(180deg,
+                         color-mix(in oklab, white 22%, transparent) 0%,
+                         transparent 55%),
+                      color-mix(in oklab, var(--accent-2) 50%, var(--panel-2));
+                   box-shadow: inset 0 1px 0 color-mix(in oklab, white 22%, transparent); }
   .wf-split-legend { display:flex; gap:18px; margin-top:11px;
                    font-size: 11.5px; color: var(--muted); }
   .wf-split-legend .k { display:inline-flex; align-items:center; gap:7px; }
@@ -210,15 +242,40 @@
                        color: var(--accent); }
   .wf-app-cnt { font-size: 11.5px; color: var(--muted);
                 font-variant-numeric: tabular-nums; }
-  .wf-app-bar { grid-column: 1 / -1; height: 8px;
-                background: color-mix(in oklab, var(--panel-2) 80%, transparent);
-                border-radius: 999px; overflow:hidden; position:relative; }
+  .wf-app-bar { grid-column: 1 / -1; height: 9px;
+                /* recessed groove: faint top-shadow gradient + hairline inner ring */
+                background:
+                   linear-gradient(180deg,
+                      color-mix(in oklab, black 7%, transparent), transparent 55%),
+                   color-mix(in oklab, var(--panel-2) 85%, transparent);
+                border-radius: 999px; overflow:hidden; position:relative;
+                box-shadow: inset 0 1px 2px color-mix(in oklab, black 14%, transparent),
+                            inset 0 0 0 1px color-mix(in oklab, var(--border) 45%, transparent); }
   .wf-app-bar > span { display:block; height:100%; border-radius: 999px;
-                       background: linear-gradient(90deg,
-                          color-mix(in oklab, var(--accent) 85%, var(--accent-2) 15%),
-                          var(--accent));
-                       box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 50%, transparent);
+                       position:relative; overflow:hidden;
+                       /* layered fill: glassy vertical sheen over the accent ramp */
+                       background:
+                          linear-gradient(180deg,
+                             color-mix(in oklab, white 40%, transparent) 0%,
+                             color-mix(in oklab, white 8%, transparent) 42%,
+                             transparent 62%,
+                             color-mix(in oklab, black 12%, transparent) 100%),
+                          linear-gradient(90deg,
+                             color-mix(in oklab, var(--accent) 72%, var(--accent-2) 28%),
+                             var(--accent) 62%,
+                             color-mix(in oklab, var(--accent) 82%, white 18%));
+                       box-shadow:
+                          inset 0 1px 0 color-mix(in oklab, white 48%, transparent),
+                          inset 0 -1px 2px color-mix(in oklab, black 18%, transparent),
+                          0 1px 4px -1px color-mix(in oklab, var(--accent) 55%, transparent),
+                          0 0 10px -2px color-mix(in oklab, var(--accent) 50%, transparent);
                        transition: width .8s cubic-bezier(.2,.7,.2,1); }
+  /* slow, subtle light-sweep glint — premium without being noisy */
+  .wf-app-bar > span::after { content:""; position:absolute; inset:0;
+                       background: linear-gradient(115deg, transparent 32%,
+                          color-mix(in oklab, white 55%, transparent) 50%, transparent 68%);
+                       transform: translateX(-130%);
+                       animation: wf-sheen 5s ease-in-out infinite; }
 
   /* Heatmap — premium GitHub-style. */
   .wf-heat-head { display:flex; align-items:baseline; justify-content:space-between;
@@ -319,14 +376,36 @@
   .wf-rank-lbl { font-size: 13px; font-weight: 600; color: var(--text); }
   .wf-rank-cnt { font-size: 12px; color: var(--muted);
                  font-variant-numeric: tabular-nums; font-weight: 600; }
-  .wf-rank-meter { grid-column: 1 / -1; height: 5px; border-radius: 999px;
-                   background: color-mix(in oklab, var(--panel-2) 80%, transparent);
-                   overflow:hidden; }
+  .wf-rank-meter { grid-column: 1 / -1; height: 6px; border-radius: 999px;
+                   background:
+                      linear-gradient(180deg,
+                         color-mix(in oklab, black 7%, transparent), transparent 55%),
+                      color-mix(in oklab, var(--panel-2) 85%, transparent);
+                   overflow:hidden;
+                   box-shadow: inset 0 1px 2px color-mix(in oklab, black 12%, transparent),
+                               inset 0 0 0 1px color-mix(in oklab, var(--border) 40%, transparent); }
   .wf-rank-meter > span { display:block; height:100%; border-radius: 999px;
-                   background: linear-gradient(90deg,
-                      color-mix(in oklab, var(--accent) 85%, var(--accent-2) 15%), var(--accent));
-                   box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 45%, transparent);
+                   position:relative; overflow:hidden;
+                   background:
+                      linear-gradient(180deg,
+                         color-mix(in oklab, white 40%, transparent) 0%,
+                         color-mix(in oklab, white 8%, transparent) 42%,
+                         transparent 62%,
+                         color-mix(in oklab, black 12%, transparent) 100%),
+                      linear-gradient(90deg,
+                         color-mix(in oklab, var(--accent) 72%, var(--accent-2) 28%),
+                         var(--accent) 62%,
+                         color-mix(in oklab, var(--accent) 82%, white 18%));
+                   box-shadow:
+                      inset 0 1px 0 color-mix(in oklab, white 45%, transparent),
+                      inset 0 -1px 2px color-mix(in oklab, black 16%, transparent),
+                      0 0 9px -2px color-mix(in oklab, var(--accent) 48%, transparent);
                    transition: width .8s cubic-bezier(.2,.7,.2,1); }
+  .wf-rank-meter > span::after { content:""; position:absolute; inset:0;
+                   background: linear-gradient(115deg, transparent 32%,
+                      color-mix(in oklab, white 50%, transparent) 50%, transparent 68%);
+                   transform: translateX(-130%);
+                   animation: wf-sheen 5s ease-in-out infinite; }
 
   /* Shared SVG gradient stops — a luminous green ramp used by the WPM gauge
      and the quality-trajectory line. Kept green-only so they stay cohesive
@@ -345,6 +424,8 @@
     .wf-app-bar > span, .wf-gauge-fill, .wf-rank-meter > span,
     .wf-split-bar > span, .wf-row .sparkbar > span { transition: none !important; }
     .wf-card:hover, .wf-cell:hover { transform: none !important; }
+    .wf-app-bar > span::after, .wf-split-bar .seg-trim::after,
+    .wf-rank-meter > span::after { animation: none !important; display: none; }
   }
 </style>
 
