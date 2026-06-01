@@ -65,6 +65,25 @@ def test_pattern_miner_casing_roundtrip(tmp_path):
     assert canon.get("tiktok") == "TikTok"
 
 
+def test_pattern_miner_list_and_delete_casing(tmp_path):
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    sqlite3.connect(db).close()
+    pm = PatternMiner(db)
+    pm.record_casing("i love tiktok", "i love TikTok")
+    pm.record_casing("on github today", "on GitHub today")
+    listed = pm.list_casings()
+    canonicals = {c["canonical"] for c in listed}
+    assert {"TikTok", "GitHub"} <= canonicals
+    assert all("count" in c and "word_lc" in c for c in listed)
+    # Delete one and confirm it's gone from both the list and the canon map.
+    assert pm.delete_casing("tiktok") is True
+    assert pm.delete_casing("tiktok") is False  # already gone
+    _invalidate_casing_cache()
+    assert "TikTok" not in {c["canonical"] for c in pm.list_casings()}
+    assert "tiktok" not in pm.canonical_casings()
+
+
 # ----- Cleaner._apply_learned_casing + _finalize ---------------------------
 
 class _FakeMiner:

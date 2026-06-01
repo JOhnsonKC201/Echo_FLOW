@@ -469,6 +469,37 @@ class PatternMiner:
             _casing_cache_ts = _t.time()
         return out
 
+    def list_casings(self) -> list[dict]:
+        """All canon entries for the dashboard: [{word_lc, canonical, count}]."""
+        try:
+            with closing(self._conn()) as conn:
+                _ensure_casing_table(conn)
+                rows = conn.execute(
+                    "SELECT word_lc, canonical, count FROM casing_canon "
+                    "ORDER BY canonical COLLATE NOCASE"
+                ).fetchall()
+        except Exception:
+            return []
+        return [{"word_lc": str(w), "canonical": str(c), "count": int(round(n or 0))}
+                for w, c, n in rows]
+
+    def delete_casing(self, word_lc: str) -> bool:
+        """Remove one canon entry by its lowercase key. Returns True if removed."""
+        key = (word_lc or "").strip().lower()
+        if not key:
+            return False
+        try:
+            with closing(self._conn()) as conn:
+                _ensure_casing_table(conn)
+                cur = conn.execute("DELETE FROM casing_canon WHERE word_lc = ?", (key,))
+                conn.commit()
+                removed = (cur.rowcount or 0) > 0
+        except Exception:
+            return False
+        if removed:
+            _invalidate_casing_cache()
+        return removed
+
     def decay_stale(self, half_life_days: float = 14.0) -> tuple[int, int]:
         """Apply exponential time-decay to all learned_patterns rows.
 

@@ -348,11 +348,19 @@ def make_app(app_ref, bound_port: int | None = None):
                 terms = _vocab.list_terms(history.conn)
             except Exception as e:
                 _log.warning("dictionary list failed: %s", e)
+        # Learned casings (tiktok -> TikTok), taught from the in-app Fix dialog.
+        casings = []
+        pm = getattr(app_ref, "pattern_miner", None)
+        if pm is not None:
+            try:
+                casings = pm.list_casings()
+            except Exception as e:
+                _log.warning("dictionary casings list failed: %s", e)
         flash = _req.args.get("flash", "")
         return render_template(
             "dictionary.html", sections=SECTIONS, active="dictionary",
             theme=dcfg.get("theme", "dark"),
-            terms=terms, flash=flash,
+            terms=terms, casings=casings, flash=flash,
         )
 
     @flask_app.post("/dictionary/add")
@@ -394,6 +402,32 @@ def make_app(app_ref, bound_port: int | None = None):
                     msg = "Term not found."
             except Exception as e:
                 _log.warning("dictionary delete failed: %s", e)
+                msg = f"Error: {e}"
+        return redirect(f"/dictionary?flash={msg}")
+
+    @flask_app.post("/dictionary/casing/delete")
+    def dictionary_casing_delete():
+        from flask import request as _req, redirect
+        word = _req.form.get("word_lc", "").strip()
+        pm = getattr(app_ref, "pattern_miner", None)
+        msg = ""
+        if pm is None:
+            msg = "Learning disabled — no casings to remove."
+        elif not word:
+            msg = "No casing specified."
+        else:
+            try:
+                if pm.delete_casing(word):
+                    # Drop the cleaner's protected-set cache so the change
+                    # applies on the next dictation without a restart.
+                    cleaner = getattr(app_ref, "cleaner", None)
+                    if cleaner is not None and hasattr(cleaner, "invalidate_casing_cache"):
+                        cleaner.invalidate_casing_cache()
+                    msg = "Casing removed."
+                else:
+                    msg = "Casing not found."
+            except Exception as e:
+                _log.warning("casing delete failed: %s", e)
                 msg = f"Error: {e}"
         return redirect(f"/dictionary?flash={msg}")
 

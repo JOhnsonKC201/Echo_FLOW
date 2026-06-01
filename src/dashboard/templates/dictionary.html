@@ -36,6 +36,29 @@
 </div>
 
 <div class="card">
+  <h2>Learned casings <span class="muted small">{{ casings|length }} total</span></h2>
+  <div class="muted small" style="margin-bottom: 8px;">
+    Capitalizations Echo learned from your edits in the Fix dialog (e.g. “tiktok” → “TikTok”).
+    These are forced on every dictation and protected from auto-lowercasing. Remove any that look wrong.
+  </div>
+  {% if casings %}
+    <ul class="term-list">
+      {% for c in casings %}
+        <li>
+          <span class="term">{{ c.canonical }}</span>
+          <form method="post" action="/dictionary/casing/delete" class="inline">
+            <input type="hidden" name="word_lc" value="{{ c.word_lc }}">
+            <button type="submit" class="link-danger" title="Forget this casing">✕</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="muted small">Nothing learned yet. Fix a word’s capitalization in the Fix dialog and it’ll appear here.</div>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>Bulk import</h2>
   <div class="muted small" style="margin-bottom: 8px;">
     Paste a list — comma-separated or one per line. Duplicates are ignored.
