@@ -78,7 +78,7 @@ def serve(app_ref, host: str, port: int, log_fn=None) -> None:
     from .app import make_app
     from werkzeug.serving import make_server
 
-    flask_app = make_app(app_ref)
+    flask_app = make_app(app_ref, bound_port=bind_port)
     server = make_server(host, bind_port, flask_app, threaded=True)
     _active_server = server
     banner = (

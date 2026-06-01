@@ -72,7 +72,7 @@ def _allowed_hosts_for(host: str, port: int) -> set[str]:
     }
 
 
-def make_app(app_ref):
+def make_app(app_ref, bound_port: int | None = None):
     """Build the Flask app. Imported lazily so the desktop path doesn't pay
     the Flask import cost when dashboard.enabled is false.
 
@@ -94,11 +94,16 @@ def make_app(app_ref):
     dcfg = (app_ref.cfg.get("dashboard", {}) or {})
     host = dcfg.get("host", "127.0.0.1")
     port_pref = int(dcfg.get("port", 8766))
-    # The allowlist must cover the actually-bound port (post-pickport); we
-    # cannot know it here, so accept the preferred port plus the 4 fallbacks.
+    # The allowlist must cover the actually-bound port. pick_port() scans the
+    # preferred port plus 4 fallbacks, so include all five; also include the
+    # real bound port when serve() passes it (it can fall back to an arbitrary
+    # OS-chosen port outside that window, which would otherwise 400 every
+    # request and brick the dashboard).
     allowlist: set[str] = set()
     for p in range(port_pref, port_pref + 5):
         allowlist |= _allowed_hosts_for(host, p)
+    if bound_port is not None:
+        allowlist |= _allowed_hosts_for(host, bound_port)
 
     # Inject the user-picked accent color into every template so base.html
     # can override --accent without each route having to remember it.

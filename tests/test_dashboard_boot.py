@@ -96,6 +96,20 @@ def test_port_fallback_in_allowlist():
     assert r.status_code == 400  # outside the fallback window
 
 
+def test_os_chosen_bound_port_in_allowlist():
+    """When all 5 preferred ports are busy, pick_port falls back to an
+    OS-chosen port outside [pref, pref+5). serve() passes that bound port to
+    make_app, which must add it to the Host allowlist — otherwise every request
+    400s and the dashboard is bricked."""
+    from src.dashboard.app import make_app
+    client = make_app(_fake_app_ref(port=8766), bound_port=53412).test_client()
+    r = client.get("/", headers={"Host": "127.0.0.1:53412"})
+    assert r.status_code == 200
+    # Sanity: an unrelated out-of-window port is still rejected.
+    r = client.get("/", headers={"Host": "127.0.0.1:8800"})
+    assert r.status_code == 400
+
+
 # --- Port picker -------------------------------------------------------------
 
 def test_pick_port_returns_preferred_when_free():
