@@ -205,6 +205,26 @@ def test_health_non_ascii_key_does_not_500(client_and_app):
     assert r.get_json()["ok"] is True
 
 
+def test_auth_failures_map_is_garbage_collected(client_and_app):
+    """A transient IP's fully-aged-out failure deque must be purged so the
+    per-IP map doesn't grow without bound."""
+    import time
+    from collections import deque
+    import src.bridge as bridge
+
+    client, _ = client_and_app
+    bridge._auth_failures.clear()
+    bridge._auth_lockouts.clear()
+    # Stale foreign-IP entry, well outside the rolling window.
+    bridge._auth_failures["10.9.9.9"] = deque([time.time() - 9999])
+    bridge._auth_lockouts["10.8.8.8"] = time.time() - 1  # already expired
+    # One real auth failure (wrong key) triggers the opportunistic sweep.
+    client.post("/v1/cleanup", json={"text": "hi"},
+                headers={"X-Echo-Key": "nope"})
+    assert "10.9.9.9" not in bridge._auth_failures
+    assert "10.8.8.8" not in bridge._auth_lockouts
+
+
 # ---------------------------------------------------------------------------
 # /v1/cleanup
 # ---------------------------------------------------------------------------

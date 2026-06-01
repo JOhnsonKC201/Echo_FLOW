@@ -193,14 +193,23 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         """M1: count failures per-IP and lock out abusive callers."""
         now = time.time()
         with _auth_fail_lock:
+            # Opportunistic GC so the per-IP maps don't grow without bound as
+            # transient source IPs come and go: drop fully-aged-out failure
+            # deques and expired lockouts. Cheap — these maps stay tiny.
+            for k in list(_auth_failures.keys()):
+                d = _auth_failures[k]
+                while d and now - d[0] > _AUTH_FAIL_WINDOW_S:
+                    d.popleft()
+                if not d:
+                    del _auth_failures[k]
+            for k in [k for k, exp in _auth_lockouts.items() if now >= exp]:
+                del _auth_lockouts[k]
             dq = _auth_failures.setdefault(ip, deque())
             dq.append(now)
-            # Drop entries outside the rolling window
-            while dq and now - dq[0] > _AUTH_FAIL_WINDOW_S:
-                dq.popleft()
             if len(dq) >= _AUTH_FAIL_THRESHOLD:
                 _auth_lockouts[ip] = now + _AUTH_LOCKOUT_S
-                dq.clear()
+                # Locked out now; the deque is redundant — drop the key too.
+                _auth_failures.pop(ip, None)
                 _log.warning(
                     "auth: locking out ip=%s for %ds after %d failures",
                     ip, int(_AUTH_LOCKOUT_S), _AUTH_FAIL_THRESHOLD,
