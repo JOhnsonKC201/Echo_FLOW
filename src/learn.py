@@ -561,3 +561,49 @@ class PatternMiner:
         for raw, cleaned in rows:
             n += self.record(raw, cleaned)
         return n
+
+    def backfill_casings_from_history(self, limit: int = 5000) -> int:
+        """One-shot: mine casing-only user edits into the casing canon.
+
+        The signal is the user's correction: original_cleaned (model output)
+        vs cleaned_text (what the user saved). Casing-only changes there mean
+        "I fixed this word's capitalization". Guarded by an app_meta flag so it
+        runs exactly once — never resurrecting a casing the user later deletes
+        in the dashboard. Returns pairs recorded.
+        """
+        flag = "casing_backfill_v1_done"
+        try:
+            with closing(self._conn()) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)"
+                )
+                if conn.execute("SELECT 1 FROM app_meta WHERE key = ?", (flag,)).fetchone():
+                    return 0
+                cols = {r[1] for r in conn.execute("PRAGMA table_info(dictations)").fetchall()}
+                rows = []
+                if "original_cleaned" in cols:
+                    rows = conn.execute(
+                        "SELECT original_cleaned, cleaned_text FROM dictations "
+                        "WHERE original_cleaned IS NOT NULL AND cleaned_text IS NOT NULL "
+                        "AND original_cleaned != cleaned_text "
+                        "ORDER BY ts DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+        except Exception:
+            return 0
+        n = 0
+        for before, after in rows:
+            n += self.record_casing(before or "", after or "")
+        # Mark done regardless of count so we never re-scan on later startups.
+        try:
+            with closing(self._conn()) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)"
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO app_meta(key, value) VALUES(?, ?)", (flag, "1")
+                )
+                conn.commit()
+        except Exception:
+            pass
+        return n

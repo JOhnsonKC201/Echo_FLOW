@@ -84,6 +84,38 @@ def test_pattern_miner_list_and_delete_casing(tmp_path):
     assert "tiktok" not in pm.canonical_casings()
 
 
+def _seed_dictations(db: str, rows: list[tuple[str, str]]) -> None:
+    """Create a minimal dictations table with (original_cleaned, cleaned_text)."""
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE dictations (id INTEGER PRIMARY KEY, ts REAL, "
+        "original_cleaned TEXT, cleaned_text TEXT)"
+    )
+    for i, (oc, ct) in enumerate(rows):
+        conn.execute(
+            "INSERT INTO dictations (ts, original_cleaned, cleaned_text) VALUES (?,?,?)",
+            (float(i), oc, ct),
+        )
+    conn.commit()
+    conn.close()
+
+
+def test_backfill_casings_mines_user_edits_once(tmp_path):
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    _seed_dictations(db, [
+        ("i opened tiktok today", "i opened TikTok today"),  # casing-only edit
+        ("we shipped the migration", "we shipped the release"),  # word change, ignored
+    ])
+    pm = PatternMiner(db)
+    seeded = pm.backfill_casings_from_history()
+    assert seeded == 1
+    _invalidate_casing_cache()
+    assert pm.canonical_casings().get("tiktok") == "TikTok"
+    # Second call is a no-op (one-shot guard) — respects later deletions.
+    assert pm.backfill_casings_from_history() == 0
+
+
 # ----- Cleaner._apply_learned_casing + _finalize ---------------------------
 
 class _FakeMiner:

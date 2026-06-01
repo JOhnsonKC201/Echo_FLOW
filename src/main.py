@@ -401,6 +401,15 @@ class App:
                     decayed, deleted = self.pattern_miner.decay_stale() if self.pattern_miner else (0, 0)
                     if decayed:
                         _log.info("pattern decay: %d patterns aged, %d forgotten", decayed, deleted)
+                    # One-shot: seed the casing canon from past user edits so the
+                    # feature isn't empty on first run. Guarded internally to run once.
+                    if self.pattern_miner:
+                        seeded = self.pattern_miner.backfill_casings_from_history()
+                        if seeded:
+                            _log.info("casing backfill: seeded %d canon entr%s from history",
+                                      seeded, "y" if seeded == 1 else "ies")
+                            if self.cleaner is not None and hasattr(self.cleaner, "invalidate_casing_cache"):
+                                self.cleaner.invalidate_casing_cache()
                     r = grade_mod.calibrate_from_edits(hc["db_path"])
                     if r is not None:
                         _log.info("self-grading calibration: r=%.3f (negative is good)", r)
