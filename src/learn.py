@@ -21,14 +21,18 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
 from collections import Counter
 from contextlib import closing
 from dataclasses import dataclass
 
 
-# Cache vocabulary so we don't recount on every dictation
+# Cache vocabulary so we don't recount on every dictation. The cache holds the
+# FULL ranked list (callers slice [:limit]); a lock guards reads/writes since
+# the daemon and the dashboard/bridge threads both touch these globals.
 _vocab_cache: list[str] | None = None
 _vocab_cache_ts: float = 0.0
+_vocab_cache_lock = threading.Lock()
 
 
 @dataclass
@@ -96,9 +100,13 @@ class Learner:
         """Frequent proper nouns / unusual terms from cleaned history."""
         global _vocab_cache, _vocab_cache_ts
         import time
-        # Cache for 60s to avoid re-scanning on every dictation
-        if _vocab_cache is not None and (time.time() - _vocab_cache_ts) < 60:
-            return _vocab_cache[:limit]
+        # Cache for 60s to avoid re-scanning on every dictation. The cache
+        # stores the full ranked list, so slicing [:limit] is correct for any
+        # caller's limit (a smaller limit populating the cache first must not
+        # truncate a later larger-limit request).
+        with _vocab_cache_lock:
+            if _vocab_cache is not None and (time.time() - _vocab_cache_ts) < 60:
+                return _vocab_cache[:limit]
         excluded = []
         if not self.cfg.trust_mobile:
             excluded.append("'mobile'")
@@ -132,10 +140,12 @@ class Learner:
                 if match in STOP or len(match) < 3:
                     continue
                 counter[match] += 1
-        # Need to appear at least twice to be a "personal" term
-        ranked = [w for w, c in counter.most_common(limit * 3) if c >= 2]
-        _vocab_cache = ranked
-        _vocab_cache_ts = time.time()
+        # Need to appear at least twice to be a "personal" term. Cache the FULL
+        # ranked list (no limit cap) so any caller's limit slices correctly.
+        ranked = [w for w, c in counter.most_common() if c >= 2]
+        with _vocab_cache_lock:
+            _vocab_cache = ranked
+            _vocab_cache_ts = time.time()
         return ranked[:limit]
 
     def build_prompt_augmentation(self, style: str, query_text: str = "") -> str:
@@ -183,7 +193,8 @@ class Learner:
 
     def invalidate_cache(self):
         global _vocab_cache
-        _vocab_cache = None
+        with _vocab_cache_lock:
+            _vocab_cache = None
 
 
 # --- Pattern mining for the LLM-free "learned" cleanup provider ---
