@@ -571,8 +571,17 @@ class Cleaner:
                     "Model went off-track; pasted your raw words instead.",
                     "warning",
                 )
+                # Raw passthrough — don't finalize/polish the user's own words.
                 return self._expand_snippets(text)
-            return self._expand_snippets(out)
+            out_expanded = self._expand_snippets(out)
+            # A user-defined transform (system_prompt_override) owns its output
+            # formatting, just like PE 'prompt' mode — don't impose casing
+            # normalization on it. Otherwise normalize: force learned casings +
+            # flatten spurious Title-Case (the path that previously let model
+            # Title-Casing reach the user unpolished).
+            if system_prompt_override:
+                return out_expanded
+            return self._finalize(out_expanded, style)
 
         # Teacher-as-fallback: if learning.teacher_enabled is on, the teacher
         # model is a legitimate last-resort cleanup for non-PE dictations
@@ -585,7 +594,7 @@ class Cleaner:
         )
 
         try:
-            return self._finalize(_run_provider(provider), style), False
+            return _run_provider(provider), False
         except Exception as primary_err:
             tried_fallback = False
             if fallback_provider and fallback_provider != provider:
@@ -593,7 +602,7 @@ class Cleaner:
                              provider, primary_err, fallback_provider)
                 tried_fallback = True
                 try:
-                    return self._finalize(_run_provider(fallback_provider), style), False
+                    return _run_provider(fallback_provider), False
                 except Exception as fb_err:
                     _log.warning("fallback provider %s also failed: %s",
                                  fallback_provider, fb_err)
@@ -602,6 +611,8 @@ class Cleaner:
                     out = self.teach(text, style=style)
                     if out:
                         _log.info("teacher served as cleanup fallback")
+                        # Teacher is a real cleanup → normalize casing like any
+                        # successful provider output.
                         return self._finalize(self._expand_snippets(out), style), False
                 except Exception as t_err:
                     _log.warning("teacher fallback failed: %s", t_err)
@@ -610,7 +621,9 @@ class Cleaner:
                 provider, tried_fallback,
             )
             notify.notify("Echo Flow", "Cleanup failed; pasted raw.", "error")
-            return self._finalize(self._expand_snippets(text), style), False
+            # Contract: on total failure we paste the user's RAW words verbatim
+            # (no polish) — finalizing here would silently rewrite them.
+            return self._expand_snippets(text), False
 
     def _via_ollama(self, system: str, text: str, *,
                     max_tokens: int | None = None,
