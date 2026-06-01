@@ -34,6 +34,21 @@ _vocab_cache: list[str] | None = None
 _vocab_cache_ts: float = 0.0
 _vocab_cache_lock = threading.Lock()
 
+# Casing canon — {word_lowercase: CanonicalForm}, learned from the user's
+# in-app corrections (e.g. "tiktok" -> "TikTok"). Cached 60s like the vocab
+# list; touched by the daemon and the editor/dashboard threads.
+_casing_cache: dict[str, str] | None = None
+_casing_cache_ts: float = 0.0
+_casing_cache_lock = threading.Lock()
+
+
+def _invalidate_casing_cache() -> None:
+    """Drop the casing-canon cache so a fresh edit applies on the next dictation."""
+    global _casing_cache, _casing_cache_ts
+    with _casing_cache_lock:
+        _casing_cache = None
+        _casing_cache_ts = 0.0
+
 
 @dataclass
 class LearningConfig:
@@ -234,6 +249,37 @@ def _ensure_patterns_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE learned_patterns ADD COLUMN teacher_count INTEGER NOT NULL DEFAULT 0")
 
 
+def _ensure_casing_table(conn: sqlite3.Connection) -> None:
+    """Per-word canonical-casing store, taught by user edits (tiktok -> TikTok).
+
+    Kept separate from learned_patterns so it doesn't perturb the
+    success/total confidence stats and can be loaded on its own cheap query
+    for both the casing applier and the de-Title-Case allowlist.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS casing_canon (
+            word_lc TEXT PRIMARY KEY,
+            canonical TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            updated_at REAL NOT NULL DEFAULT 0
+        )
+        """
+    )
+
+
+def _meaningful_casing(word: str) -> bool:
+    """True when `word` carries casing worth remembering (not plain lowercase).
+
+    Accepts leading-capital ("Johnson"), internal caps ("TikTok", "iPhone"),
+    and all-caps ("SQL"). Rejects empty / all-lowercase / non-alphabetic forms.
+    """
+    core = word.replace("'", "")
+    if len(core) < 2 or not core.isalpha():
+        return False
+    return word != word.lower()
+
+
 def _tokenize(s: str) -> list[str]:
     # Split into word/whitespace tokens. Casing preserved on replacement; trigger lowercased.
     return [t for t in re.split(r"(\s+)", s) if t != ""]
@@ -258,6 +304,30 @@ def _diff_token_pairs(raw: str, cleaned: str) -> list[tuple[str, str]]:
                 continue  # casing-only — let title-case rules handle it
             if len(a) < 2 or len(b) < 2:
                 continue
+            pairs.append((a, b))
+    return pairs
+
+
+def _diff_casing_pairs(before: str, after: str) -> list[tuple[str, str]]:
+    """Extract casing-only 1↔1 token changes (e.g. "tiktok" → "TikTok").
+
+    The complement of `_diff_token_pairs`, which deliberately skips these.
+    Both sides are the same word ignoring case; only `after`'s casing differs
+    and is meaningful (a capital somewhere). Used to learn a casing canon from
+    the user's in-app corrections.
+    """
+    import difflib
+    a_toks = [t for t in _tokenize(before) if not t.isspace()]
+    b_toks = [t for t in _tokenize(after) if not t.isspace()]
+    sm = difflib.SequenceMatcher(a=a_toks, b=b_toks, autojunk=False)
+    pairs: list[tuple[str, str]] = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "replace" and (i2 - i1) == 1 and (j2 - j1) == 1:
+            a, b = a_toks[i1], b_toks[j1]
+            if a.lower() != b.lower():
+                continue  # different word — handled by _diff_token_pairs
+            if a == b or not _meaningful_casing(b):
+                continue  # no change, or target has no casing worth keeping
             pairs.append((a, b))
     return pairs
 
@@ -343,6 +413,62 @@ class PatternMiner:
                 best[trig] = (repl, conf)
         return {t: r for t, (r, _) in best.items()}
 
+    # ---- Casing canon (tiktok -> TikTok), learned from user edits ----------
+
+    def record_casing(self, before: str, after: str) -> int:
+        """Learn canonical casings from a single user edit. Returns pairs stored.
+
+        `before`/`after` are the pre-edit and corrected text. Only casing-only
+        1↔1 token changes are captured (different-word changes flow through
+        `record`). A single edit is enough to canonicalize a word — the user
+        explicitly chose edit-once-apply-forever.
+        """
+        if not before or not after:
+            return 0
+        pairs = _diff_casing_pairs(before, after)
+        if not pairs:
+            return 0
+        import time as _t
+        now = _t.time()
+        with closing(self._conn()) as conn:
+            _ensure_casing_table(conn)
+            for _a, b in pairs:
+                conn.execute(
+                    """
+                    INSERT INTO casing_canon (word_lc, canonical, count, updated_at)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(word_lc) DO UPDATE SET
+                        canonical = excluded.canonical,
+                        count = count + 1,
+                        updated_at = excluded.updated_at
+                    """,
+                    (b.lower(), b, now),
+                )
+            conn.commit()
+        _invalidate_casing_cache()
+        return len(pairs)
+
+    def canonical_casings(self) -> dict[str, str]:
+        """Return {word_lowercase: CanonicalForm}. Cached 60s (process-wide)."""
+        global _casing_cache, _casing_cache_ts
+        import time as _t
+        with _casing_cache_lock:
+            if _casing_cache is not None and (_t.time() - _casing_cache_ts) < 60:
+                return _casing_cache
+        try:
+            with closing(self._conn()) as conn:
+                _ensure_casing_table(conn)
+                rows = conn.execute(
+                    "SELECT word_lc, canonical FROM casing_canon WHERE count >= 1"
+                ).fetchall()
+        except Exception:
+            return {}
+        out = {str(w): str(c) for w, c in rows}
+        with _casing_cache_lock:
+            _casing_cache = out
+            _casing_cache_ts = _t.time()
+        return out
+
     def decay_stale(self, half_life_days: float = 14.0) -> tuple[int, int]:
         """Apply exponential time-decay to all learned_patterns rows.
 
@@ -369,7 +495,20 @@ class PatternMiner:
                 )
                 cur = conn.execute("DELETE FROM learned_patterns WHERE total < 0.5")
                 deleted = cur.rowcount or 0
+                # Casing canon decays on the same schedule so corrections the
+                # user stops making eventually fade (slower: a half-count floor
+                # keeps a once-taught proper noun alive far longer than a noisy
+                # substitution).
+                _ensure_casing_table(conn)
+                conn.execute(
+                    "UPDATE casing_canon SET "
+                    "  count = count * pow(0.5, (? - updated_at) / (? * 86400.0)),"
+                    "  updated_at = ? ",
+                    (now, half_life_days, now),
+                )
+                conn.execute("DELETE FROM casing_canon WHERE count < 0.25")
                 conn.commit()
+                _invalidate_casing_cache()
                 return int(decayed), int(deleted)
         except Exception:
             return 0, 0

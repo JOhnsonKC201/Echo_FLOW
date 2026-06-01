@@ -48,6 +48,14 @@ cleanup:
   # fillers, <=140 chars) skip the LLM polish entirely. Saves 200-2000ms on
   # the common case. Set false to force LLM polish on every dictation.
   skip_when_clean: true
+  # Casing control. Echo learns canonical word casings from your in-app
+  # corrections (e.g. capitalize "tiktok" → "TikTok" once and it sticks
+  # forever), and aggressively flattens spurious Title-Casing where Whisper/
+  # the LLM capitalized Every Word. Known proper nouns are protected: your
+  # learned casings, Dictionary terms, "I", and weekday/month names.
+  casing:
+    flatten_titlecase: true   # lowercase mid-sentence Title-Case words that aren't known proper nouns
+    learn_from_edits: true    # learn a word's casing from a single Fix-dialog edit
   # Adaptive learning: inject your past corrections as few-shot examples
   learning:
     enabled: true

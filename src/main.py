@@ -332,6 +332,15 @@ class App:
                 )
             except Exception as e:
                 _log.warning("style provider wiring failed: %s", e)
+            # Protect user dictionary terms from the de-Title-Case pass so a
+            # curated proper noun ("FastAPI") is never lowercased.
+            try:
+                from .dashboard import vocabulary as _vocab
+                self.cleaner.set_dictionary_provider(
+                    lambda h=self.history: _vocab.all_terms(h.conn)
+                )
+            except Exception as e:
+                _log.warning("dictionary provider wiring failed: %s", e)
 
         # Bias the Whisper decoder with the user's custom vocabulary so
         # proper nouns + technical terms are heard correctly the first time.
@@ -500,6 +509,11 @@ class App:
                 self.learner.cfg.trust_mobile = bool(lc.get("trust_mobile", False))
                 self.learner.cfg.trust_teacher = bool(lc.get("trust_teacher", True))
                 self.learner.invalidate_cache()
+            # Refresh the cleaner's casing config + drop its protected-set cache
+            # so dictionary edits and casing.* toggles apply without a restart.
+            if self.cleaner is not None:
+                self.cleaner.cfg = self.cfg.get("cleanup", self.cleaner.cfg)
+                self.cleaner.invalidate_casing_cache()
         except Exception as e:
             _log.warning("reload_config failed: %s", e)
 

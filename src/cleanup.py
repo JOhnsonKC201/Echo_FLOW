@@ -172,8 +172,16 @@ def build_pe_prompt(audience: str, provider: str) -> str:
     return pre + base + hint
 
 
-def _polish_text(s: str) -> str:
-    """Deterministic capitalization + end-punctuation. No LLM, no surprises."""
+def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -> str:
+    """Deterministic capitalization + end-punctuation. No LLM, no surprises.
+
+    When `protected` is provided (even if empty), an aggressive de-Title-Case
+    pass also runs: any simple Title-Case word ("Xxxx") that is NOT a protected
+    proper noun is lowercased, killing the "every word capitalized" failure
+    mode. Internal-caps ("TikTok"), ALLCAPS ("SQL") and protected words are
+    left untouched; sentence-initial caps are restored afterward. Passing
+    `protected=None` (the default) preserves the original behavior exactly.
+    """
     import re as _re
     if not s or not s.strip():
         return s
@@ -210,6 +218,23 @@ def _polish_text(s: str) -> str:
             s = _re.sub(r"(\s)([A-Z][a-z]+)", _lower_mid, s)
     # Collapse internal whitespace.
     s = _re.sub(r"\s+", " ", s)
+    # Aggressive de-Title-Case (only when a `protected` allowlist is supplied):
+    # lowercase simple Title-Case words that aren't known proper nouns. This is
+    # the fix for Whisper/LLM emitting "Every Word Capitalized". Internal-caps
+    # ("TikTok", "iPhone") and ALLCAPS ("SQL") never match ^[A-Z][a-z']+$ so
+    # they're preserved; protected words (learned casings, dictionary terms,
+    # "I", days/months) are preserved; sentence starts are restored below.
+    if protected is not None:
+        def _flatten(m: "_re.Match[str]") -> str:
+            w = m.group(0)
+            if w.lower() in protected:
+                return w
+            if len(w) > 1 and _re.match(r"^[A-Z][a-z']*$", w):
+                return w.lower()
+            return w
+        # Match whole alphanumeric tokens so a token like "Migration2024" stays
+        # intact (it won't match the simple-Title-Case pattern and is preserved).
+        s = _re.sub(r"[A-Za-z][\w']*", _flatten, s)
     # Capitalize first letter of every sentence.
     def _cap(m: "_re.Match[str]") -> str:
         return m.group(1) + m.group(2).upper()
@@ -234,6 +259,10 @@ class Cleaner:
         # Pluggable hooks set by main.py for the LLM-free "learned" provider.
         self._pattern_miner = None     # PatternMiner instance
         self._retriever = None         # Retriever instance (for cosine fallback)
+        # Casing: optional provider of dictionary terms to protect from the
+        # de-Title-Case pass, plus a short-lived cache of (canon, protected).
+        self._dictionary_provider = None
+        self._casing_ctx: tuple[dict, frozenset, float] | None = None
         # Process-lifetime counters for skip-rate observability.
         self._n_clean_calls: int = 0
         self._n_polish_skipped: int = 0
@@ -249,6 +278,20 @@ class Cleaner:
         """Wire in PatternMiner + Retriever so 'learned' provider can work."""
         self._pattern_miner = pattern_miner
         self._retriever = retriever
+
+    def set_dictionary_provider(self, provider) -> None:
+        """Inject a callable returning the user's dictionary terms (list[str]).
+
+        These proper nouns are protected from the de-Title-Case pass so a
+        user-curated term like "FastAPI" is never lowercased. Provider raising
+        or returning empty just means no extra protection.
+        """
+        self._dictionary_provider = provider
+
+    def invalidate_casing_cache(self) -> None:
+        """Drop the cached (canon, protected) tuple so a config/dictionary or
+        freshly-taught casing edit takes effect on the next dictation."""
+        self._casing_ctx = None
 
     def clean_with(self, provider: str, text: str, style: str = "default", augmentation: str = "") -> tuple[str, bool]:
         """Run cleanup with a specific provider (for A/B testing).
@@ -460,7 +503,7 @@ class Cleaner:
             base = text
             if self.provider == "learned":
                 base = self._apply_learned_patterns(base)
-            return self._expand_snippets(_polish_text(base)), True
+            return self._expand_snippets(self._finalize(base, style)), True
         provider = provider_override or self.provider
         # PE mode: build a system prompt tailored to BOTH the audience
         # (claude-code / chatgpt / generic) AND the chosen provider's size
@@ -542,7 +585,7 @@ class Cleaner:
         )
 
         try:
-            return _run_provider(provider), False
+            return self._finalize(_run_provider(provider), style), False
         except Exception as primary_err:
             tried_fallback = False
             if fallback_provider and fallback_provider != provider:
@@ -550,7 +593,7 @@ class Cleaner:
                              provider, primary_err, fallback_provider)
                 tried_fallback = True
                 try:
-                    return _run_provider(fallback_provider), False
+                    return self._finalize(_run_provider(fallback_provider), style), False
                 except Exception as fb_err:
                     _log.warning("fallback provider %s also failed: %s",
                                  fallback_provider, fb_err)
@@ -559,7 +602,7 @@ class Cleaner:
                     out = self.teach(text, style=style)
                     if out:
                         _log.info("teacher served as cleanup fallback")
-                        return self._expand_snippets(out), False
+                        return self._finalize(self._expand_snippets(out), style), False
                 except Exception as t_err:
                     _log.warning("teacher fallback failed: %s", t_err)
             _log.error(
@@ -567,7 +610,7 @@ class Cleaner:
                 provider, tried_fallback,
             )
             notify.notify("Echo Flow", "Cleanup failed; pasted raw.", "error")
-            return self._expand_snippets(text), False
+            return self._finalize(self._expand_snippets(text), style), False
 
     def _via_ollama(self, system: str, text: str, *,
                     max_tokens: int | None = None,
@@ -736,6 +779,94 @@ class Cleaner:
             _log.info("ollama warmup: model %s loaded", oc.get("model"))
         except Exception as e:
             _log.warning("ollama warmup skipped: %s", e)
+
+    # Words that are legitimately capitalized mid-sentence and must survive the
+    # aggressive de-Title-Case pass even before the user teaches anything.
+    _CASING_ALLOWLIST = frozenset({
+        "i",
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        "january", "february", "march", "april", "may", "june", "july", "august",
+        "september", "october", "november", "december",
+    })
+
+    def _casing_context(self) -> tuple[dict[str, str], frozenset[str]]:
+        """Return (canon_map, protected_lc), cached ~30s.
+
+        canon_map = {word_lc: CanonicalForm} forces learned casings.
+        protected_lc = lowercased words the de-Title-Case pass must not touch:
+        learned casings + confident substitution targets (so "Johnson" learned
+        as a mishear-fix isn't re-lowercased) + dictionary terms + the builtin
+        allowlist.
+        """
+        import time as _t
+        now = _t.time()
+        cached = self._casing_ctx
+        if cached is not None and (now - cached[2]) < 30:
+            return cached[0], cached[1]
+        canon: dict[str, str] = {}
+        protected: set[str] = set(self._CASING_ALLOWLIST)
+        pm = self._pattern_miner
+        if pm is not None:
+            try:
+                canon = pm.canonical_casings() or {}
+            except Exception:
+                canon = {}
+            protected.update(canon.keys())
+            try:
+                min_conf = float(self.cfg.get("learned", {}).get("min_pattern_confidence", 0.7))
+                for repl in pm.confident_patterns(min_confidence=min_conf).values():
+                    if repl:
+                        protected.add(repl.lower())
+            except Exception:
+                pass
+        prov = self._dictionary_provider
+        if callable(prov):
+            try:
+                for term in (prov() or []):
+                    t = (term or "").strip()
+                    if t:
+                        protected.add(t.lower())
+            except Exception:
+                pass
+        frozen = frozenset(protected)
+        self._casing_ctx = (canon, frozen, now)
+        return canon, frozen
+
+    def _apply_learned_casing(self, text: str) -> str:
+        """Force every word with a learned canonical casing to that form.
+
+        Pure function over the casing canon (tiktok / TIKTOK / Tiktok → TikTok).
+        Word-boundary matched; words with no learned canon are left untouched.
+        """
+        canon, _ = self._casing_context()
+        if not canon or not text:
+            return text
+        import re as _re
+
+        def _sub(m: "_re.Match[str]") -> str:
+            tok = m.group(0)
+            repl = canon.get(tok.lower())
+            return repl if repl is not None else tok
+
+        return _re.sub(r"\b[\w']+\b", _sub, text)
+
+    def _finalize(self, text: str, style: str = "default") -> str:
+        """Authoritative casing pass applied on every clean() return path.
+
+        Forces learned casings, then runs the deterministic polish with the
+        de-Title-Case flattener (unless disabled by config). Skipped entirely
+        for Prompt-Engineering output, whose casing is intentional.
+        """
+        if not text or style == "prompt":
+            return text
+        casing_cfg = self.cfg.get("casing", {}) or {}
+        if bool(casing_cfg.get("learn_from_edits", True)):
+            text = self._apply_learned_casing(text)
+        flatten = bool(casing_cfg.get("flatten_titlecase", True))
+        if not flatten:
+            return _polish_text(text)
+        _, protected = self._casing_context()
+        return _polish_text(text, protected=protected)
 
     def _apply_learned_patterns(self, text: str) -> str:
         """Apply high-confidence learned token substitutions. Pure function.

@@ -280,6 +280,15 @@ def open_editor(db_path: str, row_id: int | None = None) -> None:
             )
             conn.commit()
             _re_embed_if_possible(db_path, rid, raw or "")
+            # Learn canonical casings from this edit (e.g. "tiktok" -> "TikTok")
+            # so future dictations of the same word get the user's casing and
+            # are protected from the de-Title-Case pass. Best-effort: a learning
+            # hiccup must never block saving the correction.
+            try:
+                from .learn import PatternMiner
+                PatternMiner(db_path).record_casing(cleaned or "", corrected)
+            except Exception:
+                pass
             status_var.set(f"✓ Saved. Future dictations will learn from this correction.")
             root.after(900, root.destroy)
         except Exception as e:
