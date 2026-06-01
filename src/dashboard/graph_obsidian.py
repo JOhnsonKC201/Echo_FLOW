@@ -65,8 +65,13 @@ def _merge(dict_g: dict, concept_g: dict, notes_g: dict) -> dict[str, Any]:
         if n.get("kind") == "dictation":
             # notes graph re-emits the source dictation; skip dupes when present
             continue
+        # build_notes_graph emits ids already namespaced as "note:<id>"; strip
+        # that prefix so the node id matches the "n:<id>" form the link loop
+        # below remaps note edges to. Bare ids (no prefix) pass through.
+        raw_id = str(n["id"])
+        nid = raw_id[5:] if raw_id.startswith("note:") else raw_id
         nodes.append({
-            "id": f"n:{n['id']}",
+            "id": f"n:{nid}",
             "label": n.get("label", n["id"]),
             "full": n.get("full", ""),
             "group": "note",

@@ -77,6 +77,25 @@ def test_merge_notes_edge_remapping_note_to_dict():
     assert e["kind"] == "note"
 
 
+def test_merge_note_node_id_matches_link_source_with_real_prefix():
+    """Regression: build_notes_graph emits node ids ALREADY namespaced as
+    'note:<id>'. _merge must not double-prefix them to 'n:note:<id>' while
+    remapping the edge to 'n:<id>' — otherwise the edge endpoint never matches
+    the node id and the frontend silently drops every note->dictation link."""
+    from src.dashboard.graph_obsidian import _merge
+    notes_g = {
+        "nodes": [{"id": "note:7", "kind": "note", "label": "My Note"}],
+        "links": [{"source": "note:7", "target": "dict:42", "value": 0.9}],
+    }
+    out = _merge({}, {}, notes_g)
+    node_id = out["nodes"][0]["id"]
+    link_src = out["links"][0]["source"]
+    assert node_id == "n:7"
+    assert link_src == "n:7"
+    # The edge endpoint MUST resolve to an actual node id.
+    assert link_src in {n["id"] for n in out["nodes"]}
+
+
 def test_merge_skips_duplicate_dictation_nodes_in_notes_graph():
     """notes_graph re-emits source dictations as nodes with kind=dictation;
     _merge should drop those to avoid duplicating d: entries."""
