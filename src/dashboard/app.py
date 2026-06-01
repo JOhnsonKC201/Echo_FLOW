@@ -72,6 +72,16 @@ def _allowed_hosts_for(host: str, port: int) -> set[str]:
     }
 
 
+def _form_int(form, key: str = "id", default: int = 0) -> int:
+    """Parse an int form field, returning `default` for missing/non-numeric
+    values instead of raising ValueError (which would 500 the POST handler on a
+    malformed/forged request)."""
+    try:
+        return int(form.get(key, default) or default)
+    except (ValueError, TypeError):
+        return default
+
+
 def make_app(app_ref, bound_port: int | None = None):
     """Build the Flask app. Imported lazily so the desktop path doesn't pay
     the Flask import cost when dashboard.enabled is false.
@@ -163,7 +173,7 @@ def make_app(app_ref, bound_port: int | None = None):
         if history is None or getattr(history, "conn", None) is None:
             return redirect("/?flash=History disabled.")
         try:
-            did = int(_req.form.get("id", "0"))
+            did = _form_int(_req.form)
         except ValueError:
             did = 0
         raw_rating = (_req.form.get("rating", "") or "").strip()
@@ -372,7 +382,7 @@ def make_app(app_ref, bound_port: int | None = None):
     def dictionary_delete():
         from . import vocabulary as _vocab
         from flask import request as _req, redirect
-        tid = int(_req.form.get("id", "0"))
+        tid = _form_int(_req.form)
         history = getattr(app_ref, "history", None)
         msg = ""
         if history is not None and getattr(history, "conn", None) is not None and tid > 0:
@@ -451,7 +461,7 @@ def make_app(app_ref, bound_port: int | None = None):
     def snippets_update():
         from . import snippets as _sn
         from flask import request as _req, redirect
-        sid = int(_req.form.get("id", "0") or 0)
+        sid = _form_int(_req.form)
         code = _req.form.get("code", "").strip()
         expansion = _req.form.get("expansion", "").strip()
         history = getattr(app_ref, "history", None)
@@ -468,7 +478,7 @@ def make_app(app_ref, bound_port: int | None = None):
     def snippets_delete():
         from . import snippets as _sn
         from flask import request as _req, redirect
-        sid = int(_req.form.get("id", "0"))
+        sid = _form_int(_req.form)
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None or sid <= 0:
             return redirect("/snippets?flash=Nothing to remove.")
@@ -587,7 +597,7 @@ def make_app(app_ref, bound_port: int | None = None):
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
             return redirect("/transforms?flash=History disabled.")
-        tid = int(_req.form.get("id", "0"))
+        tid = _form_int(_req.form)
         try:
             if _tf.delete_transform(history.conn, tid):
                 _refresh_transform_hotkeys(app_ref)
@@ -603,7 +613,7 @@ def make_app(app_ref, bound_port: int | None = None):
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
             return redirect("/transforms?flash=History disabled.")
-        tid = int(_req.form.get("id", "0"))
+        tid = _form_int(_req.form)
         combo = _req.form.get("hotkey", "").strip() or None
         try:
             _tf.update_transform(history.conn, tid, hotkey=combo)
@@ -619,7 +629,7 @@ def make_app(app_ref, bound_port: int | None = None):
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
             return redirect("/transforms?flash=History disabled.")
-        tid = int(_req.form.get("id", "0"))
+        tid = _form_int(_req.form)
         enabled = _req.form.get("enabled") == "1"
         try:
             _tf.update_transform(history.conn, tid, enabled=enabled)
@@ -683,7 +693,7 @@ def make_app(app_ref, bound_port: int | None = None):
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
             return redirect("/scratchpad?flash=History disabled.")
-        pid = int(_req.form.get("id", "0"))
+        pid = _form_int(_req.form)
         title = _req.form.get("title", "")
         body = _req.form.get("body", "")
         if _sp.save_scratchpad(history.conn, pid, title=title, body=body):
@@ -697,7 +707,7 @@ def make_app(app_ref, bound_port: int | None = None):
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
             return redirect("/scratchpad?flash=History disabled.")
-        pid = int(_req.form.get("id", "0"))
+        pid = _form_int(_req.form)
         # If we just deleted the target, clear the arming.
         if getattr(app_ref, "_scratchpad_target_id", None) == pid:
             try:
@@ -935,7 +945,7 @@ def make_app(app_ref, bound_port: int | None = None):
         if history is None or getattr(history, "conn", None) is None:
             return redirect("/notifications?flash=History disabled.")
         try:
-            nid = int(_req.form.get("id", "0"))
+            nid = _form_int(_req.form)
         except ValueError:
             nid = 0
         _nf.mark_read(history.conn, nid)
