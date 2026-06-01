@@ -37,22 +37,30 @@ def set_sink(fn) -> None:
     _sink = fn
 
 
+def _build_toast_xml(title: str, message: str) -> str:
+    """Build the ToastGeneric XML. Escapes &, <, > so titles/messages with XML
+    metacharacters (e.g. "R&D" or "a < b") don't produce malformed XML that
+    load_xml rejects, silently dropping the toast."""
+    from xml.sax.saxutils import escape
+    return f"""
+        <toast>
+          <visual>
+            <binding template="ToastGeneric">
+              <text>{escape(title)}</text>
+              <text>{escape(message)}</text>
+            </binding>
+          </visual>
+        </toast>
+        """.strip()
+
+
 def _winsdk_toast(title: str, message: str) -> bool:
     try:
         from winsdk.windows.ui.notifications import (
             ToastNotificationManager, ToastNotification,
         )
         from winsdk.windows.data.xml.dom import XmlDocument
-        xml = f"""
-        <toast>
-          <visual>
-            <binding template="ToastGeneric">
-              <text>{title}</text>
-              <text>{message}</text>
-            </binding>
-          </visual>
-        </toast>
-        """.strip()
+        xml = _build_toast_xml(title, message)
         doc = XmlDocument()
         doc.load_xml(xml)
         notifier = ToastNotificationManager.create_toast_notifier(
