@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from collections import Counter
+from contextlib import closing
 from dataclasses import dataclass
 
 
@@ -68,15 +69,15 @@ class Learner:
             excluded.append("'teacher'")
         source_filter = f" AND source NOT IN ({','.join(excluded)})" if excluded else ""
         try:
-            cur = self._conn().execute(
-                "SELECT raw_text, cleaned_text FROM dictations "
-                "WHERE style = ? AND length(raw_text) >= ? "
-                "AND raw_text != cleaned_text"
-                + source_filter +
-                " ORDER BY ts DESC LIMIT ?",
-                (style, self.cfg.min_example_chars, limit * 3),
-            )
-            rows = cur.fetchall()
+            with closing(self._conn()) as conn:
+                rows = conn.execute(
+                    "SELECT raw_text, cleaned_text FROM dictations "
+                    "WHERE style = ? AND length(raw_text) >= ? "
+                    "AND raw_text != cleaned_text"
+                    + source_filter +
+                    " ORDER BY ts DESC LIMIT ?",
+                    (style, self.cfg.min_example_chars, limit * 3),
+                ).fetchall()
         except Exception:
             return []
         # Prefer pairs where the model actually changed something meaningful
@@ -105,12 +106,12 @@ class Learner:
             excluded.append("'teacher'")
         source_filter = f" WHERE source NOT IN ({','.join(excluded)})" if excluded else ""
         try:
-            cur = self._conn().execute(
-                "SELECT cleaned_text FROM dictations"
-                + source_filter +
-                " ORDER BY ts DESC LIMIT 500"
-            )
-            texts = [row[0] or "" for row in cur.fetchall()]
+            with closing(self._conn()) as conn:
+                texts = [row[0] or "" for row in conn.execute(
+                    "SELECT cleaned_text FROM dictations"
+                    + source_filter +
+                    " ORDER BY ts DESC LIMIT 500"
+                ).fetchall()]
         except Exception:
             return []
         counter: Counter[str] = Counter()
@@ -276,46 +277,46 @@ class PatternMiner:
             return 0
         import time as _t
         now = _t.time()
-        conn = self._conn()
-        _ensure_patterns_table(conn)
-        is_teacher = (source == "teacher")
-        for a, b in pairs:
-            trigger = a.lower()
-            # success = how often THIS replacement was the cleaned form
-            conn.execute(
-                """
-                INSERT INTO learned_patterns
-                    (trigger, replacement, success, total, updated_at, user_count, teacher_count)
-                VALUES (?, ?, 1, 1, ?, ?, ?)
-                ON CONFLICT(trigger, replacement) DO UPDATE SET
-                    success = success + 1,
-                    total = total + 1,
-                    updated_at = excluded.updated_at,
-                    user_count = user_count + ?,
-                    teacher_count = teacher_count + ?
-                """,
-                (trigger, b, now, 0 if is_teacher else 1, 1 if is_teacher else 0,
-                 0 if is_teacher else 1, 1 if is_teacher else 0),
-            )
-            # All OTHER replacements for the same trigger see total++ but not success.
-            conn.execute(
-                "UPDATE learned_patterns SET total = total + 1, updated_at = ? "
-                "WHERE trigger = ? AND replacement != ?",
-                (now, trigger, b),
-            )
-        conn.commit()
+        with closing(self._conn()) as conn:
+            _ensure_patterns_table(conn)
+            is_teacher = (source == "teacher")
+            for a, b in pairs:
+                trigger = a.lower()
+                # success = how often THIS replacement was the cleaned form
+                conn.execute(
+                    """
+                    INSERT INTO learned_patterns
+                        (trigger, replacement, success, total, updated_at, user_count, teacher_count)
+                    VALUES (?, ?, 1, 1, ?, ?, ?)
+                    ON CONFLICT(trigger, replacement) DO UPDATE SET
+                        success = success + 1,
+                        total = total + 1,
+                        updated_at = excluded.updated_at,
+                        user_count = user_count + ?,
+                        teacher_count = teacher_count + ?
+                    """,
+                    (trigger, b, now, 0 if is_teacher else 1, 1 if is_teacher else 0,
+                     0 if is_teacher else 1, 1 if is_teacher else 0),
+                )
+                # All OTHER replacements for the same trigger see total++ but not success.
+                conn.execute(
+                    "UPDATE learned_patterns SET total = total + 1, updated_at = ? "
+                    "WHERE trigger = ? AND replacement != ?",
+                    (now, trigger, b),
+                )
+            conn.commit()
         return len(pairs)
 
     def confident_patterns(self, min_confidence: float = 0.7, min_total: int = 2) -> dict[str, str]:
         """Return {trigger_lowercase: replacement} for patterns above threshold."""
         try:
-            conn = self._conn()
-            _ensure_patterns_table(conn)
-            rows = conn.execute(
-                "SELECT trigger, replacement, success, total FROM learned_patterns "
-                "WHERE total >= ?",
-                (min_total,),
-            ).fetchall()
+            with closing(self._conn()) as conn:
+                _ensure_patterns_table(conn)
+                rows = conn.execute(
+                    "SELECT trigger, replacement, success, total FROM learned_patterns "
+                    "WHERE total >= ?",
+                    (min_total,),
+                ).fetchall()
         except Exception:
             return {}
         # For each trigger, pick the highest-confidence replacement above threshold.
@@ -342,37 +343,37 @@ class PatternMiner:
         Returns (rows_decayed, rows_deleted).
         """
         try:
-            conn = self._conn()
-            _ensure_patterns_table(conn)
-            import time as _t
-            now = _t.time()
-            # Count first for the return value.
-            decayed = conn.execute("SELECT COUNT(*) FROM learned_patterns").fetchone()[0]
-            conn.execute(
-                "UPDATE learned_patterns SET "
-                "  success = success * pow(0.5, (? - updated_at) / (? * 86400.0)),"
-                "  total   = total   * pow(0.5, (? - updated_at) / (? * 86400.0)),"
-                "  updated_at = ? ",
-                (now, half_life_days, now, half_life_days, now),
-            )
-            cur = conn.execute("DELETE FROM learned_patterns WHERE total < 0.5")
-            deleted = cur.rowcount or 0
-            conn.commit()
-            return int(decayed), int(deleted)
+            with closing(self._conn()) as conn:
+                _ensure_patterns_table(conn)
+                import time as _t
+                now = _t.time()
+                # Count first for the return value.
+                decayed = conn.execute("SELECT COUNT(*) FROM learned_patterns").fetchone()[0]
+                conn.execute(
+                    "UPDATE learned_patterns SET "
+                    "  success = success * pow(0.5, (? - updated_at) / (? * 86400.0)),"
+                    "  total   = total   * pow(0.5, (? - updated_at) / (? * 86400.0)),"
+                    "  updated_at = ? ",
+                    (now, half_life_days, now, half_life_days, now),
+                )
+                cur = conn.execute("DELETE FROM learned_patterns WHERE total < 0.5")
+                deleted = cur.rowcount or 0
+                conn.commit()
+                return int(decayed), int(deleted)
         except Exception:
             return 0, 0
 
     def backfill_from_history(self, limit: int = 5000) -> int:
         """Mine patterns from the existing dictations table. Returns rows processed."""
         try:
-            conn = self._conn()
-            _ensure_patterns_table(conn)
-            rows = conn.execute(
-                "SELECT raw_text, cleaned_text FROM dictations "
-                "WHERE raw_text != cleaned_text AND raw_text != '' AND cleaned_text != '' "
-                "ORDER BY ts DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            with closing(self._conn()) as conn:
+                _ensure_patterns_table(conn)
+                rows = conn.execute(
+                    "SELECT raw_text, cleaned_text FROM dictations "
+                    "WHERE raw_text != cleaned_text AND raw_text != '' AND cleaned_text != '' "
+                    "ORDER BY ts DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
         except Exception:
             return 0
         n = 0
