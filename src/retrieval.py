@@ -18,6 +18,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 import time
+from contextlib import closing
 from dataclasses import dataclass
 
 import numpy as np
@@ -94,32 +95,33 @@ class Retriever:
     def _backfill(self) -> None:
         """Embed any rows missing an embedding OR tagged with a stale model."""
         try:
-            conn = self._conn()
-            rows = conn.execute(
-                "SELECT id, raw_text FROM dictations "
-                "WHERE raw_text != '' AND "
-                "(embedding IS NULL OR embedding_model IS NULL OR embedding_model != ?)",
-                (_model_name,),
-            ).fetchall()
+            with closing(self._conn()) as conn:
+                rows = conn.execute(
+                    "SELECT id, raw_text FROM dictations "
+                    "WHERE raw_text != '' AND "
+                    "(embedding IS NULL OR embedding_model IS NULL OR embedding_model != ?)",
+                    (_model_name,),
+                ).fetchall()
+                if not rows:
+                    return
+                _log.info(
+                    "backfilling embeddings for %d rows (model=%s)",
+                    len(rows), _model_name,
+                )
+                t0 = time.time()
+                for row_id, raw in rows:
+                    try:
+                        vec = embed(raw)
+                        conn.execute(
+                            "UPDATE dictations SET embedding = ?, embedding_model = ? WHERE id = ?",
+                            (to_blob(vec), _model_name, row_id),
+                        )
+                    except Exception:
+                        continue
+                conn.commit()
+                _log.info("backfill done in %.1fs", time.time() - t0)
         except Exception:
             return
-        if not rows:
-            return
-        _log.info(
-            "backfilling embeddings for %d rows (model=%s)", len(rows), _model_name
-        )
-        t0 = time.time()
-        for row_id, raw in rows:
-            try:
-                vec = embed(raw)
-                conn.execute(
-                    "UPDATE dictations SET embedding = ?, embedding_model = ? WHERE id = ?",
-                    (to_blob(vec), _model_name, row_id),
-                )
-            except Exception:
-                continue
-        conn.commit()
-        _log.info("backfill done in %.1fs", time.time() - t0)
 
     @staticmethod
     def model_name() -> str:
@@ -145,20 +147,20 @@ class Retriever:
         # Schema guarantees source defaults to 'desktop' for legacy rows.
         source_filter = "" if self.cfg.trust_mobile else " AND source != 'mobile'"
         try:
-            conn = self._conn()
-            if style:
-                rows = conn.execute(
-                    "SELECT raw_text, cleaned_text, embedding FROM dictations "
-                    "WHERE embedding IS NOT NULL AND style = ? AND raw_text != cleaned_text"
-                    + source_filter,
-                    (style,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT raw_text, cleaned_text, embedding FROM dictations "
-                    "WHERE embedding IS NOT NULL AND raw_text != cleaned_text"
-                    + source_filter
-                ).fetchall()
+            with closing(self._conn()) as conn:
+                if style:
+                    rows = conn.execute(
+                        "SELECT raw_text, cleaned_text, embedding FROM dictations "
+                        "WHERE embedding IS NOT NULL AND style = ? AND raw_text != cleaned_text"
+                        + source_filter,
+                        (style,),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT raw_text, cleaned_text, embedding FROM dictations "
+                        "WHERE embedding IS NOT NULL AND raw_text != cleaned_text"
+                        + source_filter
+                    ).fetchall()
         except Exception:
             return []
         if not rows:
@@ -192,20 +194,20 @@ class Retriever:
             return []
         source_filter = "" if self.cfg.trust_mobile else " AND source != 'mobile'"
         try:
-            conn = self._conn()
-            if style:
-                rows = conn.execute(
-                    "SELECT id, raw_text, cleaned_text, embedding FROM dictations "
-                    "WHERE embedding IS NOT NULL AND style = ? AND raw_text != cleaned_text"
-                    + source_filter,
-                    (style,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT id, raw_text, cleaned_text, embedding FROM dictations "
-                    "WHERE embedding IS NOT NULL AND raw_text != cleaned_text"
-                    + source_filter
-                ).fetchall()
+            with closing(self._conn()) as conn:
+                if style:
+                    rows = conn.execute(
+                        "SELECT id, raw_text, cleaned_text, embedding FROM dictations "
+                        "WHERE embedding IS NOT NULL AND style = ? AND raw_text != cleaned_text"
+                        + source_filter,
+                        (style,),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT id, raw_text, cleaned_text, embedding FROM dictations "
+                        "WHERE embedding IS NOT NULL AND raw_text != cleaned_text"
+                        + source_filter
+                    ).fetchall()
         except Exception:
             return []
         if not rows:
