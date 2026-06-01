@@ -2,8 +2,103 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from pathlib import Path
+
+
+class _SafeCursor:
+    """Wraps a sqlite3.Cursor so its fetch/iter operations also serialize on the
+    connection's lock — the fetch happens after ``execute`` returns, so without
+    this a concurrent write on another thread could interleave with a read."""
+
+    __slots__ = ("_cur", "_lock")
+
+    def __init__(self, cur, lock):
+        object.__setattr__(self, "_cur", cur)
+        object.__setattr__(self, "_lock", lock)
+
+    def __getattr__(self, name):
+        attr = getattr(self._cur, name)
+        if callable(attr):
+            def _locked(*a, **k):
+                with self._lock:
+                    return attr(*a, **k)
+            return _locked
+        return attr
+
+    def __iter__(self):
+        with self._lock:
+            return iter(self._cur.fetchall())
+
+
+class _SafeConn:
+    """Serializes every operation on a shared ``check_same_thread=False``
+    connection behind a single re-entrant lock.
+
+    The dictation daemon writes from several background threads while the Flask
+    dashboard reads/writes the same connection. Python's sqlite3 only serializes
+    individual C-API calls, not the connection's implicit-transaction state
+    machine, so concurrent ``execute``+``commit`` could corrupt that state
+    ("cannot start a transaction within a transaction") and drop rows. Routing
+    all access through one lock makes the shared connection thread-safe with no
+    changes to callers (including ``with conn:`` transaction blocks)."""
+
+    def __init__(self, conn):
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "_lock", threading.RLock())
+
+    def execute(self, *a, **k):
+        with self._lock:
+            return _SafeCursor(self._conn.execute(*a, **k), self._lock)
+
+    def executemany(self, *a, **k):
+        with self._lock:
+            return _SafeCursor(self._conn.executemany(*a, **k), self._lock)
+
+    def executescript(self, *a, **k):
+        with self._lock:
+            return _SafeCursor(self._conn.executescript(*a, **k), self._lock)
+
+    def cursor(self, *a, **k):
+        with self._lock:
+            return _SafeCursor(self._conn.cursor(*a, **k), self._lock)
+
+    def commit(self):
+        with self._lock:
+            return self._conn.commit()
+
+    def rollback(self):
+        with self._lock:
+            return self._conn.rollback()
+
+    def close(self):
+        with self._lock:
+            return self._conn.close()
+
+    def __enter__(self):
+        # `with conn:` opens an implicit transaction and commits/rolls back on
+        # exit. Hold the lock for the whole block so the transaction is atomic
+        # relative to other threads. RLock => nested execute() calls re-enter.
+        self._lock.acquire()
+        try:
+            self._conn.__enter__()
+        except BaseException:
+            self._lock.release()
+            raise
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            return self._conn.__exit__(*exc)
+        finally:
+            self._lock.release()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._conn, name, value)
 
 
 BASE_SCHEMA = """
@@ -229,6 +324,11 @@ class History:
             except Exception:
                 pass
         self.conn.commit()
+        # All single-threaded setup above is done on the raw connection. Now
+        # wrap it so every subsequent access — from daemon threads AND the
+        # dashboard's direct `history.conn.execute(...)` — serializes on one
+        # lock. See _SafeConn for the concurrency rationale.
+        self.conn = _SafeConn(self.conn)
 
     def log(self, *, window_title: str, style: str, language: str,
             duration_ms: int, raw_text: str, cleaned_text: str,
