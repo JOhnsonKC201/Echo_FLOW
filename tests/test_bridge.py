@@ -187,6 +187,24 @@ def test_auth_wrong_key_401(client_and_app):
     assert r.status_code == 401
 
 
+def test_auth_non_ascii_key_returns_401_not_500(client_and_app):
+    """A header with bytes >= 0x80 (latin-1 decoded by Werkzeug) must not crash
+    hmac.compare_digest with a TypeError -> HTTP 500. It should be a clean 401."""
+    client, _ = client_and_app
+    r = client.post("/v1/cleanup",
+                    json={"text": "hi"},
+                    headers={"X-Echo-Key": "café\xe9"})
+    assert r.status_code == 401
+
+
+def test_health_non_ascii_key_does_not_500(client_and_app):
+    """Unauthenticated liveness probe must survive a non-ASCII key header."""
+    client, _ = client_and_app
+    r = client.get("/v1/health", headers={"X-Echo-Key": "\xff\x80bad"})
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
+
+
 # ---------------------------------------------------------------------------
 # /v1/cleanup
 # ---------------------------------------------------------------------------

@@ -227,6 +227,15 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
             _log.warning("learner augmentation failed: %s", e)
             return ""
 
+    def _key_matches(sent: str) -> bool:
+        # Compare as UTF-8 bytes, not str: hmac.compare_digest raises TypeError
+        # on non-ASCII str inputs, and Werkzeug latin-1-decodes header values,
+        # so a header byte >= 0x80 (e.g. "X-Echo-Key: café") would otherwise
+        # crash auth with a 500 and skip the brute-force lockout accounting.
+        if not sent:
+            return False
+        return hmac.compare_digest(sent.encode("utf-8"), shared_key.encode("utf-8"))
+
     def auth_required(fn):
         @wraps(fn)
         def wrapped(*a, **kw):
@@ -235,7 +244,7 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
             if _is_locked_out(ip):
                 return jsonify({"error": "rate_limited"}), 429
             sent = request.headers.get("X-Echo-Key", "")
-            if not sent or not hmac.compare_digest(sent, shared_key):
+            if not _key_matches(sent):
                 _log.warning("auth: failed key from ip=%s path=%s", ip, request.path)
                 _record_auth_failure(ip)
                 return jsonify({"error": "unauthorized"}), 401
@@ -291,7 +300,7 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         # detail leaks fingerprinting info (e.g. "ollama present" hints the user
         # has an LLM running locally); only return it to authenticated callers.
         sent = request.headers.get("X-Echo-Key", "")
-        authed = bool(sent) and hmac.compare_digest(sent, shared_key)
+        authed = _key_matches(sent)
         if not authed:
             return jsonify({"ok": True})
         whisper_kind = type(getattr(app_ref, "transcriber", None)).__name__
