@@ -153,6 +153,25 @@ def test_finalize_applies_canon_and_protects_it_from_flatten():
     assert "Downloaded" not in out
 
 
+def test_finalize_protects_bundled_proper_nouns():
+    # Untaught but common proper nouns survive the flattener by default.
+    c = _cleaner_with_canon({})
+    out = c._finalize("We Deployed To London And Tokyo Using Docker.")
+    assert "London" in out and "Tokyo" in out and "Docker" in out
+    # ...while genuinely spurious Title-Case is still flattened.
+    assert "Deployed" not in out and "Using" not in out
+
+
+def test_protect_common_nouns_can_be_disabled():
+    from src.cleanup import Cleaner
+    c = Cleaner({"enabled": True, "provider": "ollama",
+                 "casing": {"protect_common_nouns": False}})
+    c._pattern_miner = _FakeMiner({})
+    out = c._finalize("We Met Sarah In London.")
+    # With the bundle off, untaught names/places get flattened.
+    assert "london" in out and "sarah" in out
+
+
 def test_finalize_skips_prompt_style():
     c = _cleaner_with_canon({"tiktok": "TikTok"})
     s = "Rewrite This As A Clear Instruction."

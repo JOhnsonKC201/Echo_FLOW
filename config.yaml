@@ -56,6 +56,7 @@ cleanup:
   casing:
     flatten_titlecase: true   # lowercase mid-sentence Title-Case words that aren't known proper nouns
     learn_from_edits: true    # learn a word's casing from a single Fix-dialog edit
+    protect_common_nouns: true  # also protect a bundled list of common brands/places/names from flattening
   # Adaptive learning: inject your past corrections as few-shot examples
   learning:
     enabled: true

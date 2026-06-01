@@ -818,6 +818,14 @@ class Cleaner:
             return cached[0], cached[1]
         canon: dict[str, str] = {}
         protected: set[str] = set(self._CASING_ALLOWLIST)
+        # Bundled common proper nouns (brands, places, names) so an untaught
+        # term survives the flattener on first use. Toggle off via config.
+        if bool((self.cfg.get("casing", {}) or {}).get("protect_common_nouns", True)):
+            try:
+                from .casing_allowlist import PROPER_NOUNS
+                protected.update(PROPER_NOUNS)
+            except Exception:
+                pass
         pm = self._pattern_miner
         if pm is not None:
             try:
