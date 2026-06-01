@@ -200,7 +200,22 @@ def load_config() -> dict:
         except Exception:
             pass
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    # yaml.safe_load returns None for an empty or whitespace-only file (e.g. a
+    # truncated/cleared config after a crashed write). Downstream code indexes
+    # cfg['history'] etc., so a None here crashes the daemon at startup with a
+    # cryptic AttributeError. Fail with an actionable message instead.
+    if cfg is None:
+        raise ValueError(
+            f"config file {CONFIG_PATH} is empty or invalid — restore it from "
+            f"config.yaml in the install bundle or delete it to reseed defaults"
+        )
+    if not isinstance(cfg, dict):
+        raise ValueError(
+            f"config file {CONFIG_PATH} did not parse to a mapping (got "
+            f"{type(cfg).__name__}) — check its YAML syntax"
+        )
+    return cfg
 
 
 class App:
