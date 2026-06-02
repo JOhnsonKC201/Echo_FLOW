@@ -27,6 +27,20 @@
 </div>
 
 <div class="card">
+  <h2>Command prefix</h2>
+  <div class="sub">The wake word you say before every command (Action Mode uses it too).</div>
+  <form method="post" action="/commands/prefix" class="row-form" style="margin-top: 8px;">
+    <input type="text" name="command_prefix" value="{{ data.prefix }}"
+           maxlength="40" pattern="[A-Za-z]{3,}" autocomplete="off" required
+           aria-label="Command prefix" style="flex: 0 0 220px;">
+    <button type="submit" class="primary">Save prefix</button>
+  </form>
+  <div class="muted small" style="margin-top: 8px;">
+    3+ letters, no spaces, not a common English word. Takes effect on your next command — no restart.
+  </div>
+</div>
+
+<div class="card">
   <h2>Supported commands <span class="muted small num">{{ data.supported|length }}</span></h2>
   <ul class="cmd-list">
     {% for label in data.supported %}<li>{{ label }}</li>{% endfor %}

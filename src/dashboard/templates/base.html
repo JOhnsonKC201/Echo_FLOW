@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+{# Flash-free motion gate: mark the document as JS-capable *before* first
+   paint so the CSS entrance can pre-hide blocks. No-JS users never see it,
+   so content can never get stuck hidden. #}
+<script>document.documentElement.classList.add('ef-js');</script>
 <title>{% block title %}Echo Flow{% endblock %}</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='logo.png') }}">

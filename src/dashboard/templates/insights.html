@@ -178,7 +178,7 @@
                    background: linear-gradient(115deg, transparent 32%,
                       color-mix(in oklab, white 55%, transparent) 50%, transparent 68%);
                    transform: translateX(-130%);
-                   animation: wf-sheen 5s ease-in-out infinite; }
+                   animation: wf-sheen 1.8s ease-out .3s 1 both; }
   .wf-split-bar .seg-add  {
                    background:
                       linear-gradient(180deg,
@@ -275,7 +275,7 @@
                        background: linear-gradient(115deg, transparent 32%,
                           color-mix(in oklab, white 55%, transparent) 50%, transparent 68%);
                        transform: translateX(-130%);
-                       animation: wf-sheen 5s ease-in-out infinite; }
+                       animation: wf-sheen 1.8s ease-out .3s 1 both; }
 
   /* Heatmap — premium GitHub-style. */
   .wf-heat-head { display:flex; align-items:baseline; justify-content:space-between;
@@ -405,7 +405,7 @@
                    background: linear-gradient(115deg, transparent 32%,
                       color-mix(in oklab, white 50%, transparent) 50%, transparent 68%);
                    transform: translateX(-130%);
-                   animation: wf-sheen 5s ease-in-out infinite; }
+                   animation: wf-sheen 1.8s ease-out .3s 1 both; }
 
   /* Shared SVG gradient stops — a luminous green ramp used by the WPM gauge
      and the quality-trajectory line. Kept green-only so they stay cohesive
@@ -731,7 +731,7 @@
         {# median baseline #}
         <line class="baseline" x1="0" y1="{{ median_y }}" x2="{{ w }}" y2="{{ median_y }}" />
         <polygon class="area"
-                 points="0,{{ h }} {%- for q in trend -%}
+                 points="0,{{ h }} {% for q in trend -%}
                    {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
                  {%- endfor -%} {{ w }},{{ h }}"/>
         <polyline class="line"

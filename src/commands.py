@@ -83,6 +83,31 @@ def is_safe_hotkey(combo: str) -> bool:
     return key in SAFE_HOTKEY_LETTERS
 
 
+# Common short English words that make terrible command prefixes: if one were
+# the prefix, nearly every dictation would be treated as a command attempt and
+# unmatched ones are silently dropped — a data-loss risk. Rejected on save.
+PREFIX_STOPWORDS = frozenset({
+    "the", "and", "but", "you", "are", "all", "can", "for", "her",
+    "his", "not", "now", "one", "out", "see", "two", "use", "way",
+    "who", "yes", "say", "tell", "ask", "let",
+})
+
+
+def validate_prefix(prefix: str) -> str | None:
+    """Return None if `prefix` is a safe command prefix, else an error message.
+
+    Rule: alphabetic, 3+ letters, not a common English stop word. Single source
+    of truth shared by the Commands page and Settings → Experimental.
+    """
+    p = (prefix or "").strip()
+    if not p.isalpha() or len(p) < 3 or p.lower() in PREFIX_STOPWORDS:
+        return (
+            "command prefix must be 3+ letters and not a common English "
+            "word - try 'computer' or 'jarvis'."
+        )
+    return None
+
+
 def strip_prefix(text: str, prefix_word: str = "computer") -> str | None:
     """If `text` begins with the prefix word (and optional comma/space),
     return the remainder; otherwise None.

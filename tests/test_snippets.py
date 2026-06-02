@@ -72,3 +72,33 @@ def test_multi_word_snippet_expands():
         c._expand_snippets("check out my linkedin please")
         == "check out https://www.linkedin.com/in/x/ please"
     )
+
+
+def test_capitalized_trigger_does_not_break_url_scheme():
+    """Whisper capitalizes a standalone dictated word ('github' -> 'GitHub').
+    The casing-match must NOT capitalize a URL's scheme ('https' -> 'Https'),
+    which would produce a malformed link. URLs expand verbatim."""
+    c = _cleaner_with({"github": "https://github.com/user/repo"})
+    assert c._expand_snippets("GitHub") == "https://github.com/user/repo"
+    assert c._expand_snippets("Github") == "https://github.com/user/repo"
+    assert c._expand_snippets("github") == "https://github.com/user/repo"
+
+
+def test_allcaps_trigger_does_not_uppercase_url():
+    """An ALLCAPS trigger must not uppercase a URL expansion."""
+    c = _cleaner_with({"github": "https://github.com/user/repo"})
+    assert c._expand_snippets("GITHUB") == "https://github.com/user/repo"
+
+
+def test_capitalized_trigger_preserves_email_casing():
+    """Emails must expand verbatim regardless of trigger casing."""
+    c = _cleaner_with({"my email": "Johnson.KC@example.com"})
+    assert c._expand_snippets("My email") == "Johnson.KC@example.com"
+    assert c._expand_snippets("my email") == "Johnson.KC@example.com"
+
+
+def test_natural_language_still_recases():
+    """The structured-value guard must not regress phrase recasing."""
+    c = _cleaner_with({"btw": "by the way", "asap": "as soon as possible"})
+    assert c._expand_snippets("Btw") == "By the way"
+    assert c._expand_snippets("ASAP") == "AS SOON AS POSSIBLE"

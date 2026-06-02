@@ -129,3 +129,18 @@ def test_send_hotkey_safe_without_pyautogui(monkeypatch):
     inj = Injector()
     assert inj.send_hotkey("ctrl+c") is False
     assert inj.send_hotkey("") is False
+
+
+# --- Prefix validation (Commands page + Settings share this) -----------------
+import pytest
+from src import commands as _c
+
+
+@pytest.mark.parametrize("good", ["computer", "jarvis", "friday", "echo", "Computer"])
+def test_validate_prefix_accepts_good(good):
+    assert _c.validate_prefix(good) is None
+
+
+@pytest.mark.parametrize("bad", ["", "ab", "the", "yes", "j4rvis", "hey echo", "  ", "go!"])
+def test_validate_prefix_rejects_bad(bad):
+    assert _c.validate_prefix(bad) is not None

@@ -35,15 +35,26 @@ async function refreshBell() {
   } catch { /* swallow; Phase 0 has no endpoint */ }
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 async function toggleTheme() {
   try {
     const r = await fetch("/api/theme", { method: "POST" });
     if (!r.ok) return;
     const { theme } = await r.json();
-    if (theme) {
+    if (!theme) return;
+    const apply = () => {
       document.documentElement.setAttribute("data-theme", theme);
       const icon = document.querySelector(".theme-icon");
       if (icon) icon.textContent = theme === "light" ? "☀" : "☾";
+    };
+    // Soft full-page cross-fade where supported; instant otherwise.
+    if (document.startViewTransition && !prefersReducedMotion()) {
+      document.startViewTransition(apply);
+    } else {
+      apply();
     }
   } catch { /* swallow */ }
 }
@@ -56,3 +67,100 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 window.EF = { $, $$, escapeHtml, fetchJson };
+
+/* ====================================================================== *
+ * Premium motion layer — count-up stats, fill-from-zero meters, and a
+ * sweeping WPM gauge. The CSS entrance (app.css) handles block reveals;
+ * this handles the *values inside* them.
+ *
+ * Flash-free by construction: cards start at opacity 0 (CSS entrance), so
+ * the one-frame "real value" never shows — by the time a card fades in,
+ * its numbers already read 0 and its bars are empty, then they animate up.
+ * Triggered on scroll-into-view so below-the-fold content animates too.
+ * Fully skipped under prefers-reduced-motion (values stay at final state).
+ * ====================================================================== */
+(function premiumMotion() {
+  const root = document.documentElement;
+  if (!root.classList.contains("ef-js")) return;     // no gate → no JS path
+  if (prefersReducedMotion()) return;                // respect the user
+
+  const NUM_SEL   = ".wf-hero-num, .stat-value, .tile-value, .wf-microstat .n";
+  const BAR_SEL   = ".wf-app-bar > span, .wf-split-bar > span, " +
+                    ".wf-rank-meter > span, .wf-row .sparkbar > span, .usage-bar";
+  const GAUGE_SEL = ".wf-gauge-fill";
+
+  // Group commas back in, preserving a fixed number of decimals.
+  function fmt(value, decimals, comma) {
+    const s = value.toFixed(decimals);
+    if (!comma) return s;
+    const [intPart, frac] = s.split(".");
+    const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return frac != null ? grouped + "." + frac : grouped;
+  }
+
+  // --- pre-pass: capture targets and zero everything out, synchronously. ---
+  const numEls = $$(NUM_SEL).filter(el => /\d/.test(el.textContent));
+  numEls.forEach(el => {
+    const raw = el.textContent.trim();
+    // prefix (e.g. "") · number (commas/decimals) · suffix (e.g. "%")
+    const m = raw.match(/^(\D*)(-?[\d,]*\.?\d+)(.*)$/s);
+    if (!m) return;
+    el.dataset.efFinal    = raw;
+    el.dataset.efPrefix   = m[1];
+    el.dataset.efSuffix   = m[3];
+    el.dataset.efTarget   = m[2].replace(/,/g, "");
+    el.dataset.efDecimals = String((m[2].split(".")[1] || "").length);
+    el.dataset.efComma    = m[2].includes(",") ? "1" : "0";
+    el.textContent = m[1] +
+      fmt(0, +el.dataset.efDecimals, el.dataset.efComma === "1") + m[3];
+  });
+
+  const barEls = $$(BAR_SEL).filter(el => el.style.width);
+  barEls.forEach(el => { el.dataset.efW = el.style.width; el.style.width = "0%"; });
+
+  const gaugeEls = $$(GAUGE_SEL).filter(el => el.getAttribute("stroke-dasharray"));
+  gaugeEls.forEach(el => {
+    el.dataset.efOff = el.getAttribute("stroke-dashoffset");
+    el.setAttribute("stroke-dashoffset", el.getAttribute("stroke-dasharray"));
+  });
+
+  // --- activation: run the animation for one element, once. ---
+  const done = new WeakSet();
+  function countUp(el) {
+    const target = parseFloat(el.dataset.efTarget);
+    const dec = +el.dataset.efDecimals;
+    const comma = el.dataset.efComma === "1";
+    const { efPrefix: pre, efSuffix: suf, efFinal: fin } = el.dataset;
+    if (!isFinite(target) || target === 0) { el.textContent = fin; return; }
+    const dur = 900;
+    let start = null;
+    function step(ts) {
+      if (start === null) start = ts;
+      const p = Math.min((ts - start) / dur, 1);
+      const eased = 1 - Math.pow(1 - p, 3);            // easeOutCubic
+      el.textContent = pre + fmt(target * eased, dec, comma) + suf;
+      if (p < 1) requestAnimationFrame(step);
+      else el.textContent = fin;                       // exact server format
+    }
+    requestAnimationFrame(step);
+  }
+  function activate(el) {
+    if (done.has(el)) return;
+    done.add(el);
+    if (el.dataset.efFinal !== undefined) countUp(el);
+    else if (el.dataset.efW !== undefined) el.style.width = el.dataset.efW;
+    else if (el.dataset.efOff !== undefined) el.setAttribute("stroke-dashoffset", el.dataset.efOff);
+  }
+
+  const targets = numEls.concat(barEls, gaugeEls);
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { activate(e.target); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.25, rootMargin: "0px 0px -6% 0px" });
+    targets.forEach(t => io.observe(t));
+  } else {
+    targets.forEach(activate);
+  }
+})();

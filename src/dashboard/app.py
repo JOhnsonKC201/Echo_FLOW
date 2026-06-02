@@ -812,6 +812,34 @@ def make_app(app_ref, bound_port: int | None = None):
             data=data, flash=_req.args.get("flash", ""),
         )
 
+    @flask_app.post("/commands/prefix")
+    def commands_set_prefix():
+        from flask import request as _req, redirect
+        from .. import commands as _cmds
+        from . import config_writer as _cw
+        prefix = (_req.form.get("command_prefix", "") or "").strip()
+        err = _cmds.validate_prefix(prefix)
+        if err:
+            return redirect("/commands?flash=" + err)
+        try:
+            _cw.set_scalar(app_ref.cfg_path, "experimental.command_prefix", prefix)
+        except Exception as e:
+            _log.warning("command prefix save failed: %s", e)
+            return redirect(
+                "/commands?flash=Could not save — add an `experimental:` block "
+                "with `command_prefix: computer` to config.yaml first."
+            )
+        # Mirror into the live (shared) daemon cfg so it applies on the next
+        # command without a restart — the daemon reads experimental.command_prefix
+        # fresh on every dictation and Flask runs in-process with it.
+        exp = app_ref.cfg.get("experimental")
+        if isinstance(exp, dict):
+            exp["command_prefix"] = prefix
+        return redirect(
+            f"/commands?flash=Prefix set to '{prefix}' - active on your next "
+            "command, no restart needed."
+        )
+
     # --- Actions (Phase 14 Action Mode — read-only panel) --------------
     @flask_app.get("/actions")
     def actions_page():

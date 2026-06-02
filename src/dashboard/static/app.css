@@ -639,7 +639,6 @@ body {
     radial-gradient(1100px 520px at 60% -120px,
        color-mix(in oklab, var(--accent) 6%, transparent), transparent 70%),
     var(--bg);
-  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -649,14 +648,14 @@ body {
     radial-gradient(1100px 520px at 60% -120px,
        color-mix(in oklab, var(--accent) 10%, transparent), transparent 70%),
     var(--bg);
-  background-attachment: fixed;
 }
 
-/* Topbar — frosted, sits above the ambient backdrop */
+/* Topbar — near-solid, sits above the ambient backdrop. A nearly-opaque
+   background reads the same as the old frosted bar but skips backdrop-filter
+   blur, which is re-evaluated on every repaint and is the most expensive
+   per-frame effect on weak GPUs. */
 .topbar {
-  background: color-mix(in oklab, var(--bg) 82%, transparent);
-  backdrop-filter: saturate(140%) blur(10px);
-  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  background: color-mix(in oklab, var(--bg) 94%, transparent);
   border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
   z-index: 5;
 }
@@ -1077,4 +1076,57 @@ kbd {
   .set-masthead,
   [data-page="settings"] .settings-tabs,
   [data-page="settings"] .set-card { animation: none !important; }
+}
+
+/* ====================================================================== *
+ * Premium motion layer — global, flash-free entrance choreography.
+ *
+ * The entrance is gated on `html.ef-js`, a class set by a tiny inline
+ * <head> script BEFORE first paint. That guarantees two things:
+ *   1. JS users never see a flicker — blocks start hidden (the keyframe's
+ *      `from` state held by `both` fill) and rise in on a staggered cadence.
+ *   2. No-JS users get the full page instantly — the gate never matches,
+ *      so nothing is ever left hidden.
+ * Honors prefers-reduced-motion (only runs under `no-preference`).
+ * The dynamic pieces (count-up numbers, fill-from-zero bars, gauge sweep,
+ * theme cross-fade) live in app.js and key off the same gate.
+ * ---------------------------------------------------------------------- */
+@keyframes ef-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Top-level page blocks rise in sequence. Grids are excluded here and
+     animate per-card below, so we get a finer cascade without the grid and
+     its children both animating (which would double up). */
+  html.ef-js .content > *:not(.wf-grid-top):not(.wf-grid-bot) {
+    animation: ef-rise .5s cubic-bezier(.2,.7,.2,1) both;
+  }
+  html.ef-js .wf-grid-top > *,
+  html.ef-js .wf-grid-bot > * {
+    animation: ef-rise .55s cubic-bezier(.2,.7,.2,1) both;
+  }
+
+  /* Sequence: header → tabs → (top-row cards) → (bottom-row cards) → trailing
+     blocks. Tuned so the whole page settles in well under a second. */
+  html.ef-js .content > *:nth-child(1) { animation-delay: .04s; }
+  html.ef-js .content > *:nth-child(2) { animation-delay: .10s; }
+  html.ef-js .content > *:nth-child(3) { animation-delay: .16s; }
+  html.ef-js .content > *:nth-child(4) { animation-delay: .22s; }
+  html.ef-js .content > *:nth-child(5) { animation-delay: .42s; }
+  html.ef-js .content > *:nth-child(n+6) { animation-delay: .46s; }
+
+  html.ef-js .wf-grid-top > *:nth-child(1) { animation-delay: .14s; }
+  html.ef-js .wf-grid-top > *:nth-child(2) { animation-delay: .20s; }
+  html.ef-js .wf-grid-top > *:nth-child(3) { animation-delay: .26s; }
+  html.ef-js .wf-grid-bot > *:nth-child(1) { animation-delay: .30s; }
+  html.ef-js .wf-grid-bot > *:nth-child(2) { animation-delay: .36s; }
+}
+
+/* Theme switch — a soft cross-fade of the whole page via the View
+   Transitions API (progressive enhancement; ignored where unsupported). */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation-duration: .38s; }
 }

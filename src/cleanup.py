@@ -435,11 +435,26 @@ class Cleaner:
         # Map lowercase trigger → expansion for lookup
         canon = {k.lower(): v for k, v in snippets.items()}
 
+        # Expansions that are structured values (URLs, emails) must be pasted
+        # verbatim — recasing them corrupts the value. Whisper capitalizes a
+        # standalone dictated trigger ("github" -> "GitHub"), which would
+        # otherwise turn "https://" into "Https://" (a broken link).
+        def _is_structured(s: str) -> bool:
+            if "://" in s:  # http(s)://, ftp://, etc.
+                return True
+            head = s.lstrip()[:8].lower()
+            if head.startswith(("www.", "mailto:", "tel:")):
+                return True
+            # Bare email: token@domain.tld with no whitespace.
+            return bool(_re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", s.strip()))
+
         def _sub(m: "_re.Match[str]") -> str:
             matched = m.group(1)
             repl = canon.get(matched.lower())
             if repl is None:
                 return matched
+            if _is_structured(repl):
+                return repl
             # Match the casing of the original: ALLCAPS, Capitalized, or lower.
             if matched.isupper() and len(matched) > 1:
                 return repl.upper()

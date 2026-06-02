@@ -137,9 +137,10 @@ _HTML = r"""<!doctype html>
   .node.hit circle { stroke:#fde68a; stroke-width:2.5px; }
   .node.hit text   { fill:#fef3c7; }
 
-  /* Pulse animation for search hits */
+  /* Pulse animation for search hits — finite so a left-open search doesn't
+     loop the compositor forever. Three pulses is enough to draw the eye. */
   @keyframes pulse { 0%,100% { stroke-opacity:1 } 50% { stroke-opacity:.35 } }
-  .node.hit circle { animation: pulse 1.4s ease-in-out infinite; }
+  .node.hit circle { animation: pulse 1.4s ease-in-out 3; }
 
   /* Floating controls (top-right) — Obsidian-minimal */
   .panel { position:fixed; top:12px; right:12px; display:flex; gap:6px;
@@ -375,6 +376,21 @@ function render() {
 
   // Approximate label width so collide separates labels too, not just circles.
   const labelW = d => Math.min(180, 7 * ((d.label || d.id).length));
+
+  // Cheap per-tick work: just push node/link positions to the DOM.
+  function applyPositions() {
+    linkAll.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+           .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    nodeAll.attr('transform', d => `translate(${d.x},${d.y})`);
+  }
+
+  // Hull + minimap recompute is the expensive part. Throttle it to every few
+  // ticks (a settling layout doesn't need them at 60fps), then do one final
+  // exact pass on 'end'. prefersReduced skips the animated settle entirely.
+  const prefersReduced =
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let _tickN = 0;
+
   sim = d3.forceSimulation(nodes)
     .force('link', d3.forceLink(links).id(d => d.id).distance(110).strength(.35))
     .force('charge', d3.forceManyBody().strength(-650).distanceMax(900))
@@ -384,15 +400,35 @@ function render() {
     .force('collide', d3.forceCollide()
             .radius(d => Math.max((d.size || 8) + 14, labelW(d) / 2 + 6))
             .strength(.9))
-    .alpha(1).alphaDecay(.025)
+    .alpha(1).alphaDecay(.04)          // settle faster → less total CPU
     .on('tick', () => {
-      linkAll.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-             .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-      nodeAll.attr('transform', d => `translate(${d.x},${d.y})`);
-      updateHulls();
-      updateMinimap();
+      applyPositions();
+      if (_tickN++ % 3 === 0) { updateHulls(); updateMinimap(); }
     })
-    .on('end', fitToView);
+    .on('end', () => { updateHulls(); updateMinimap(); fitToView(); });
+
+  // Reduced motion → run the layout to completion synchronously, paint once,
+  // stop. No animated settle, no per-frame CPU at all.
+  if (prefersReduced) {
+    sim.stop();
+    for (let i = 0; i < 220; i++) sim.tick();
+    applyPositions();
+    updateHulls();
+    updateMinimap();
+    fitToView();
+  }
+
+  // Pause the simulation timer when the page is backgrounded; resume only if
+  // it hadn't finished settling. Keeps CPU at ~0 behind other windows.
+  // Registered once (render() may run again on data reload).
+  if (!window._efGraphVis) {
+    window._efGraphVis = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!sim) return;
+      if (document.hidden) sim.stop();
+      else if (!prefersReduced && sim.alpha() > sim.alphaMin()) sim.restart();
+    });
+  }
 }
 
 // Compute bbox of all nodes and transform the zoom so they fit with padding.
