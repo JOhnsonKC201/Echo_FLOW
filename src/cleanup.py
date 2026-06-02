@@ -234,6 +234,10 @@ def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -
             return w
         # Match whole alphanumeric tokens so a token like "Migration2024" stays
         # intact (it won't match the simple-Title-Case pattern and is preserved).
+        # Note: flattening is per-word, so a multi-word proper noun whose head
+        # is an ordinary word ("New York") keeps the distinctive word ("York",
+        # protected) but lowercases the head -> "new York". Teach the head via a
+        # Fix-dialog edit if you need it preserved.
         s = _re.sub(r"[A-Za-z][\w']*", _flatten, s)
     # Capitalize first letter of every sentence.
     def _cap(m: "_re.Match[str]") -> str:

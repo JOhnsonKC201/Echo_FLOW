@@ -116,6 +116,24 @@ def test_backfill_casings_mines_user_edits_once(tmp_path):
     assert pm.backfill_casings_from_history() == 0
 
 
+def test_backfill_realistic_history(tmp_path):
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    _seed_dictations(db, [
+        ("i use github daily", "i use GitHub daily"),     # casing-only -> learn
+        ("we met sarah", "we met Sarah"),                  # casing-only -> learn
+        ("the migration ran", "the migration ran"),        # no edit -> ignore
+        ("deploy to staging", "deploy to production"),     # word change -> ignore
+        ("i like javascript", "i like JavaScript"),        # casing-only -> learn
+    ])
+    pm = PatternMiner(db)
+    seeded = pm.backfill_casings_from_history()
+    assert seeded == 3
+    _invalidate_casing_cache()
+    canon = pm.canonical_casings()
+    assert canon == {"github": "GitHub", "sarah": "Sarah", "javascript": "JavaScript"}
+
+
 # ----- Cleaner._apply_learned_casing + _finalize ---------------------------
 
 class _FakeMiner:
@@ -160,6 +178,28 @@ def test_finalize_protects_bundled_proper_nouns():
     assert "London" in out and "Tokyo" in out and "Docker" in out
     # ...while genuinely spurious Title-Case is still flattened.
     assert "Deployed" not in out and "Using" not in out
+
+
+def test_multiword_proper_noun_distinctive_word_survives():
+    from src.cleanup import _polish_text
+    # Per-word flatten: the distinctive word (York/Diego, protected) survives;
+    # the ordinary-word head (New/San) lowercases. Better than losing both.
+    protected = frozenset({"york", "diego"})
+    out = _polish_text("We flew to New York and San Diego last week.",
+                       protected=protected)
+    assert "York" in out and "Diego" in out
+    # A genuine storm still flattens fully.
+    out2 = _polish_text("Machine Learning Feeds Here The Most.", protected=protected)
+    assert "Machine learning feeds here the most" in out2
+
+
+def test_bundled_multiword_places_via_finalize():
+    c = _cleaner_with_canon({})
+    out = c._finalize("We Opened Offices In New York And South Korea.")
+    # Distinctive words protected by the bundled allowlist survive...
+    assert "York" in out and "Korea" in out
+    # ...while genuine verbs/nouns are flattened.
+    assert "Opened" not in out and "Offices" not in out
 
 
 def test_protect_common_nouns_can_be_disabled():

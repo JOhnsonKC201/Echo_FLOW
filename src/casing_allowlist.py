@@ -61,6 +61,17 @@ _PLACES_CITY = {
     "Diego", "Antonio", "Jose", "Phoenix", "Detroit", "Baltimore",
 }
 
+# Continents/regions and the unambiguous SECOND word of common multi-word
+# place names ("New York" -> York, "San Diego" -> Diego, "Saudi Arabia" ->
+# Arabia). The first word is often an ordinary word (New, San, South) that we
+# can't protect, but the distinctive second word carries the proper noun.
+_PLACES_REGION = {
+    "Africa", "Europe", "Asia", "Antarctica", "Oceania",
+    "York", "Orleans", "Jersey", "Hampshire", "Mexico", "Zealand",
+    "Kong", "Aires", "Janeiro", "Paulo", "Lanka", "Arabia", "Korea",
+    "Carolina", "Dakota", "Virginia", "Columbia", "Dorado",
+}
+
 # Common, unambiguous first names. Names that double as ordinary words
 # (Mark, Will, Bill, May, June, April, Grace, Rose, Joy, Hope, Faith, Dawn,
 # Summer, Crystal, Holly, Jasmine, Pearl, Mary's "merry"?) are EXCLUDED.
@@ -82,7 +93,7 @@ _NAMES = {
 def proper_nouns() -> frozenset[str]:
     """Lowercased set of bundled proper nouns to protect from flattening."""
     out: set[str] = set()
-    for group in (_TECH, _PLACES_COUNTRY, _PLACES_CITY, _NAMES):
+    for group in (_TECH, _PLACES_COUNTRY, _PLACES_CITY, _PLACES_REGION, _NAMES):
         out.update(w.lower() for w in group)
     return frozenset(out)
 
