@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Added
+- **Casing control.** Echo now learns a word's canonical casing from a single
+  Fix-dialog edit (`tiktok` → `TikTok` sticks forever) and aggressively flattens
+  spurious Title-Casing where Whisper/the LLM capitalized every word. Known
+  proper nouns are protected: learned casings, Dictionary terms, a bundled list
+  of common brands/places/names, and `I`. View and remove learned casings on the
+  Dictionary page. On first run the canon is seeded from past edits in history.
+  Config under `cleanup.casing`: `flatten_titlecase`, `learn_from_edits`,
+  `protect_common_nouns` (all default on).
+
+### Fixed
+- Successful cleanup output (LLM and fallback paths) is now casing/punctuation-
+  normalized — previously only the skip-clean fast path was, so model
+  Title-Casing could reach the paste buffer untouched. Raw-on-failure,
+  `provider: none`, and user-defined transform outputs are left verbatim.
+
+### Changed
+- The test suite now collects on headless/dep-light machines: `sounddevice` and
+  `pynput` are lazy-imported, and `tests/conftest.py` stubs leaf native shims
+  when absent. Added a fast minimal-deps CI lane.
+
 ### Removed
 - Vestigial `ruvector.db` at repo root. No `src/` module referenced it;
   the active vector store is the `embedding` BLOB column on the

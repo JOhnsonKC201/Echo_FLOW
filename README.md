@@ -77,6 +77,11 @@ Close and reopen your terminal so the variable loads (free key from https://cons
 
 It learns as you go. Every time you correct a dictation via the tray menu, that correction feeds back into the cleanup prompt. After a couple hundred dictations it knows your jargon, your names, and the way you tend to write.
 
+**Casing.** Echo keeps capitalization under control two ways:
+
+- **It learns a word's casing from one edit.** Fix `tiktok` → `TikTok` once in the tray "edit last dictation" dialog and every future `tiktok` is capitalized the same way — and protected from being lowercased. See and remove what it has learned on the **Dictionary** page under "Learned casings".
+- **It flattens accidental Title-Casing.** Whisper sometimes hears a whole sentence as "Every Word Capitalized". Echo lowercases mid-sentence words that aren't known proper nouns, so you get normal sentence case. "Known" means: casings you've taught, your Dictionary terms, a bundled list of common brands/places/names, and `I`. A proper noun Echo doesn't know yet (a person, a product) may be lowercased the first time — fix it once and it sticks. Prefer fewer surprises over fewer stray capitals? Set `cleanup.casing.flatten_titlecase: false`.
+
 ## Configuration
 
 Everything's in `config.yaml`. The interesting knobs:
@@ -85,6 +90,7 @@ Everything's in `config.yaml`. The interesting knobs:
 - `whisper.model`: `tiny`, `base`, `small`, `medium`, `large-v3-turbo`. Bigger = more accurate but slower. `auto` picks one based on whether you have a GPU.
 - `cleanup.provider`: `ollama` for the local LLM (default), `learned` for the LLM-free mode that uses your past corrections, `none` to skip cleanup and paste Whisper's raw output. (Regular dictation is local-only; Groq is reserved for Prompt-Engineering mode.)
 - `cleanup.profiles`: switches cleanup style based on which app is focused. Slack messages get casual punctuation, VS Code gets symbol-aware cleanup, Gmail gets fuller sentences.
+- `cleanup.casing`: `flatten_titlecase` (lowercase stray mid-sentence capitals), `learn_from_edits` (learn a word's casing from a single Fix-dialog edit), `protect_common_nouns` (shield a bundled list of common brands/places/names from flattening). All default on.
 
 ## Experimental
 
