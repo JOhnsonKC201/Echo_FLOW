@@ -3,10 +3,22 @@
 {% block content %}
 <h1 class="welcome">Snippets</h1>
 <div class="muted small" style="margin-bottom: 14px;">
-  Shortcode → phrase expansion. Say "btw" and Echo Flow types "by the way."
+  Shortcode → phrase expansion. Say a short code while dictating and Echo Flow types the full phrase.
 </div>
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="card" style="border-left: 3px solid var(--accent, #3eaf6f);">
+  <h2>How to use</h2>
+  <ol class="muted" style="margin: 6px 0 2px; padding-left: 20px; line-height: 1.7;">
+    <li>Add a short <strong>code</strong> and the <strong>expansion</strong> it stands for — e.g.
+      <span class="code-pill">github</span> → <code>https://github.com/JOhnsonKC201</code>.</li>
+    <li>While dictating, just <strong>say the code out loud</strong> (“github”, “my linkedin”) and Echo Flow
+      types the full phrase in its place.</li>
+    <li>Codes can be several words and expansions can be anything — URLs, emails, your address, boilerplate.
+      Adding lots at once? Use <strong>Bulk import</strong> below.</li>
+  </ol>
+</div>
 
 <div class="card">
   <h2>Add or update a snippet</h2>
