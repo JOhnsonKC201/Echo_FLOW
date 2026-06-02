@@ -7,7 +7,39 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Cancel superseded runs on the same ref so a quick succession of pushes
+# doesn't queue redundant CI.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Fast feedback: pure-logic suite on a minimal dependency set. All heavy
+  # libs (torch, faster-whisper, sentence-transformers) are lazy-imported and
+  # tests/conftest.py stubs the native shims (sounddevice, pynput, …), so the
+  # suite runs green in ~1 min without the multi-hundred-MB ML stack. The
+  # `pytest` job below remains the authoritative full-stack gate.
+  pytest-fast:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install minimal test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install flask pyyaml numpy requests pytest pytest-mock
+        shell: pwsh
+      - name: Run pytest (logic suite)
+        run: python -m pytest tests/ -q --tb=short
+        env:
+          GROQ_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+          OPENAI_API_KEY: ""
+        shell: pwsh
+
   pytest:
     runs-on: windows-latest
     strategy:
