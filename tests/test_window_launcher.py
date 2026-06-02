@@ -68,6 +68,19 @@ def test_save_window_state_falls_back_to_static_attrs(tmp_path, monkeypatch):
     assert data == {"width": 1280, "height": 820}
 
 
+def test_save_window_state_ignores_maximized_size(tmp_path, monkeypatch):
+    """A close while maximized reports screen-sized dims; those must NOT become
+    the persisted restore-down size (else it ratchets to full screen forever)."""
+    from src.dashboard import window as W
+    p = tmp_path / "state.json"
+    monkeypatch.setattr(W, "_STATE_FILE", p)
+    monkeypatch.setattr(W, "_primary_screen_size", lambda: (1920, 1080))
+    fake_win = types.SimpleNamespace(get_size=lambda: (1920, 1080), width=0, height=0)
+    W._save_window_state(fake_win)
+    data = json.loads(p.read_text(encoding="utf-8"))
+    assert data == {"width": 1280, "height": 820}  # default, not the maximized size
+
+
 def test_save_window_state_swallows_all_errors(tmp_path, monkeypatch):
     """Best-effort: must never propagate exceptions (it runs on window-close)."""
     from src.dashboard import window as W

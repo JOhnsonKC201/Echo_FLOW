@@ -274,8 +274,11 @@ def _meaningful_casing(word: str) -> bool:
     Accepts leading-capital ("Johnson"), internal caps ("TikTok", "iPhone"),
     and all-caps ("SQL"). Rejects empty / all-lowercase / non-alphabetic forms.
     """
+    # Strip apostrophes for the probe and allow digits so product/version names
+    # survive ("iOS17", "PostgreSQL15", "GPT4"). Other punctuation still fails
+    # isalnum, so trailing-punctuation artifacts ("word.") are rejected.
     core = word.replace("'", "")
-    if len(core) < 2 or not core.isalpha():
+    if len(core) < 2 or not core.isalnum() or not any(c.isalpha() for c in core):
         return False
     return word != word.lower()
 
@@ -458,7 +461,16 @@ class PatternMiner:
         casing — the same bar `record_casing` applies to learned edits.
         """
         word = (canonical or "").strip()
-        if not word or len(word.split()) != 1 or not _meaningful_casing(word):
+        # Teach the BASE word: "London's" -> "London". The apply path strips the
+        # possessive before lookup, so storing "london's" would be a dead row.
+        mp = re.match(r"^(.+?)('[sS]|')$", word)
+        if mp:
+            word = mp.group(1)
+        # Server-side length cap — the form's maxlength is client-only and a
+        # direct POST can bypass it; an oversized canon entry would run on every
+        # dictation's protected set + regex sub.
+        if (not word or len(word) > 80 or len(word.split()) != 1
+                or not _meaningful_casing(word)):
             return None
         import time as _t
         now = _t.time()
@@ -470,7 +482,11 @@ class PatternMiner:
                 VALUES (?, ?, 1, ?)
                 ON CONFLICT(word_lc) DO UPDATE SET
                     canonical = excluded.canonical,
-                    count = count + 1,
+                    -- A re-add with the SAME form is reinforcement (+1); a
+                    -- different casing is a corrective edit, not a reinforce,
+                    -- so the "Reinforced N times" badge stays honest.
+                    count = CASE WHEN canonical = excluded.canonical
+                                 THEN count + 1 ELSE count END,
                     updated_at = excluded.updated_at
                 """,
                 (word.lower(), word, now),

@@ -15,6 +15,23 @@
   PRODUCT_OVERVIEW previously said `/healthz`).
 
 ### Fixed
+- **Casing robustness pass.** Deterministic polish no longer corrupts
+  internal-caps brands during sentence-capping (`iOS`→`IOS`, `mRNA`→`MRNA`,
+  `macOS`, `iPhone15` are preserved); acronym comma-lists (`SQL, iOS, GDPR`)
+  keep their commas instead of being flattened by the comma-storm heuristic;
+  the storm pass no longer splits internal-caps words (`TikTok`→`tikTok`);
+  abbreviations (`U.S.`, `e.g.`) are not treated as sentence ends; curly/smart
+  apostrophes (’ ‘) are handled like ASCII for possessives; sentences capitalize
+  correctly through opening brackets/quotes, a leading apostrophe (`'twas`), and
+  a unicode ellipsis (`…`); non-Latin scripts (`Étienne`, Cyrillic) are
+  capitalized/flattened Unicode-aware; and honorifics (`Dr.`/`Mr.`/`Ms.`)
+  survive the flattener while names after a title are capitalized.
+- `add_casing` (dashboard) now strips a trailing possessive so `London's`
+  teaches `London`, enforces an 80-char server-side cap, accepts digit-bearing
+  tokens (`iOS17`), and only bumps the reinforcement count on a same-form
+  re-add (a corrective edit is no longer counted as reinforcement). The
+  `_flatten` possessive path also matches an ALLCAPS `'S` suffix, matching the
+  canon path.
 - **Possessives keep their casing.** `London's`/`Sam's` are no longer flattened
   to lowercase — the de-Title-Case pass now strips a trailing `'s`/`'` before
   the protected-word lookup. Learned casings also apply through the possessive

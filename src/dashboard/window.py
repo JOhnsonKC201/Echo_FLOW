@@ -108,6 +108,15 @@ def _save_window_state(window) -> None:
             w = int(getattr(window, "width", 0)) or 1280
         if h is None:
             h = int(getattr(window, "height", 0)) or 820
+        # The window opens maximized, so a captured size at/above the screen
+        # dimensions IS the maximized size, not a real restore-down size.
+        # Persisting it would ratchet the restore size up to full screen every
+        # session. Keep the previous saved restore size (or the default).
+        sw, sh = _primary_screen_size()
+        if w >= sw or h >= sh:
+            prev = _load_window_state()
+            w = int(prev.get("width", 1280))
+            h = int(prev.get("height", 820))
         state = {"width": w, "height": h}
         _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         _STATE_FILE.write_text(json.dumps(state), encoding="utf-8")

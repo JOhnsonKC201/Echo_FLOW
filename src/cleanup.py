@@ -1,11 +1,52 @@
 """LLM cleanup: removes fillers, fixes punctuation, applies tone profile."""
 from __future__ import annotations
 
+import re
 import requests
 
 from . import log as wlog
 from . import notify
 _log = wlog.get("cleanup")
+
+
+# --- Casing helpers (shared by _polish_text and Cleaner._apply_learned_casing) ---
+# Apostrophe glyphs Whisper / LLMs emit interchangeably: ASCII ', and the
+# curly U+2019 / U+2018. Treated as equivalent for possessive + token handling.
+_APOS = "'’‘"
+# A whole word token: a Unicode letter start (never a digit/underscore) then
+# word chars + apostrophes. Keeps non-Latin words and "Driver’s" as one token.
+_WORD_RE = r"[^\W\d_][\w" + _APOS + r"]*"
+# Canon applier matches the same shape but may start on a digit (e.g. version
+# tokens) — it only forces an exact learned word, so a looser start is fine.
+_CANON_TOKEN_RE = r"[\w" + _APOS + r"]+"
+# Trailing possessive: "'s" / "'S" / bare "'" with any apostrophe glyph.
+_POSSESSIVE_RE = r"^(.+?)([" + _APOS + r"][sS]|[" + _APOS + r"])$"
+# Optional opening punctuation a sentence can start behind: ( [ " ' “ ” ‘ ’.
+_OPENERS = r"[(\[\"'“”‘’]"
+# Sentence boundary: string start, or . ! ? … + whitespace; then optional
+# openers; then the first word. … (U+2026) counts as a terminator.
+_SENT_RE = re.compile(r"(^|[.!?…]\s+)(" + _OPENERS + r"*)(\w[\w" + _APOS + r"]*)")
+# Honorific abbreviations that are legitimately capitalized mid-sentence.
+_HONORIFICS = frozenset({"mr", "mrs", "ms", "dr", "prof", "st", "mt", "sr", "jr"})
+# Abbreviations whose trailing period is NOT a sentence end (so the next word
+# is not auto-capitalized). Compared lowercased. Honorifics (Dr./Mr./Ms.) are
+# deliberately NOT here — a name after a title SHOULD be capitalized.
+_ABBREV = ("u.s.", "u.k.", "e.g.", "i.e.", "etc.", "vs.", "a.m.", "p.m.")
+
+
+def _is_simple_title(w: str) -> bool:
+    """True for a plain Title-Case word ("London", "Étienne", "Мир").
+
+    Unicode-aware. Rejects ALLCAPS ("SQL"), internal-caps brands ("TikTok",
+    "iOS", "mRNA"), and anything with digits, so the de-Title-Case flattener
+    only touches ordinary capitalized words.
+    """
+    if len(w) < 2 or not w[0].isupper():
+        return False
+    rest = w[1:]
+    for ch in _APOS:
+        rest = rest.replace(ch, "")
+    return bool(rest) and rest.isalpha() and rest.islower()
 
 
 SYSTEM_PROMPTS = {
@@ -199,23 +240,34 @@ def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -
         # mostly ≤ 12 chars). Real prose comma lists have at least some
         # longer phrases between commas.
         def _is_storm_cell(c: str) -> bool:
-            stripped = c.rstrip(".?!").strip("'\"")
+            stripped = c.rstrip(".?!").strip("'\"" + _APOS)
             words = stripped.split()
             if not (1 <= len(words) <= 2):
                 return False
-            # Alphabetic / apostrophe-only (allow "don't"), short.
-            if not all(w.replace("'", "").isalpha() for w in words):
-                return False
+            for w in words:
+                core = w
+                for ch in _APOS:
+                    core = core.replace(ch, "")
+                if not core.isalpha():
+                    return False
+                # The storm signature is Title/Capitalized words, NOT ALLCAPS
+                # acronyms (SQL, GDPR) or internal-caps brands (iOS, mRNA) —
+                # those are real comma lists; leave their commas alone.
+                if core.isupper():
+                    return False
+                if core[:1].islower() and core != core.lower():
+                    return False
             return len(stripped) <= 14
         storm_cells = sum(1 for c in cells if _is_storm_cell(c))
         if cells and storm_cells / len(cells) >= 0.8:
             s = _re.sub(r"\s*,\s*", " ", s)
             s = _re.sub(r"\s+", " ", s).strip()
             # Re-lowercase mid-sentence Title Case so the sentence cap below
-            # is the only thing assigning capitalization.
+            # is the only thing assigning capitalization. The negative lookahead
+            # keeps internal-caps brands intact ("TikTok", not "tikTok").
             def _lower_mid(m: "_re.Match[str]") -> str:
                 return m.group(1) + m.group(2).lower()
-            s = _re.sub(r"(\s)([A-Z][a-z]+)", _lower_mid, s)
+            s = _re.sub(r"(\s)([A-Z][a-z]+)(?![A-Za-z])", _lower_mid, s)
     # Collapse internal whitespace.
     s = _re.sub(r"\s+", " ", s)
     # Aggressive de-Title-Case (only when a `protected` allowlist is supplied):
@@ -228,32 +280,48 @@ def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -
         def _flatten(m: "_re.Match[str]") -> str:
             w = m.group(0)
             # Split off a trailing possessive ("London's" -> base "London",
-            # suffix "'s") so the suffix can't defeat the protected lookup or
-            # the Title-Case shape test. The base is what's protected/known.
+            # suffix "'s", any apostrophe glyph) so the suffix can't defeat the
+            # protected lookup or the Title-Case shape test; normalize the
+            # suffix's S to lowercase ("Driver'S" -> "driver's").
             base, suffix = w, ""
-            mp = _re.match(r"^(.+?)('s|')$", w)
+            mp = _re.match(_POSSESSIVE_RE, w)
             if mp:
-                base, suffix = mp.group(1), mp.group(2)
-            if base.lower() in protected:
-                return w
-            if len(base) > 1 and _re.match(r"^[A-Z][a-z']*$", base):
+                base, suffix = mp.group(1), mp.group(2).lower()
+            low = base.lower()
+            if low in protected or low in _HONORIFICS:
+                return base + suffix
+            if _is_simple_title(base):
                 return base.lower() + suffix
-            return w
-        # Match whole alphanumeric tokens so a token like "Migration2024" stays
-        # intact (it won't match the simple-Title-Case pattern and is preserved).
-        # Note: flattening is per-word, so a multi-word proper noun whose head
+            return base + suffix
+        # Per-word flatten. Internal-caps ("TikTok", "iOS") and ALLCAPS ("SQL")
+        # are preserved by _is_simple_title. A multi-word proper noun whose head
         # is an ordinary word ("New York") keeps the distinctive word ("York",
-        # protected) but lowercases the head -> "new York". Teach the head via a
+        # protected) but lowercases the head -> "new York"; teach the head via a
         # Fix-dialog edit if you need it preserved.
-        s = _re.sub(r"[A-Za-z][\w']*", _flatten, s)
-    # Capitalize first letter of every sentence.
+        s = _re.sub(_WORD_RE, _flatten, s)
+
+    # Capitalize the first letter of each sentence. Starts at string start or
+    # after . ! ? … + whitespace, optionally through opening brackets/quotes or
+    # a leading apostrophe ('twas). Internal-caps brands (iOS, mRNA) and words
+    # after a known abbreviation (U.S.) are left untouched. Unicode-aware.
     def _cap(m: "_re.Match[str]") -> str:
-        return m.group(1) + m.group(2).upper()
-    s = _re.sub(r"(^|[.!?]\s+)([a-z])", _cap, s)
+        lead, opener, word = m.group(1), m.group(2), m.group(3)
+        boundary = lead[:1]
+        if boundary in ".!?…":
+            check = (m.string[:m.start()] + boundary).rstrip().lower()
+            if any(check.endswith(a) for a in _ABBREV):
+                return m.group(0)
+        core = word
+        for ch in _APOS:
+            core = core.replace(ch, "")
+        if any(c.isupper() for c in core[1:]):
+            return lead + opener + word          # iOS, mRNA, iPhone15
+        return lead + opener + word[:1].upper() + word[1:]
+    s = _SENT_RE.sub(_cap, s)
     # Standalone "i" → "I".
     s = _re.sub(r"\bi\b", "I", s)
     # Ensure end punctuation (skip for very short utterances and code-like content).
-    if len(s) > 3 and s[-1] not in ".!?;:,\"')]}":
+    if len(s) > 3 and s[-1] not in ".!?;:,\"')]}…":
         s += "."
     return s
 
@@ -881,13 +949,13 @@ class Cleaner:
             # -> "TikTok" + "'s"). The base must carry an apostrophe to split,
             # so a plain word ending in s ("rocks") is never touched.
             base, suffix = tok, ""
-            mp = _re.match(r"^(.+?)('[sS]|')$", tok)
+            mp = _re.match(_POSSESSIVE_RE, tok)
             if mp:
                 base, suffix = mp.group(1), mp.group(2).lower()
             repl = canon.get(base.lower())
             return (repl + suffix) if repl is not None else tok
 
-        return _re.sub(r"\b[\w']+\b", _sub, text)
+        return _re.sub(_CANON_TOKEN_RE, _sub, text)
 
     def _finalize(self, text: str, style: str = "default") -> str:
         """Authoritative casing pass applied on every clean() return path.

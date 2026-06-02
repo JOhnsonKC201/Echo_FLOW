@@ -68,6 +68,32 @@ def test_polish_internal_caps_possessive_preserved():
     assert "TikTok's" in out
 
 
+def test_polish_uppercase_S_possessive_normalized():
+    from src.cleanup import _polish_text
+    # Whisper's Title-Case storm capitalizes the possessive S too. A protected
+    # noun keeps its case; the suffix normalizes to lowercase 's.
+    out = _polish_text("I Loved London'S Cafes.", protected=frozenset({"london"}))
+    assert "London's" in out and "London'S" not in out
+    assert "loved" in out and "cafes" in out
+    # An ordinary word flattens fully, suffix included.
+    out2 = _polish_text("The Manager'S Plan Failed.", protected=frozenset())
+    assert "manager's" in out2 and "Manager'S" not in out2
+
+
+def test_polish_bare_apostrophe_possessive():
+    from src.cleanup import _polish_text
+    # Plural/trailing-apostrophe possessive: protected noun preserved, suffix kept.
+    out = _polish_text("We Crossed Texas' Border.", protected=frozenset({"texas"}))
+    assert "Texas'" in out and "border" in out
+    out2 = _polish_text("The Managers' Plan Failed.", protected=frozenset())
+    assert "managers'" in out2 and "Managers'" not in out2
+
+
+def test_apply_learned_casing_bare_apostrophe():
+    c = _cleaner_with_canon({"tiktok": "TikTok"})
+    assert c._apply_learned_casing("the tiktok' brand") == "the TikTok' brand"
+
+
 # ----- casing-diff + canon store -------------------------------------------
 
 def test_diff_casing_pairs_extracts_casing_only_change():
@@ -115,7 +141,46 @@ def test_add_casing_rejects_garbage(tmp_path):
     assert pm.add_casing("two Words") is None       # not a single token
     assert pm.add_casing("") is None
     assert pm.add_casing("   ") is None
-    assert pm.add_casing("a1") is None              # not alphabetic
+    assert pm.add_casing("a1") is None              # no meaningful capital
+    assert pm.add_casing("A" + "a" * 100) is None   # over the 80-char cap
+
+
+def test_add_casing_strips_possessive(tmp_path):
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    sqlite3.connect(db).close()
+    pm = PatternMiner(db)
+    # "London's" teaches the base word so the canon row isn't dead weight
+    # (the apply path strips the possessive before lookup).
+    assert pm.add_casing("London's") == "London"
+    assert pm.add_casing("James'") == "James"
+    _invalidate_casing_cache()
+    canon = pm.canonical_casings()
+    assert canon.get("london") == "London" and "london's" not in canon
+
+
+def test_add_casing_allows_digit_tokens(tmp_path):
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    sqlite3.connect(db).close()
+    pm = PatternMiner(db)
+    assert pm.add_casing("iOS17") == "iOS17"
+    _invalidate_casing_cache()
+    assert pm.canonical_casings().get("ios17") == "iOS17"
+
+
+def test_add_casing_count_distinguishes_reinforce_from_override(tmp_path):
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    sqlite3.connect(db).close()
+    pm = PatternMiner(db)
+    pm.add_casing("TikTok")            # count 1
+    pm.add_casing("TikTok")            # same form -> reinforce -> count 2
+    pm.add_casing("TIKTOK")            # corrective override -> count unchanged
+    _invalidate_casing_cache()
+    row = next(c for c in pm.list_casings() if c["word_lc"] == "tiktok")
+    assert row["canonical"] == "TIKTOK"   # override applied
+    assert row["count"] == 2              # not inflated to 3 by the edit
 
 
 def test_pattern_miner_list_and_delete_casing(tmp_path):
