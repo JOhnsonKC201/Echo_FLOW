@@ -448,6 +448,37 @@ class PatternMiner:
         _invalidate_casing_cache()
         return len(pairs)
 
+    def add_casing(self, canonical: str) -> str | None:
+        """Teach a casing directly (dashboard path), bypassing the Fix dialog.
+
+        `canonical` is a single word with the desired casing (e.g. "TikTok").
+        Re-adding an existing word overrides its canonical form, so this also
+        serves as the edit control. Returns the stored form, or None when the
+        input isn't a single token carrying meaningful (non-all-lowercase)
+        casing — the same bar `record_casing` applies to learned edits.
+        """
+        word = (canonical or "").strip()
+        if not word or len(word.split()) != 1 or not _meaningful_casing(word):
+            return None
+        import time as _t
+        now = _t.time()
+        with closing(self._conn()) as conn:
+            _ensure_casing_table(conn)
+            conn.execute(
+                """
+                INSERT INTO casing_canon (word_lc, canonical, count, updated_at)
+                VALUES (?, ?, 1, ?)
+                ON CONFLICT(word_lc) DO UPDATE SET
+                    canonical = excluded.canonical,
+                    count = count + 1,
+                    updated_at = excluded.updated_at
+                """,
+                (word.lower(), word, now),
+            )
+            conn.commit()
+        _invalidate_casing_cache()
+        return word
+
     def canonical_casings(self) -> dict[str, str]:
         """Return {word_lowercase: CanonicalForm}. Cached 60s (process-wide)."""
         global _casing_cache, _casing_cache_ts

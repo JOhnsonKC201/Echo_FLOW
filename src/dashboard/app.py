@@ -405,6 +405,31 @@ def make_app(app_ref, bound_port: int | None = None):
                 msg = f"Error: {e}"
         return redirect(f"/dictionary?flash={msg}")
 
+    @flask_app.post("/dictionary/casing/add")
+    def dictionary_casing_add():
+        from flask import request as _req, redirect
+        word = _req.form.get("casing", "").strip()
+        pm = getattr(app_ref, "pattern_miner", None)
+        msg = ""
+        if pm is None:
+            msg = "Learning disabled — cannot add casings."
+        elif not word:
+            msg = "Empty casing ignored."
+        else:
+            try:
+                stored = pm.add_casing(word)
+                if stored:
+                    cleaner = getattr(app_ref, "cleaner", None)
+                    if cleaner is not None and hasattr(cleaner, "invalidate_casing_cache"):
+                        cleaner.invalidate_casing_cache()
+                    msg = f"Learned casing {stored!r}."
+                else:
+                    msg = "Enter one word with a capital letter (e.g. TikTok)."
+            except Exception as e:
+                _log.warning("casing add failed: %s", e)
+                msg = f"Error: {e}"
+        return redirect(f"/dictionary?flash={msg}")
+
     @flask_app.post("/dictionary/casing/delete")
     def dictionary_casing_delete():
         from flask import request as _req, redirect

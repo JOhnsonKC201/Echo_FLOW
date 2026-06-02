@@ -3,6 +3,24 @@
 ## Unreleased
 
 ### Added
+- **Add a casing from the dashboard.** The Dictionary page now has an "Add
+  casing" form, so you can teach `GitHub`/`iPhone` directly without waiting for
+  a dictation to fix. Re-adding a word overrides its canonical form (doubles as
+  an edit), and each entry shows its reinforcement count.
+
+### Changed
+- The dashboard window now opens **maximized** (fills the screen) instead of a
+  centered 1280×820 window. The saved size is kept as the restore-down size.
+- Health-check route documented correctly as `/api/healthz` (README and
+  PRODUCT_OVERVIEW previously said `/healthz`).
+
+### Fixed
+- **Possessives keep their casing.** `London's`/`Sam's` are no longer flattened
+  to lowercase — the de-Title-Case pass now strips a trailing `'s`/`'` before
+  the protected-word lookup. Learned casings also apply through the possessive
+  (`tiktok's` → `TikTok's`).
+
+### Added
 - **Casing control.** Echo now learns a word's canonical casing from a single
   Fix-dialog edit (`tiktok` → `TikTok` sticks forever) and aggressively flattens
   spurious Title-Casing where Whisper/the LLM capitalized every word. Known

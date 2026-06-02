@@ -189,8 +189,11 @@ def main(argv: list[str] | None = None) -> int:
         y = max(0, (sh - height) // 2)
         # Inline splash paints on the first frame so there is no white flash
         # while the dashboard's heavier templates render.
-        win = webview.create_window(
-            "Echo Flow",
+        # Open maximized so the dashboard fills the screen on launch; the saved
+        # width/height become the "restore down" size. `maximized` is honored by
+        # current PyWebView — older builds raise TypeError, so we fall back to
+        # an explicit win.maximize() once the backend is up (see below).
+        create_kwargs = dict(
             html=_SPLASH_HTML,
             width=width, height=height, x=x, y=y,
             min_size=(900, 600),
@@ -198,11 +201,20 @@ def main(argv: list[str] | None = None) -> int:
             text_select=True,
         )
         try:
+            win = webview.create_window("Echo Flow", maximized=True, **create_kwargs)
+        except TypeError:
+            win = webview.create_window("Echo Flow", **create_kwargs)
+        try:
             win.events.closing += lambda: _save_window_state(win)
         except Exception:
             pass
-        # Swap from splash → real dashboard once webview is up.
+        # Swap from splash → real dashboard once webview is up, and ensure the
+        # window is maximized even on PyWebView builds that ignored the kwarg.
         def _swap_to_dashboard():
+            try:
+                win.maximize()
+            except Exception:
+                pass
             try:
                 win.load_url(url)
             except Exception:

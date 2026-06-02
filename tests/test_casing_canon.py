@@ -42,6 +42,32 @@ def test_polish_none_protected_is_legacy_no_flatten():
     assert _polish_text(s) == "Machine Learning Is Great."
 
 
+# ----- possessives: a protected proper noun keeps its case in "Noun's" -------
+
+def test_polish_protects_possessive_of_protected_noun():
+    from src.cleanup import _polish_text
+    # "London's" must survive: the possessive 's must not defeat the protected
+    # lookup (which only knows the base word "london").
+    out = _polish_text("We Studied London's History.", protected=frozenset({"london"}))
+    assert "London's" in out
+    assert "studied" in out and "history" in out  # storm still flattened
+
+
+def test_polish_flattens_unprotected_possessive():
+    from src.cleanup import _polish_text
+    # An ordinary mid-sentence possessive is still flattened, suffix preserved.
+    out = _polish_text("The Manager's Plan Failed.", protected=frozenset())
+    assert "manager's" in out and "plan" in out and "failed" in out
+    assert "Manager's" not in out
+
+
+def test_polish_internal_caps_possessive_preserved():
+    from src.cleanup import _polish_text
+    # "TikTok's" already survives (internal cap), but lock it in.
+    out = _polish_text("I Watched TikTok's Feed.", protected=frozenset())
+    assert "TikTok's" in out
+
+
 # ----- casing-diff + canon store -------------------------------------------
 
 def test_diff_casing_pairs_extracts_casing_only_change():
@@ -63,6 +89,33 @@ def test_pattern_miner_casing_roundtrip(tmp_path):
     _invalidate_casing_cache()  # bust the 60s process cache for the assert
     canon = pm.canonical_casings()
     assert canon.get("tiktok") == "TikTok"
+
+
+def test_add_casing_directly(tmp_path):
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    sqlite3.connect(db).close()
+    pm = PatternMiner(db)
+    # Teach a casing straight from the dashboard, no Fix-dialog round trip.
+    assert pm.add_casing("TikTok") == "TikTok"
+    _invalidate_casing_cache()
+    assert pm.canonical_casings().get("tiktok") == "TikTok"
+    # Re-adding the same word with new casing overrides it (acts as an edit).
+    assert pm.add_casing("TIKTOK") == "TIKTOK"
+    _invalidate_casing_cache()
+    assert pm.canonical_casings().get("tiktok") == "TIKTOK"
+
+
+def test_add_casing_rejects_garbage(tmp_path):
+    from src.learn import PatternMiner
+    db = str(tmp_path / "h.db")
+    sqlite3.connect(db).close()
+    pm = PatternMiner(db)
+    assert pm.add_casing("alllower") is None       # no meaningful casing
+    assert pm.add_casing("two Words") is None       # not a single token
+    assert pm.add_casing("") is None
+    assert pm.add_casing("   ") is None
+    assert pm.add_casing("a1") is None              # not alphabetic
 
 
 def test_pattern_miner_list_and_delete_casing(tmp_path):
@@ -159,6 +212,25 @@ def test_apply_learned_casing_forces_canonical_form():
     assert c._apply_learned_casing("i opened tiktok") == "i opened TikTok"
     assert c._apply_learned_casing("I OPENED TIKTOK") == "I OPENED TikTok"
     assert c._apply_learned_casing("Tiktok rocks") == "TikTok rocks"
+
+
+def test_apply_learned_casing_handles_possessive():
+    c = _cleaner_with_canon({"tiktok": "TikTok"})
+    # A learned casing must apply through the possessive 's.
+    assert c._apply_learned_casing("i saw tiktok's algorithm") == "i saw TikTok's algorithm"
+    # ALLCAPS possessive normalizes the suffix to lowercase 's.
+    assert c._apply_learned_casing("TIKTOK'S reach") == "TikTok's reach"
+    # A plain word ending in s (no apostrophe) is untouched by the strip.
+    assert c._apply_learned_casing("tiktok rocks") == "TikTok rocks"
+
+
+def test_finalize_protects_possessive_via_canon_and_bundle():
+    c = _cleaner_with_canon({"tiktok": "TikTok"})
+    out = c._finalize("I Studied Tiktok's Algorithm In London's Cafes.")
+    assert "TikTok's" in out          # canon applied through the possessive
+    assert "London's" in out          # bundled proper noun protected through it
+    assert "studied" in out and "algorithm" in out and "cafes" in out
+    assert "Studied" not in out and "Algorithm" not in out
 
 
 def test_finalize_applies_canon_and_protects_it_from_flatten():

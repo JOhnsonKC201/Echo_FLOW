@@ -227,10 +227,17 @@ def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -
     if protected is not None:
         def _flatten(m: "_re.Match[str]") -> str:
             w = m.group(0)
-            if w.lower() in protected:
+            # Split off a trailing possessive ("London's" -> base "London",
+            # suffix "'s") so the suffix can't defeat the protected lookup or
+            # the Title-Case shape test. The base is what's protected/known.
+            base, suffix = w, ""
+            mp = _re.match(r"^(.+?)('s|')$", w)
+            if mp:
+                base, suffix = mp.group(1), mp.group(2)
+            if base.lower() in protected:
                 return w
-            if len(w) > 1 and _re.match(r"^[A-Z][a-z']*$", w):
-                return w.lower()
+            if len(base) > 1 and _re.match(r"^[A-Z][a-z']*$", base):
+                return base.lower() + suffix
             return w
         # Match whole alphanumeric tokens so a token like "Migration2024" stays
         # intact (it won't match the simple-Title-Case pattern and is preserved).
@@ -870,8 +877,15 @@ class Cleaner:
 
         def _sub(m: "_re.Match[str]") -> str:
             tok = m.group(0)
-            repl = canon.get(tok.lower())
-            return repl if repl is not None else tok
+            # Apply the canon through a possessive ("tiktok's" -> base "tiktok"
+            # -> "TikTok" + "'s"). The base must carry an apostrophe to split,
+            # so a plain word ending in s ("rocks") is never touched.
+            base, suffix = tok, ""
+            mp = _re.match(r"^(.+?)('[sS]|')$", tok)
+            if mp:
+                base, suffix = mp.group(1), mp.group(2).lower()
+            repl = canon.get(base.lower())
+            return (repl + suffix) if repl is not None else tok
 
         return _re.sub(r"\b[\w']+\b", _sub, text)
 

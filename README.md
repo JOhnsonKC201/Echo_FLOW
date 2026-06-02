@@ -3,7 +3,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20iOS-1f6fd0)
 ![audio](https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a)
 ![cloud](https://img.shields.io/badge/cloud-opt--in%20only-6c6a62)
-![tests](https://img.shields.io/badge/tests-690%20passing-3eaf6f)
+![tests](https://img.shields.io/badge/tests-757%20passing-3eaf6f)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 A dictation app I built for my own machine because the commercial ones charge monthly fees and send my audio to their servers. This one runs entirely on your computer — your audio never leaves the machine unless you explicitly opt into a cloud feature.
@@ -79,7 +79,7 @@ It learns as you go. Every time you correct a dictation via the tray menu, that 
 
 **Casing.** Echo keeps capitalization under control two ways:
 
-- **It learns a word's casing from one edit.** Fix `tiktok` → `TikTok` once in the tray "edit last dictation" dialog and every future `tiktok` is capitalized the same way — and protected from being lowercased. See and remove what it has learned on the **Dictionary** page under "Learned casings".
+- **It learns a word's casing from one edit.** Fix `tiktok` → `TikTok` once in the tray "edit last dictation" dialog and every future `tiktok` is capitalized the same way — and protected from being lowercased, including in possessive form (`TikTok's`). See, add, and remove casings on the **Dictionary** page under "Learned casings" — you can teach one directly there (`GitHub`, `iPhone`) without waiting for a dictation, and re-adding a word overrides its casing.
 - **It flattens accidental Title-Casing.** Whisper sometimes hears a whole sentence as "Every Word Capitalized". Echo lowercases mid-sentence words that aren't known proper nouns, so you get normal sentence case. "Known" means: casings you've taught, your Dictionary terms, a bundled list of common brands/places/names, and `I`. A proper noun Echo doesn't know yet (a person, a product) may be lowercased the first time — fix it once and it sticks. Prefer fewer surprises over fewer stray capitals? Set `cleanup.casing.flatten_titlecase: false`.
 
 ## Configuration
@@ -196,7 +196,7 @@ Review the pairs at `http://127.0.0.1:8766/teacher` before you trust the loop wh
 ## Health check
 
 ```
-curl http://127.0.0.1:8766/healthz
+curl http://127.0.0.1:8766/api/healthz
 ```
 
 Returns daemon liveness, current phase, and which optional features are wired (without exposing keys). Useful for tray watchdogs and installers.

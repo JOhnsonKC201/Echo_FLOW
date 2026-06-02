@@ -145,7 +145,7 @@ run.bat                  :: launch (first run downloads the Whisper model)
 ollama pull qwen2.5:3b-instruct   :: optional local cleanup LLM (recommended)
 ```
 
-Health check: `curl http://127.0.0.1:8766/healthz` returns daemon liveness, current
+Health check: `curl http://127.0.0.1:8766/api/healthz` returns daemon liveness, current
 phase, and which optional features are wired — without exposing keys.
 
 ---

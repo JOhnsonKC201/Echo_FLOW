@@ -46,6 +46,29 @@ def test_dashboard_lists_and_deletes_learned_casing(tmp_path):
     assert "tiktok" not in pm.canonical_casings()
 
 
+def test_dashboard_adds_casing_directly(tmp_path):
+    h = History(str(tmp_path / "h.db"))
+    pm = PatternMiner(str(tmp_path / "h.db"))
+    client = _client(h, pm)
+    hdr = {"Host": "127.0.0.1:8766"}
+
+    # Add a casing straight from the dashboard form.
+    r = client.post("/dictionary/casing/add", data={"casing": "GitHub"},
+                    headers=hdr, follow_redirects=False)
+    assert r.status_code in (302, 303)
+    _invalidate_casing_cache()
+    assert pm.canonical_casings().get("github") == "GitHub"
+
+    # It now renders on the Dictionary page.
+    body = client.get("/dictionary", headers=hdr).get_data(as_text=True)
+    assert "GitHub" in body
+
+    # Garbage input is rejected without creating a row.
+    client.post("/dictionary/casing/add", data={"casing": "plainword"}, headers=hdr)
+    _invalidate_casing_cache()
+    assert "plainword" not in pm.canonical_casings()
+
+
 def test_full_pipeline_flattens_titlecase_and_honors_canon(tmp_path, monkeypatch):
     """The reported bug + the fix, through real clean() wiring."""
     from src.cleanup import Cleaner
