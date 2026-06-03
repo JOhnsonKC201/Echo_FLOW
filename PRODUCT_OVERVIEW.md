@@ -154,8 +154,9 @@ phase, and which optional features are wired — without exposing keys.
 
 - **Current line:** `0.1.0` (2026-05-20) plus an unreleased line that enforces
   local-only by default and ships the Phase 14 Action Layer.
-- **Tests:** 650+ passing, covering dictation, actions, tags, notes, grading,
-  snippet expansion, A/B logging, veto behavior, and the action-layer security model.
+- **Tests:** 833 passing, covering dictation, cleanup/casing fallback paths,
+  actions, tags, notes, grading, snippet expansion, A/B logging, veto behavior,
+  and the action-layer security model.
 - **Cost:** nothing when run fully local. Groq is free at single-human speaking
   volumes; the Anthropic/OpenAI cleanup paths cost real money per call and are
   strictly opt-in.
