@@ -52,13 +52,14 @@ def _mirror(cfg: dict, parts: list[str], value: Any) -> None:
 def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, log) -> None:
     from flask import render_template, request, redirect, jsonify
 
-    theme = dcfg.get("theme", "dark")
-
     def _render(sub_active: str, **extra):
+        # Read the theme live on every render — capturing it once at register()
+        # time froze the settings pages on the startup theme, so a toggle made
+        # elsewhere wasn't reflected here until restart.
         return render_template(
             f"settings/{sub_active}.html",
             sections=SECTIONS, active="settings", sub_active=sub_active,
-            theme=theme, flash=request.args.get("flash", ""),
+            theme=dcfg.get("theme", "dark"), flash=request.args.get("flash", ""),
             **extra,
         )
 

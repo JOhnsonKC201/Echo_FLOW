@@ -90,17 +90,16 @@ def backlinks_for(history, retriever, note_id: int,
                 (note.dictation_id,),
             ).fetchone()
             if src and src[0]:
-                results = retriever.search(src[0])
-                for raw, cleaned, sim in results:
+                # Use the retriever's real primary keys — recovering the row by
+                # re-querying on raw_text is wrong (raw_text isn't unique and
+                # collides across repeated utterances, linking the wrong row).
+                results = retriever.search_with_ids(src[0])
+                for rid, raw, cleaned, sim in results:
                     if sim < min_similarity:
                         continue
-                    row = history.conn.execute(
-                        "SELECT id FROM dictations WHERE raw_text = ? AND id != ? "
-                        "ORDER BY ts DESC LIMIT 1",
-                        (raw, note.dictation_id),
-                    ).fetchone()
-                    if row:
-                        out[int(row[0])] = (int(row[0]), cleaned, sim, "semantic")
+                    if rid == note.dictation_id:
+                        continue
+                    out[int(rid)] = (int(rid), cleaned, sim, "semantic")
         except Exception as e:
             import logging
             logging.getLogger("wispr.notes").warning("semantic backlinks failed: %s", e)

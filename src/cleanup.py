@@ -789,10 +789,14 @@ class Cleaner:
                             out = self._via_ollama(prompt, text, max_tokens=max_tokens_override, style=style)
                         except Exception as e:
                             _log.warning("learned→ollama fallback failed: %s", e)
-                            return text
+                            # Keep the user's words, but still normalize casing —
+                            # never surface unflattened "Every Word Capitalized".
+                            return self._finalize(self._expand_snippets(text), style)
                     else:
-                        return text
+                        return self._finalize(self._expand_snippets(text), style)
             else:
+                # Unknown / "none" provider: the user opted out of cleanup —
+                # honor it as a true raw passthrough (no casing/punctuation pass).
                 return text
             if style != "prompt" and self._looks_hallucinated(text, out, style):
                 _log.warning(
@@ -804,8 +808,14 @@ class Cleaner:
                     "Model went off-track; pasted your raw words instead.",
                     "warning",
                 )
-                # Raw passthrough — don't finalize/polish the user's own words.
-                return self._expand_snippets(text)
+                # Raw passthrough — we keep the user's WORDS (the model went
+                # off-track, so its rewrite is discarded), but still run the
+                # deterministic casing/punctuation pass. _finalize is LLM-free
+                # and content-preserving: it only fixes capitalization and end
+                # punctuation, never substitutes words. Skipping it here was the
+                # bug where Whisper's "Every Word Capitalized" output reached the
+                # user unflattened whenever the guard tripped.
+                return self._finalize(self._expand_snippets(text), style)
             out_expanded = self._expand_snippets(out)
             # A user-defined transform (system_prompt_override) owns its output
             # formatting, just like PE 'prompt' mode — don't impose casing
@@ -854,9 +864,16 @@ class Cleaner:
                 provider, tried_fallback,
             )
             notify.notify("Echo Flow", "Cleanup failed; pasted raw.", "error")
-            # Contract: on total failure we paste the user's RAW words verbatim
-            # (no polish) — finalizing here would silently rewrite them.
-            return self._expand_snippets(text), False
+            # Contract: on total failure we paste the user's RAW words — we never
+            # invent or substitute. But the deterministic casing/punctuation pass
+            # is LLM-free and content-preserving (it recases, it doesn't reword),
+            # so it still runs: a provider outage shouldn't leave Whisper's
+            # "Every Word Capitalized" output unflattened. Guarded so a polish
+            # error can never swallow the user's words.
+            try:
+                return self._finalize(self._expand_snippets(text), style), False
+            except Exception:
+                return self._expand_snippets(text), False
 
     def _via_ollama(self, system: str, text: str, *,
                     max_tokens: int | None = None,

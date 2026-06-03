@@ -276,8 +276,12 @@ def _meaningful_casing(word: str) -> bool:
     """
     # Strip apostrophes for the probe and allow digits so product/version names
     # survive ("iOS17", "PostgreSQL15", "GPT4"). Other punctuation still fails
-    # isalnum, so trailing-punctuation artifacts ("word.") are rejected.
-    core = word.replace("'", "")
+    # isalnum, so trailing-punctuation artifacts ("word.") are rejected. Cover
+    # the curly glyphs (’ ‘) too — Whisper emits U+2019, and stripping only the
+    # ASCII ' left "TikTok’s" non-alnum, silently dropping the learned casing.
+    core = word
+    for _ap in ("'", "’", "‘"):
+        core = core.replace(_ap, "")
     if len(core) < 2 or not core.isalnum() or not any(c.isalpha() for c in core):
         return False
     return word != word.lower()

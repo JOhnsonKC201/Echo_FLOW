@@ -15,6 +15,35 @@
   PRODUCT_OVERVIEW previously said `/healthz`).
 
 ### Fixed
+- **Casing now survives every fallback path (full-system audit, 2026-06-03).**
+  Whisper's "Every Word Capitalized" output previously reached the user
+  unflattened whenever cleanup took a raw-passthrough exit: the hallucination
+  guard (model went off-track), total provider failure (all providers down),
+  and the `learned` provider with `fallback_to_ollama: false`. All three now
+  run the LLM-free, content-preserving casing/punctuation pass — your words are
+  kept verbatim, only the casing is normalized. (Root cause of the "sometimes
+  capitalized, sometimes correct" reports; note a running daemon must be
+  restarted to pick up the fix.)
+- **Settings pages reflect the live theme.** The five `/settings/*` panels
+  captured the theme once at startup, so a light/dark toggle made elsewhere
+  wasn't shown on those pages until restart. They now read the current theme on
+  every render like the rest of the dashboard.
+- **A failing hotkey callback no longer silently kills dictation.** If
+  `recorder.start()` raised (e.g. the mic was unplugged mid-session), the
+  exception escaped into pynput's listener thread and stopped *all* hotkey
+  detection with no indicator. Activate/deactivate callbacks are now guarded
+  and logged, so the listener survives.
+- **Semantic backlinks link the right dictation.** `notes.backlinks_for` used
+  the retriever's match then re-looked-up the row by `raw_text` (not unique —
+  repeated utterances collide), occasionally attributing the wrong dictation.
+  It now uses the matched row's real primary key.
+- **Curly-apostrophe casings are learned.** `_meaningful_casing` only stripped
+  the ASCII `'`, so a correction like `TikTok’s` (Whisper's U+2019) was rejected
+  and the casing never stored. All apostrophe glyphs are stripped now.
+- **Scratchpad-target route hardened.** The `back` form field is restricted to
+  same-site relative paths (no open-redirect / protocol-relative `//evil`), and
+  the flash message is URL-encoded so values with `&`/`#`/`=` can't split the
+  redirect.
 - **Casing robustness pass.** Deterministic polish no longer corrupts
   internal-caps brands during sentence-capping (`iOS`→`IOS`, `mRNA`→`MRNA`,
   `macOS`, `iPhone15` are preserved); acronym comma-lists (`SQL, iOS, GDPR`)

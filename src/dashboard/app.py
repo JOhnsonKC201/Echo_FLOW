@@ -832,8 +832,15 @@ def make_app(app_ref, bound_port: int | None = None):
                 msg = f"Next dictations will append to scratchpad #{pid}."
         except Exception as e:
             msg = f"Error: {e}"
+        # `back` is attacker-influenceable form input — only allow same-site
+        # relative paths so it can't become an open redirect (http://evil) or a
+        # protocol-relative //evil. URL-encode the flash so a msg with & / # / =
+        # can't split the query string.
+        from urllib.parse import quote_plus as _qp
         back = _req.form.get("back", "/scratchpad")
-        return redirect(f"{back}?flash={msg}")
+        if not back.startswith("/") or back.startswith("//"):
+            back = "/scratchpad"
+        return redirect(f"{back}?flash={_qp(msg)}")
 
     # --- Commands (PR-E top-level promotion of Phase 13) ----------------
     @flask_app.get("/commands")
@@ -856,7 +863,8 @@ def make_app(app_ref, bound_port: int | None = None):
         prefix = (_req.form.get("command_prefix", "") or "").strip()
         err = _cmds.validate_prefix(prefix)
         if err:
-            return redirect("/commands?flash=" + err)
+            from urllib.parse import quote_plus as _qp
+            return redirect("/commands?flash=" + _qp(err))
         try:
             _cw.set_scalar(app_ref.cfg_path, "experimental.command_prefix", prefix)
         except Exception as e:

@@ -72,18 +72,30 @@ class HotkeyListener:
             return keyboard.Key.shift
         return key
 
+    @staticmethod
+    def _safe(cb, label):
+        """Run a user callback without ever letting it escape into pynput.
+
+        An exception propagating out of _on_press/_on_release kills the pynput
+        listener thread silently — dictation dies with no error and no restart.
+        A mic unplugged mid-session (recorder.start raises) is the classic
+        trigger. Swallow + log so the listener survives.
+        """
+        if cb is None:
+            return
+        try:
+            cb()
+        except Exception as e:
+            import logging
+            logging.getLogger("wispr.hotkey").error("%s callback failed: %s", label, e)
+
     def _on_press(self, key):
         k = self._norm(key)
         self._pressed.add(k)
         # Veto: a "longer" combo is forming. Cancel if active, skip otherwise.
         if k in self.veto_keys:
             if self._active:
-                if self.on_veto:
-                    try:
-                        self.on_veto()
-                    except Exception as e:
-                        import logging
-                        logging.getLogger("wispr.hotkey").warning("veto callback failed: %s", e)
+                self._safe(self.on_veto, "veto")
                 self._active = False
             return
         # Don't activate while any veto key is already held.
@@ -91,10 +103,7 @@ class HotkeyListener:
             return
         if self.combo.issubset(self._pressed) and not self._active:
             self._active = True
-            if self.mode == "toggle":
-                self.on_activate()
-            else:
-                self.on_activate()
+            self._safe(self.on_activate, "activate")
 
     def _on_release(self, key):
         k = self._norm(key)
@@ -102,8 +111,7 @@ class HotkeyListener:
         if self._active and not self.combo.issubset(self._pressed):
             if self.mode == "hold":
                 self._active = False
-                if self.on_deactivate:
-                    self.on_deactivate()
+                self._safe(self.on_deactivate, "deactivate")
             elif self.mode == "toggle":
                 # toggle ignores release — caller handles auto-stop
                 self._active = False
