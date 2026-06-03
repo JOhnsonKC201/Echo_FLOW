@@ -8,6 +8,15 @@
   a dictation to fix. Re-adding a word overrides its canonical form (doubles as
   an edit), and each entry shows its reinforcement count.
 
+### Added
+- **Cloud cleanup opt-in (`cleanup.allow_cloud_cleanup`).** You can now route
+  *every* dictation's cleanup through a cloud provider (Groq / Anthropic) instead
+  of local Ollama, trading the local-only guarantee for cleanup quality. Off by
+  default; when on, a missing API key or a failed cloud call falls back to local
+  Ollama so dictation never breaks. PE mode and the teacher loop already used the
+  cloud — this extends it to regular cleanup. (Set `cleanup.provider: groq` +
+  `cleanup.allow_cloud_cleanup: true`, and export `GROQ_API_KEY`.)
+
 ### Changed
 - The dashboard window now opens **maximized** (fills the screen) instead of a
   centered 1280×820 window. The saved size is kept as the restore-down size.

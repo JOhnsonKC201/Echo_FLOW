@@ -43,7 +43,13 @@ whisper:
 
 cleanup:
   enabled: true
-  provider: "ollama"        # ollama | learned | none. Local-only.
+  provider: "groq"          # ollama | learned | none | groq | anthropic.
+  # Cloud cleanup opt-in. When true, a cloud provider (groq/anthropic) named
+  # above is used for EVERY dictation's cleanup — your dictation text leaves the
+  # machine. Off keeps regular cleanup local (cloud only in PE mode). If the
+  # cloud call fails or its API key is missing, cleanup falls back to local
+  # Ollama so dictation never breaks. Requires GROQ_API_KEY for groq.
+  allow_cloud_cleanup: true
   # Fast-path: if Whisper output is already clean (capitalized, punctuated, no
   # fillers, <=140 chars) skip the LLM polish entirely. Saves 200-2000ms on
   # the common case. Set false to force LLM polish on every dictation.
@@ -198,7 +204,7 @@ dashboard:
   enabled: true
   host: "127.0.0.1"           # NEVER bind to 0.0.0.0 — same-machine trust only.
   port: 8766                  # Auto-fallback to 8767..8770 if busy.
-  theme: light               # dark | light
+  theme: dark               # dark | light
   open_window_on_start: false # daemon starts the server; window opens on demand.
   open_hotkey: "<ctrl>+<cmd>"  # Global hotkey to open the dashboard window (Ctrl+Win). Set "" to disable.
   onboarded: true            # Phase 11 first-run tour gate; flips true after /onboarding/finish.

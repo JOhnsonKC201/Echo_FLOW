@@ -763,20 +763,35 @@ class Cleaner:
                 prompt = build_pe_prompt(audience, name)
                 if augmentation:
                     prompt = prompt + augmentation
-            # Local-only enforcement, with a deliberate carve-out: Prompt-
-            # Engineering mode (style == "prompt", armed via Ctrl+Shift+Alt
-            # and dispatched with an explicit provider_override) is allowed
-            # to call a cloud provider. Regular cleanup stays local.
+            # Local-only enforcement with two carve-outs:
+            #   1. Prompt-Engineering mode (style == "prompt" + explicit
+            #      provider_override, armed via Ctrl+Shift+Alt).
+            #   2. cleanup.allow_cloud_cleanup: true — the user has explicitly
+            #      opted into a cloud cleanup provider (Groq/Anthropic) for
+            #      regular dictation, knowingly trading the local-only guarantee
+            #      for cleanup quality.
+            # OpenAI has no opt-in path wired and always stays local.
             pe_allowed = (style == "prompt" and provider_override is not None)
-            if name == "openai" or (name in ("anthropic", "groq") and not pe_allowed):
+            cloud_ok = pe_allowed or bool(self.cfg.get("allow_cloud_cleanup", False))
+            if name == "openai" or (name in ("anthropic", "groq") and not cloud_ok):
                 _log.warning(
-                    "cleanup.provider=%s is a cloud provider; Echo Flow "
-                    "is local-only outside Prompt-Engineering mode. "
-                    "Routing to ollama instead.", name,
+                    "cleanup.provider=%s is a cloud provider and cloud cleanup "
+                    "is not enabled (cleanup.allow_cloud_cleanup); routing to "
+                    "ollama instead.", name,
                 )
                 name = "ollama"
             if name == "groq":
-                out = self._via_groq(prompt, text, max_tokens=max_tokens_override)
+                try:
+                    out = self._via_groq(prompt, text, max_tokens=max_tokens_override)
+                except Exception as e:
+                    # PE mode keeps its existing fallback chain (re-raise to the
+                    # outer handler). For regular cloud cleanup, never break
+                    # dictation on a missing key / cloud hiccup — fall back to
+                    # local Ollama so the user still gets polished text.
+                    if pe_allowed:
+                        raise
+                    _log.warning("groq cleanup failed (%s); falling back to ollama", e)
+                    out = self._via_ollama(prompt, text, max_tokens=max_tokens_override, style=style)
             elif name == "anthropic":
                 out = self._via_anthropic(prompt, text, max_tokens=max_tokens_override)
             elif name == "ollama":

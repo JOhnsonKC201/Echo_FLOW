@@ -213,7 +213,8 @@ dashboard **Settings** pages. **Run `RESTART.bat` after editing the file directl
 |---|---|
 | `hotkey.combo` | Push-to-talk combo (default `ctrl+shift`). |
 | `whisper.model` | `tiny` · `base` · `small` · `medium` · `large-v3-turbo` · `auto`. Bigger = more accurate, slower. |
-| `cleanup.provider` | `ollama` (local LLM, default) · `learned` (LLM-free, uses your corrections) · `none` (raw Whisper). |
+| `cleanup.provider` | `ollama` (local LLM, default) · `learned` (LLM-free, uses your corrections) · `none` (raw Whisper) · `groq` / `anthropic` (cloud, requires `allow_cloud_cleanup`). |
+| `cleanup.allow_cloud_cleanup` | Opt in to cloud cleanup (Groq/Anthropic) for **every** dictation — your text leaves the machine. Off by default; falls back to local Ollama if the cloud call fails or the key is missing. Needs `GROQ_API_KEY`. |
 | `cleanup.profiles` | App-aware cleanup styles (Slack vs VS Code vs Gmail). |
 | `cleanup.casing` | `flatten_titlecase`, `learn_from_edits`, `protect_common_nouns` — all default on. |
 | `cleanup.snippets` | Your short-code → phrase expansions. |
