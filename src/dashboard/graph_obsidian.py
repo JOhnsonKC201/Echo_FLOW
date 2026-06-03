@@ -24,13 +24,21 @@ def _merge(dict_g: dict, concept_g: dict, notes_g: dict) -> dict[str, Any]:
 
     # --- dictations ---
     for n in dict_g.get("nodes", []):
+        cnt = int(n.get("count", 1))
+        label = n.get("label", "")
+        full = n.get("full", n.get("label", ""))
+        if cnt > 1:
+            # One node stands in for `cnt` identical dictations.
+            label = f"{label} ×{cnt}"
+            full = f"{full}  (said {cnt}×)"
         nodes.append({
             "id": f"d:{n['id']}",
-            "label": n.get("label", ""),
-            "full": n.get("full", n.get("label", "")),
+            "label": label,
+            "full": full,
             "group": "dictation",
             "cluster": n.get("cluster", 0),
-            "size": 7,
+            "count": cnt,
+            "size": 7 + min(6, cnt - 1),  # bigger blob the more it repeats
         })
     for l in dict_g.get("links", []):
         links.append({

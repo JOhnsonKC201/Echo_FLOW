@@ -45,6 +45,7 @@ SECTIONS = [
     ("home", "Home", "/", "home.html"),
     ("insights", "Outcomes", "/insights", "insights.html"),
     ("graph", "Graph", "/graph", "graph.html"),
+    ("search", "Search", "/search", "search.html"),
     ("dictionary", "Dictionary", "/dictionary", "dictionary.html"),
     ("snippets", "Snippets", "/snippets", "snippets.html"),
     ("style", "Style", "/style", "style.html"),
@@ -567,6 +568,41 @@ def make_app(app_ref, bound_port: int | None = None):
                f"skipped {r['invalid']} malformed.")
         return redirect(f"/snippets?flash={msg}")
 
+    @flask_app.get("/search")
+    def search_page():
+        """Semantic search page. Results are fetched client-side from /search/api
+        so typing stays responsive (the page itself renders instantly)."""
+        from flask import request as _req
+        return render_template(
+            "search.html", sections=SECTIONS, active="search",
+            theme=dcfg.get("theme", "dark"),
+            q=_req.args.get("q", ""),
+        )
+
+    @flask_app.get("/search/api")
+    def search_api():
+        """JSON: ?q=<text> → semantic matches; ?like=<id> → nearest neighbors.
+
+        Reuses the embeddings already built for RAG (src/retrieval.py); the first
+        query on a cold process pays the one-time model load, then it's instant.
+        """
+        from . import semantic_search as _search
+        from flask import request as _req, jsonify
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return jsonify({"results": []})
+        like = _form_int(_req.args, "like", 0)
+        try:
+            if like > 0:
+                results = _search.similar_to_id(history.conn, like)
+            else:
+                q = (_req.args.get("q", "") or "").strip()
+                results = _search.search_text(history.conn, q) if q else []
+        except Exception as e:
+            _log.warning("search api failed: %s", e)
+            results = []
+        return jsonify({"results": results})
+
     @flask_app.get("/style")
     def style():
         from . import style_profiles as _sp
@@ -587,7 +623,7 @@ def make_app(app_ref, bound_port: int | None = None):
             "style.html", sections=SECTIONS, active="style",
             theme=dcfg.get("theme", "dark"),
             profiles=profiles,
-            valid_styles=("default", "code", "casual", "email", "prompt"),
+            valid_styles=("polished", "default", "code", "casual", "email", "prompt"),
             flash=_req.args.get("flash", ""),
         )
 

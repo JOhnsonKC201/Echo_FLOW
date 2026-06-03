@@ -88,13 +88,6 @@ class TrayApp:
             pystray.MenuItem(self._status_text, None, enabled=False),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(self._pause_label, lambda i, item: self._safe(self.on_pause_toggle)),
-            pystray.MenuItem(
-                "🪄  Prompt Engineering Mode",
-                lambda i, item: self._safe(self.on_toggle_prompt_mode),
-                checked=lambda _it: bool(self.get_prompt_mode_state())
-                    if self.get_prompt_mode_state else False,
-                visible=lambda _it: self.on_toggle_prompt_mode is not None,
-            ),
             pystray.MenuItem("✏  Edit last dictation",
                              lambda i, item: self._safe(self.on_edit_last)),
             pystray.MenuItem("📋  Review queue (worst first)",
@@ -109,10 +102,6 @@ class TrayApp:
                              else "🪟  Open Dashboard"),
                 lambda i, item: self._safe(self.on_open_dashboard),
                 visible=lambda _it: self.on_open_dashboard is not None),
-            pystray.MenuItem("📊  Open history viewer",
-                             lambda i, item: self._safe(self.on_open_history)),
-            pystray.MenuItem("🕸  Open knowledge graph",
-                             lambda i, item: self._safe(self.on_open_graph)),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", lambda i, item: self._safe(self._quit)),
         )

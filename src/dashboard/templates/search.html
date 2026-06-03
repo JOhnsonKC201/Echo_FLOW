@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Search — Echo Flow{% endblock %}
+{% block content %}
+<h1 class="welcome">Search</h1>
+<div class="muted small" style="margin-bottom: 14px;">
+  Search everything you've ever dictated — by <strong>meaning</strong>, not keywords.
+  Describe it however you remember it; matches don't need to share the same words.
+</div>
+
+<div class="card search-box">
+  <input type="search" id="search-input" class="search-field"
+         placeholder="e.g. the bug with the login redirect…"
+         autocomplete="off" spellcheck="false" value="{{ q }}">
+  <div class="muted small search-status" id="search-status" aria-live="polite"></div>
+</div>
+
+<div id="search-context" class="muted small" hidden style="margin: 4px 2px 10px;"></div>
+
+<ul class="inbox-list" id="search-results"></ul>
+
+<div class="placeholder" id="search-empty">
+  <div>
+    <div class="ph-title">Find anything you've said</div>
+    <div class="ph-body">Type a phrase above. Echo Flow ranks your past dictations by semantic
+      similarity using the same on-device embeddings it uses to learn your style — nothing leaves
+      your machine. Hit <strong>Find similar</strong> on any result to explore its neighbors.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const input = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+  const empty = document.getElementById('search-empty');
+  const status = document.getElementById('search-status');
+  const ctx = document.getElementById('search-context');
+  if (!input) return;
+
+  let timer = null;
+  let seq = 0;            // guards against out-of-order responses
+
+  function pct(sim) { return Math.max(0, Math.min(100, Math.round(sim * 100))); }
+
+  function buildCard(r) {
+    const li = document.createElement('li');
+    li.className = 'inbox-card search-card';
+
+    // Similarity bar
+    const sim = document.createElement('div');
+    sim.className = 'sim-row';
+    const bar = document.createElement('div');
+    bar.className = 'sim-bar';
+    const fill = document.createElement('div');
+    fill.className = 'sim-fill';
+    fill.style.width = pct(r.similarity) + '%';
+    bar.appendChild(fill);
+    const score = document.createElement('span');
+    score.className = 'sim-score num';
+    score.textContent = pct(r.similarity) + '%';
+    sim.appendChild(bar);
+    sim.appendChild(score);
+    li.appendChild(sim);
+
+    // Cleaned text (textContent → safe against markup in dictations)
+    const text = document.createElement('div');
+    text.className = 'inbox-text';
+    text.textContent = r.text || '(empty)';
+    li.appendChild(text);
+
+    // Meta row
+    const meta = document.createElement('div');
+    meta.className = 'inbox-meta';
+    if (r.ts_human) {
+      const ts = document.createElement('span');
+      ts.className = 'ts';
+      ts.textContent = r.ts_human;
+      meta.appendChild(ts);
+    }
+    if (r.window_title) {
+      const win = document.createElement('span');
+      win.className = 'src';
+      win.textContent = r.window_title;
+      meta.appendChild(win);
+    }
+    if (r.style && r.style !== 'default') {
+      const st = document.createElement('span');
+      st.className = 'code-pill';
+      st.textContent = r.style;
+      meta.appendChild(st);
+    }
+    li.appendChild(meta);
+
+    // Actions
+    const actions = document.createElement('div');
+    actions.className = 'inbox-actions';
+    const edit = document.createElement('a');
+    edit.className = 'btn';
+    edit.href = '/inbox/' + r.id + '/edit';
+    edit.textContent = 'Edit';
+    actions.appendChild(edit);
+    const similar = document.createElement('button');
+    similar.type = 'button';
+    similar.className = 'btn js-similar';
+    similar.dataset.id = r.id;
+    similar.textContent = 'Find similar';
+    actions.appendChild(similar);
+    li.appendChild(actions);
+
+    return li;
+  }
+
+  function render(items, contextLabel) {
+    results.innerHTML = '';
+    if (contextLabel) {
+      ctx.textContent = contextLabel;
+      ctx.hidden = false;
+    } else {
+      ctx.hidden = true;
+    }
+    if (!items || !items.length) {
+      empty.hidden = false;
+      empty.querySelector('.ph-title').textContent = 'No matches';
+      empty.querySelector('.ph-body').textContent =
+        'Nothing close enough turned up. Try describing it differently or more broadly.';
+      return;
+    }
+    empty.hidden = true;
+    const frag = document.createDocumentFragment();
+    items.forEach(function (r) { frag.appendChild(buildCard(r)); });
+    results.appendChild(frag);
+  }
+
+  function fetchResults(url, mySeq, contextLabel) {
+    status.textContent = 'Searching…';
+    fetch(url, { headers: { 'Accept': 'application/json' } })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (mySeq !== seq) return;        // a newer query superseded this one
+        status.textContent = '';
+        render(data.results || [], contextLabel);
+      })
+      .catch(function () {
+        if (mySeq !== seq) return;
+        status.textContent = 'Search unavailable.';
+      });
+  }
+
+  function runQuery(q) {
+    q = (q || '').trim();
+    if (!q) {
+      seq++;
+      status.textContent = '';
+      results.innerHTML = '';
+      ctx.hidden = true;
+      empty.hidden = false;
+      empty.querySelector('.ph-title').textContent = 'Find anything you’ve said';
+      return;
+    }
+    const mySeq = ++seq;
+    fetchResults('/search/api?q=' + encodeURIComponent(q), mySeq, '');
+  }
+
+  input.addEventListener('input', function () {
+    clearTimeout(timer);
+    timer = setTimeout(function () { runQuery(input.value); }, 250);
+  });
+
+  // "Find similar" — re-query by the row's stored embedding.
+  results.addEventListener('click', function (e) {
+    const btn = e.target.closest('.js-similar');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const mySeq = ++seq;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    fetchResults('/search/api?like=' + encodeURIComponent(id), mySeq,
+                 'Showing dictations similar to the one you picked.');
+  });
+
+  // Deep-link / prefill: run immediately if the box arrived with text.
+  if (input.value.trim()) { runQuery(input.value); }
+  input.focus();
+})();
+</script>
+{% endblock %}

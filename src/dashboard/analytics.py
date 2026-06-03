@@ -272,10 +272,15 @@ def streak_heatmap(
         counts[dt.datetime.fromtimestamp(ts).date()] += 1
 
     today = dt.date.today()
-    start = today - dt.timedelta(days=weeks * 7 - 1)
+    # Snap the window start back to a Monday so every column is a clean Mon–Sun
+    # week. Without this the first column is a partial week and, because cells are
+    # placed by weekday alone, the grid never lines up into tidy columns.
+    raw_start = today - dt.timedelta(days=weeks * 7 - 1)
+    start = raw_start - dt.timedelta(days=raw_start.weekday())
+    num_days = (today - start).days + 1
     days = []
     peak = max(counts.values()) if counts else 0
-    for offset in range(weeks * 7):
+    for offset in range(num_days):
         d = start + dt.timedelta(days=offset)
         c = counts.get(d, 0)
         # 5 buckets: 0, 1-2, 3-5, 6-10, 11+. Scales with usage but stable.
@@ -290,8 +295,9 @@ def streak_heatmap(
         else:
             level = 4
         days.append({"date": d.isoformat(), "count": c, "level": level,
-                     "weekday": d.weekday()})
-    return {"days": days, "weeks": weeks, "max": peak}
+                     "weekday": d.weekday(), "week": offset // 7})
+    num_weeks = (num_days + 6) // 7
+    return {"days": days, "weeks": num_weeks, "max": peak}
 
 
 def app_usage_breakdown(

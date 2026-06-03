@@ -678,6 +678,36 @@ class App:
                 fallback_provider=fallback_provider,
                 system_prompt_override=system_prompt_override,
             )
+            # Verify-and-improve: for polished cleanups, grade the result locally
+            # and, if it's weak, run a second improvement pass — keeping whichever
+            # scores higher. On the hot path (before paste) so the better text is
+            # what gets pasted; only fires for polished, so other styles pay nothing.
+            vcfg = (self.cfg.get("cleanup", {}).get("verify", {}) or {})
+            if (style == "polished" and not use_prompt and not polish_skipped
+                    and system_prompt_override is None
+                    and vcfg.get("enabled", True) and self.history is not None):
+                try:
+                    q1 = grade_mod.grade(
+                        raw, cleaned, whisper_meta, retriever=self.retriever,
+                        pattern_miner=self.pattern_miner, learner=self.learner,
+                        weights=self._grading_weights).overall
+                    if q1 < float(vcfg.get("min_score", 55)):
+                        improved = self.cleaner.reclean_improve(
+                            raw, cleaned,
+                            use_cloud=bool(vcfg.get("escalate_cloud", False)),
+                            style=style)
+                        if improved and improved != cleaned:
+                            q2 = grade_mod.grade(
+                                raw, improved, whisper_meta, retriever=self.retriever,
+                                pattern_miner=self.pattern_miner, learner=self.learner,
+                                weights=self._grading_weights).overall
+                            if q2 > q1:
+                                _log.info("verify: pass-2 improved %.1f→%.1f; using it", q1, q2)
+                                cleaned = improved
+                            else:
+                                _log.info("verify: pass-2 %.1f did not beat %.1f; kept pass-1", q2, q1)
+                except Exception as e:
+                    _log.warning("verify-and-improve loop failed: %s", e)
         t2 = time.perf_counter()
         # Cache immediately so Ctrl+Shift+Win re-paste sees this dictation
         # even before the async DB write commits.

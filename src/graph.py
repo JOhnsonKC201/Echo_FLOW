@@ -28,7 +28,18 @@ from typing import Any
 
 import numpy as np
 
+from .cleanup import collapse_repeats
 from .retrieval import from_blob
+
+
+def _dedup_key(text: str) -> str:
+    """Normalized identity for collapsing duplicate dictations into one node.
+
+    Same phrase, same node — regardless of repeat-stutter, trailing
+    punctuation, or casing. Mirrors the cleanup collapse so "Open Browser Open
+    Browser" and "Open Browser" map to the same key.
+    """
+    return re.sub(r"\s+", " ", collapse_repeats(text or "").strip().lower().rstrip(".!?;:, ")).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +133,28 @@ def build_dictation_graph(
     min_similarity: float = 0.55,
     max_edges_per_node: int = 6,
 ) -> dict[str, Any]:
-    """Each dictation → node. Edges = top-K most similar above threshold."""
+    """Each dictation → node. Edges = top-K most similar above threshold.
+
+    Identical dictations (same normalized text) collapse into ONE node carrying
+    a `count`, so saying the same thing 3× shows a single "… ×3" node instead of
+    three overlapping ones. The earliest occurrence is kept as representative.
+    """
+    # Collapse exact-duplicate dictations before any matrix/cluster/edge work.
+    # rows arrive ts-ascending (see _load_rows), so the first per group is the
+    # earliest occurrence.
+    grouped: "dict[str, dict]" = {}
+    for r in rows:
+        key = _dedup_key(r.get("cleaned") or r.get("raw") or "")
+        if not key:
+            key = f"__empty__{id(r)}"  # never merge truly-empty rows together
+        if key in grouped:
+            grouped[key]["count"] += 1
+        else:
+            rep = dict(r)
+            rep["count"] = 1
+            grouped[key] = rep
+    rows = list(grouped.values())
+
     rows_with_vec = [r for r in rows if r["vec"] is not None]
     n = len(rows_with_vec)
     if n == 0:
@@ -186,6 +218,7 @@ def build_dictation_graph(
             "style": r["style"],
             "quality": round(r.get("quality", 70.0), 1),
             "cluster": int(cl),
+            "count": int(r.get("count", 1)),
         })
 
     # Auto-label clusters with their most-distinctive concepts.

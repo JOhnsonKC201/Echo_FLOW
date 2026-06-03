@@ -56,14 +56,23 @@ def test_fixes_excludes_mobile_by_default(tmp_path):
 
 # --- streak_heatmap ----------------------------------------------------------
 
-def test_heatmap_emits_weeks_x_7_days(tmp_path):
+def test_heatmap_is_monday_aligned_and_ends_today(tmp_path):
     from src.dashboard.analytics import streak_heatmap
     h = _h(tmp_path)
     res = streak_heatmap(h.conn, weeks=4)
-    assert len(res["days"]) == 28
-    assert res["weeks"] == 4
+    days = res["days"]
+    # Window is snapped back to a Monday so the grid renders as clean Mon–Sun
+    # columns; it always ends on today.
+    assert days[0]["weekday"] == 0
+    assert days[-1]["date"] == dt.date.today().isoformat()
+    # Covers at least the requested span, and weeks == number of columns needed.
+    assert len(days) >= 28
+    assert res["weeks"] == (len(days) + 6) // 7
+    # Each cell carries its column index (0-based week) for explicit placement.
+    assert days[0]["week"] == 0
+    assert days[-1]["week"] == res["weeks"] - 1
     assert res["max"] == 0
-    assert all(d["level"] == 0 for d in res["days"])
+    assert all(d["level"] == 0 for d in days)
 
 
 def test_heatmap_level_buckets(tmp_path):

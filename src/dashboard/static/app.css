@@ -1130,3 +1130,47 @@ kbd {
   ::view-transition-old(root),
   ::view-transition-new(root) { animation-duration: .38s; }
 }
+
+/* ====================================================================== *
+ * Search — semantic search over dictation history. Reuses .inbox-card /
+ * .inbox-meta / .inbox-text / .btn; adds the query field + similarity bar.
+ * ====================================================================== */
+.search-box { padding: 10px; }
+.search-field {
+  width: 100%; box-sizing: border-box;
+  font-size: 15px; padding: 13px 15px;
+  border-radius: 11px;
+  background: var(--bg);
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  color: var(--text);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.search-field::placeholder { color: var(--muted-2); }
+.search-field:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.search-status { min-height: 14px; margin: 8px 2px 0; }
+#search-context { font-style: italic; }
+
+.sim-row { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; }
+.sim-bar {
+  flex: 1; height: 5px; border-radius: 999px; overflow: hidden;
+  background: color-mix(in oklab, var(--muted) 18%, transparent);
+}
+.sim-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg,
+     color-mix(in oklab, var(--accent) 55%, var(--accent-2)), var(--accent));
+}
+.sim-score {
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  color: var(--muted); min-width: 34px; text-align: right;
+}
+.search-card .inbox-meta { margin-top: 8px; margin-bottom: 0; }
+.search-card .inbox-text {
+  font-size: 14px;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+  overflow: hidden;
+}

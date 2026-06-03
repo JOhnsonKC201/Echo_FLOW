@@ -16,7 +16,7 @@ import sqlite3
 import time
 
 
-_VALID_STYLES = ("default", "code", "casual", "email", "prompt")
+_VALID_STYLES = ("polished", "default", "code", "casual", "email", "prompt")
 
 
 def ensure_table(conn: sqlite3.Connection) -> None:

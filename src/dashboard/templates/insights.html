@@ -229,6 +229,49 @@
   .wf-context { color: var(--muted); font-size: 13px; line-height: 1.55;
                 margin-top: 12px; }
 
+  /* Flex-column hero cards — lets sparse cards balance their whitespace instead
+     of leaving a void where they stretch to match a denser neighbour. The gauge
+     recentres in its card; the source toggle anchors to the bottom edge. */
+  .wf-card-col { display:flex; flex-direction:column; }
+  .wf-card-col > .wf-gauge  { flex:1 1 auto; justify-content:center; }
+  .wf-card-col > .wf-source { margin-top:auto; }
+  .wf-source a { display:inline-flex; align-items:center; justify-content:center;
+                 gap:7px; }
+  .wf-source svg { width:15px; height:15px; flex:none; }
+
+  /* Milestone meter — gives the Total-words number a goal and fills the card on
+     the same recessed-groove language as the app/usage bars. */
+  .wf-milestone { margin-top: 18px; }
+  .wf-milestone-head { display:flex; align-items:baseline; justify-content:space-between;
+                       font-size: 11px; font-weight:600; letter-spacing:.06em;
+                       text-transform:uppercase; color: var(--muted); margin-bottom: 9px; }
+  .wf-milestone-head .goal { color: var(--text); text-transform:none;
+                             letter-spacing:0; font-size: 12px;
+                             font-variant-numeric: tabular-nums; }
+  .wf-milestone-bar { height: 9px; border-radius:999px; overflow:hidden; position:relative;
+                      background:
+                         linear-gradient(180deg,
+                            color-mix(in oklab, black 7%, transparent), transparent 55%),
+                         color-mix(in oklab, var(--panel-2) 85%, transparent);
+                      box-shadow: inset 0 1px 2px color-mix(in oklab, black 14%, transparent),
+                                  inset 0 0 0 1px color-mix(in oklab, var(--border) 45%, transparent); }
+  .wf-milestone-bar > span { display:block; height:100%; border-radius:999px;
+                      background:
+                         linear-gradient(180deg,
+                            color-mix(in oklab, white 40%, transparent) 0%,
+                            color-mix(in oklab, white 8%, transparent) 42%,
+                            transparent 62%,
+                            color-mix(in oklab, black 12%, transparent) 100%),
+                         linear-gradient(90deg,
+                            color-mix(in oklab, var(--accent) 72%, var(--accent-2) 28%),
+                            var(--accent) 62%,
+                            color-mix(in oklab, var(--accent) 82%, white 18%));
+                      box-shadow: inset 0 1px 0 color-mix(in oklab, white 48%, transparent),
+                                  0 0 10px -2px color-mix(in oklab, var(--accent) 50%, transparent);
+                      transition: width .8s cubic-bezier(.2,.7,.2,1); }
+  .wf-milestone-foot { margin-top: 8px; font-size: 11.5px; color: var(--muted);
+                       font-variant-numeric: tabular-nums; }
+
   /* Apps usage list */
   .wf-apps { display:flex; flex-direction:column; gap: 14px; margin-top: 16px; }
   .wf-app  { display:grid; grid-template-columns: 1fr auto; gap: 6px 12px;
@@ -292,12 +335,14 @@
   .wf-heat-streak small { font-size: 12px; font-weight:500; color: var(--muted); }
   .wf-heat-longest { font-size: 11px; font-weight: 600; letter-spacing:.08em;
                      text-transform: uppercase; color: var(--muted); }
-  .wf-heat-wrap { display:flex; gap:8px; }
+  .wf-heat-wrap { display:flex; gap:10px; align-items:flex-start; }
   .wf-heat-days { display:grid; grid-template-rows: repeat(7, 13px);
-                  gap:4px; font-size:10px; color: var(--muted); padding-top:1px; }
-  .wf-heat-grid { display:grid; grid-auto-flow: column;
-                  grid-template-rows: repeat(7, 13px);
-                  gap: 4px; overflow-x: auto; padding-bottom: 4px; flex:1; }
+                  gap:4px; font-size:10px; line-height:1; font-weight:600;
+                  letter-spacing:.01em; color: var(--muted); flex:0 0 auto; }
+  .wf-heat-days > div { display:flex; align-items:center; height:13px; }
+  .wf-heat-grid { display:grid; grid-template-rows: repeat(7, 13px);
+                  gap: 4px; overflow-x: auto; padding-bottom: 4px;
+                  justify-content:start; }
   .wf-cell { width:13px; height:13px; border-radius:3px;
              background: color-mix(in oklab, var(--panel-2) 70%, var(--text) 4%);
              transition: transform .15s ease, box-shadow .15s ease; }
@@ -468,7 +513,7 @@
 <div class="wf-grid-top">
 
   {# --- WPM with gauge --- #}
-  <div class="wf-card">
+  <div class="wf-card wf-card-col">
     <div class="wf-hero-num">{{ wpm or 0 }}</div>
     <div class="wf-hero-lbl">Words per minute</div>
     {% set wpm_val = wpm or 0 %}
@@ -584,7 +629,7 @@
   </div>
 
   {# --- Total words dictated --- #}
-  <div class="wf-card">
+  <div class="wf-card wf-card-col">
     <div class="wf-hero-num">{{ "{:,}".format(total_words or 0) }}</div>
     <div class="wf-hero-lbl">Total words dictated</div>
     <div class="wf-divider"></div>
@@ -601,14 +646,52 @@
         Dictate to see your words add up.
       {% endif %}
     </div>
+
+    {# Milestone meter — find the next unreached tier and how far we've climbed
+       toward it from the previous one. Gives the card a goal and a clean fill. #}
+    {% set _tw = total_words or 0 %}
+    {% set _ns = namespace(next=0, prev=0, label='') %}
+    {% for _m, _name in [(2000, 'long-form essay'), (10000, 'instruction manual'), (50000, 'novella')] %}
+      {% if _ns.next == 0 and _tw < _m %}{% set _ns.next = _m %}{% set _ns.label = _name %}
+      {% elif _tw >= _m %}{% set _ns.prev = _m %}{% endif %}
+    {% endfor %}
+    {% if _ns.next %}
+      {% set _span = _ns.next - _ns.prev %}
+      {% set _frac = ((_tw - _ns.prev) / _span) if _span else 0 %}
+      <div class="wf-milestone">
+        <div class="wf-milestone-head">
+          <span>Next milestone</span>
+          <span class="goal">{{ "{:,}".format(_ns.next) }} · {{ _ns.label }}</span>
+        </div>
+        <div class="wf-milestone-bar"><span style="width: {{ (_frac * 100) | round(1) }}%;"></span></div>
+        <div class="wf-milestone-foot">{{ "{:,}".format(_ns.next - _tw) }} words to go</div>
+      </div>
+    {% else %}
+      <div class="wf-milestone">
+        <div class="wf-milestone-head">
+          <span>All milestones reached</span>
+          <span class="goal">✦ 50,000+</span>
+        </div>
+        <div class="wf-milestone-bar"><span style="width:100%;"></span></div>
+      </div>
+    {% endif %}
+
     {% set _src = source or 'desktop' %}
     <div class="wf-source" role="tablist" aria-label="Source">
       <a class="wf-source-btn{% if _src == 'desktop' %} active{% endif %}"
          role="tab" aria-selected="{{ 'true' if _src == 'desktop' else 'false' }}"
-         href="/insights?source=desktop">⌨ Desktop</a>
+         href="/insights?source=desktop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+        </svg>Desktop</a>
       <a class="wf-source-btn{% if _src == 'mobile' %} active{% endif %}"
          role="tab" aria-selected="{{ 'true' if _src == 'mobile' else 'false' }}"
-         href="/insights?source=mobile">📱 Mobile</a>
+         href="/insights?source=mobile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 18h.01"/>
+        </svg>Mobile</a>
     </div>
   </div>
 </div>
@@ -666,13 +749,13 @@
     {% if heatmap.days %}
       <div class="wf-heat-wrap">
         <div class="wf-heat-days">
-          <div></div><div>Mon</div><div></div><div>Wed</div>
-          <div></div><div>Fri</div><div></div>
+          <div>Mon</div><div></div><div>Wed</div><div></div>
+          <div>Fri</div><div></div><div></div>
         </div>
-        <div class="wf-heat-grid">
+        <div class="wf-heat-grid" style="grid-template-columns: repeat({{ heatmap.weeks }}, 13px);">
           {% for d in heatmap.days %}
             <div class="wf-cell l{{ d.level }}"
-                 style="grid-row: {{ d.weekday + 1 }};"
+                 style="grid-row: {{ d.weekday + 1 }}; grid-column: {{ d.week + 1 }};"
                  title="{{ d.date }} · {{ d.count }} dictation{{ '' if d.count == 1 else 's' }}"></div>
           {% endfor %}
         </div>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import string
 import requests
 
 from . import log as wlog
@@ -77,6 +78,52 @@ SYSTEM_PROMPTS = {
         "Clean up this dictated email content into polished, professional prose. "
         "Remove fillers, fix grammar, use full sentences. Do not add greetings or "
         "sign-offs the speaker didn't dictate. Output only the cleaned text."
+    ),
+    # Polished: the everyday default. UNLIKE `default`, this style is allowed —
+    # and instructed — to fix grammar and restructure rambling speech into clean,
+    # well-formed sentences. The hard constraint (mirrors `prompt` mode) is that
+    # MEANING is preserved exactly and nothing is invented. This is what makes
+    # ungrammatical, run-on dictation come out readable.
+    "polished": (
+        "You turn rough voice dictation into clean, well-written text — the way "
+        "the speaker would have written it if they'd taken the time to type "
+        "carefully.\n\n"
+        "DO:\n"
+        "- Fix grammar, subject-verb agreement, verb tense, and word order.\n"
+        "- Split run-on speech into proper sentences. Reflow rambling, "
+        "stream-of-consciousness phrasing into tight, readable prose.\n"
+        "- Remove fillers (um, uh, like, you know, sort of, I mean, basically) "
+        "and false starts; collapse repeated words.\n"
+        "- Fix punctuation and capitalization.\n"
+        "- Keep the speaker's voice and word choice where it's already fine — "
+        "polish, don't rewrite from scratch.\n"
+        "- Use short paragraphs ONLY when the dictation genuinely covers "
+        "multiple topics. Default to plain sentences. No bullet points, no "
+        "headings, no markdown.\n\n"
+        "THE ONE HARD RULE — never break this:\n"
+        "- Preserve the speaker's meaning and intent EXACTLY. Never add facts, "
+        "claims, requirements, examples, or details they did not say.\n"
+        "- Keep pronouns and vague references as-is. \"Fix it\" stays \"fix it\"; "
+        "don't guess what \"it\" means.\n"
+        "- If a sentence is already clean, leave it alone.\n\n"
+        "OUTPUT: only the cleaned text. No preamble, no quotes, no commentary.\n\n"
+        "EXAMPLES (notice: grammar and structure fixed, meaning untouched):\n\n"
+        "RAW: the everything are that i said might not be grammatically correct "
+        "or structured so what is your plan\n"
+        "CLEANED: Everything I said might not be grammatically correct or "
+        "well-structured, so what is your plan?\n\n"
+        "RAW: um so basically i was thinking like we could maybe go to the store "
+        "later and then after that you know grab some food or something\n"
+        "CLEANED: I was thinking we could go to the store later, and then grab "
+        "some food afterward.\n\n"
+        "RAW: he dont know where the the meeting at and i aint got the link\n"
+        "CLEANED: He doesn't know where the meeting is, and I don't have the link.\n\n"
+        "RAW: the report it needs to be done by friday because the client they "
+        "are waiting and also we should double check the numbers\n"
+        "CLEANED: The report needs to be done by Friday because the client is "
+        "waiting. We should also double-check the numbers.\n\n"
+        "RAW: i think the design looks good\n"
+        "CLEANED: I think the design looks good."
     ),
     # Prompt Engineering mode: NOT a transcript cleaner. Polishes a spoken
     # request into a clearer instruction for an IDE coding agent that already
@@ -213,6 +260,87 @@ def build_pe_prompt(audience: str, provider: str) -> str:
     return pre + base + hint
 
 
+# Single words that legitimately double for emphasis — never collapsed.
+_REPEAT_EMPHASIS_ALLOW = {
+    "no", "very", "ha", "ho", "yeah", "yes", "bye", "hey", "so", "na", "la",
+    "tick", "tock", "knock", "beep", "go", "run",
+}
+# Single words whose doubling is grammatical ("he had had", "the book that
+# that I read"). "the"/"is" are NOT here — "the the" / "is is" are always
+# Whisper stutters, so they DO collapse.
+_REPEAT_GRAMMAR_DOUBLE_STOP = {"had", "that"}
+_REPEAT_STRIP = string.punctuation + "‘’“”"
+
+
+def _collapse_repeats(s: str, max_ngram: int = 6) -> str:
+    """Collapse runs of adjacent repeated n-grams to a single copy.
+
+    Deterministic dedup for the Whisper artifact where a phrase is transcribed
+    twice back-to-back — "Open Browser Open Browser" → "Open Browser",
+    "Not Opening In Chrome Not Opening In Chrome" → "Not Opening In Chrome".
+    The kept copy is always the FIRST, with its original casing and
+    punctuation; comparison is case/punctuation-insensitive.
+
+    Conservative for single words: only an exact double of a >1-char,
+    non-numeric word that isn't a known emphasis/grammar double collapses, so
+    "very very", "no no no", "had had", "that that", "2 2 2" survive intact.
+    Phrase repeats (n>=2) collapse freely (except all-numeric n-grams).
+    """
+    if not s or not s.strip():
+        return s
+    tokens = s.split()
+    # Bail on degenerate or very long inputs (the latter is a cheap cost guard;
+    # genuine dictations needing dedup are short).
+    if len(tokens) < 2 or len(tokens) > 400:
+        return s
+    keys = [t.lower().strip(_REPEAT_STRIP) for t in tokens]
+
+    def _should_collapse(block_keys: list[str], n: int, reps: int) -> bool:
+        if any(k == "" for k in block_keys):
+            return False
+        if all(k.isdigit() for k in block_keys):
+            return False  # protect numeric sequences ("1 2 1 2", "2 2")
+        if n >= 2:
+            return True
+        key = block_keys[0]
+        # n == 1: only an exact double of a meaningful word.
+        if reps != 2 or len(key) <= 1:
+            return False
+        return key not in _REPEAT_EMPHASIS_ALLOW and key not in _REPEAT_GRAMMAR_DOUBLE_STOP
+
+    # Pass from the largest n-gram down to single words, rebuilding the token
+    # list after each pass so nested repeats resolve cleanly.
+    n = min(max_ngram, len(tokens) // 2)
+    while n >= 1:
+        out_t: list[str] = []
+        out_k: list[str] = []
+        i = 0
+        while i < len(keys):
+            block = keys[i:i + n]
+            if len(block) == n:
+                reps = 1
+                j = i + n
+                while keys[j:j + n] == block:
+                    reps += 1
+                    j += n
+                if reps >= 2 and _should_collapse(block, n, reps):
+                    out_t.extend(tokens[i:i + n])  # keep one copy
+                    out_k.extend(keys[i:i + n])
+                    i = j
+                    continue
+            out_t.append(tokens[i])
+            out_k.append(keys[i])
+            i += 1
+        tokens, keys = out_t, out_k
+        n -= 1
+
+    return " ".join(tokens)
+
+
+# Public alias for cross-module reuse (graph dedup imports this).
+collapse_repeats = _collapse_repeats
+
+
 def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -> str:
     """Deterministic capitalization + end-punctuation. No LLM, no surprises.
 
@@ -227,6 +355,9 @@ def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -
     if not s or not s.strip():
         return s
     s = s.strip()
+    # Collapse adjacent repeated phrases/words (Whisper double-transcription)
+    # before any casing work, so "Open Browser Open Browser" → "Open Browser".
+    s = _collapse_repeats(s)
     # Defensive: strip the "comma-storm" failure mode where Whisper's decoder
     # was anchored on a comma-separated initial_prompt and emitted every
     # word capitalized + comma-separated ("Hello, World, Today."). Heuristic:
@@ -532,7 +663,7 @@ class Cleaner:
         return True
 
     @staticmethod
-    def _looks_hallucinated(raw: str, out: str) -> bool:
+    def _looks_hallucinated(raw: str, out: str, style: str = "default") -> bool:
         """Detect when the model gave a structured/chatbot response instead of cleaning."""
         if not out:
             return False
@@ -548,8 +679,11 @@ class Cleaner:
                              "Preserved Vocabulary:", "Error Check:")
         if any(sig in out for sig in markdown_signals):
             return True
-        # Multiple newlines = model giving a structured response
-        if out.count("\n") > raw.count("\n") + 2:
+        # Multiple newlines = model giving a structured response. Polished mode
+        # legitimately reflows a run-on into a couple of short paragraphs, so it
+        # gets a larger newline budget than minimal styles.
+        newline_slack = 6 if style == "polished" else 2
+        if out.count("\n") > raw.count("\n") + newline_slack:
             return True
         return False
 
@@ -581,6 +715,11 @@ class Cleaner:
         if (
             skip_when_clean
             and style != "prompt"
+            # Polished is allowed to fix grammar/structure, which the
+            # punctuation-only _is_already_clean() heuristic can't detect — a
+            # short, capitalized, punctuated sentence can still be ungrammatical.
+            # So never skip the LLM for polished; let it actually do its job.
+            and style != "polished"
             and provider_override is None
             and self._is_already_clean(text)
         ):
@@ -655,7 +794,7 @@ class Cleaner:
                         return text
             else:
                 return text
-            if style != "prompt" and self._looks_hallucinated(text, out):
+            if style != "prompt" and self._looks_hallucinated(text, out, style):
                 _log.warning(
                     "hallucination guard tripped (raw=%d out=%d); using raw text",
                     len(text), len(out),
@@ -814,13 +953,57 @@ class Cleaner:
         out = (out or "").strip()
         if not out or out == raw_text:
             return None
-        if self._looks_hallucinated(raw_text, out):
+        if self._looks_hallucinated(raw_text, out, style):
             _log.warning(
                 "teacher hallucination guard tripped (raw=%d out=%d); dropping",
                 len(raw_text), len(out),
             )
             return None
         return out
+
+    def reclean_improve(self, raw: str, prior: str, *,
+                        use_cloud: bool = False,
+                        style: str = "polished") -> str | None:
+        """Second-pass improvement for the verify-and-improve loop.
+
+        Given the original dictation and a first cleanup attempt, ask the model
+        to fix any remaining grammar/structure issues — preserving meaning and
+        inventing nothing. Returns improved text, or None if nothing usable came
+        back (caller keeps the first pass). When `use_cloud` is set we try the
+        stronger Groq model first and fall back to local on any failure (e.g. no
+        GROQ_API_KEY), so regular dictation never breaks on a missing key.
+        """
+        if not raw or not prior:
+            return None
+        instruction = SYSTEM_PROMPTS["polished"] + (
+            "\n\nTHIS IS A SECOND PASS. You are given the original dictation and "
+            "a first cleanup attempt. Improve the attempt: fix any remaining "
+            "grammar, agreement, tense, or awkward structure. Keep the meaning "
+            "identical and invent nothing. If the attempt is already correct, "
+            "return it unchanged. Output ONLY the improved text."
+        )
+        user = f"ORIGINAL DICTATION:\n{raw}\n\nFIRST ATTEMPT:\n{prior}"
+        out = None
+        if use_cloud:
+            try:
+                out = self._via_groq(instruction, user)
+            except Exception as e:
+                _log.warning("reclean_improve cloud pass failed (%s); using local", e)
+                out = None
+        if not out:
+            try:
+                out = self._via_ollama(instruction, user, style=style)
+            except Exception as e:
+                _log.warning("reclean_improve local pass failed: %s", e)
+                return None
+        out = (out or "").strip()
+        if not out:
+            return None
+        if self._looks_hallucinated(raw, out, style):
+            _log.warning("reclean_improve guard tripped (raw=%d out=%d); dropping",
+                         len(raw), len(out))
+            return None
+        return self._finalize(self._expand_snippets(out), style)
 
     def _via_anthropic(self, system: str, text: str, *,
                        max_tokens: int | None = None) -> str:
