@@ -1183,7 +1183,11 @@ def make_app(app_ref, bound_port: int | None = None):
         return jsonify({"available": True, "reason": "ok"})
 
     # --- Health / API ----------------------------------------------------
+    # Serve the probe at both the namespaced path and the bare /healthz that
+    # Docker/K8s/uptime monitors default to — external scrapers were hitting
+    # /healthz and getting a 404 (observed in startup logs).
     @flask_app.get("/api/healthz")
+    @flask_app.get("/healthz")
     def healthz():
         """Lightweight health probe for installers, watchdogs, and the tray.
 

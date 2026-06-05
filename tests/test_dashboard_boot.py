@@ -73,6 +73,16 @@ def test_healthz_returns_ok():
     assert "groq_key_set" in body["features"]
 
 
+def test_bare_healthz_alias_returns_ok():
+    """The bare /healthz alias (Docker/K8s/uptime-monitor convention) must
+    serve the same probe as /api/healthz — external scrapers hitting /healthz
+    were getting 404s."""
+    client = _flask_client(_fake_app_ref())
+    r = client.get("/healthz", headers={"Host": "127.0.0.1:8766"})
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
+
+
 # --- Host header guard (DNS-rebinding defense) -------------------------------
 
 def test_bad_host_header_rejected():
