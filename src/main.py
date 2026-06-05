@@ -1641,6 +1641,15 @@ def main():
     except KeyboardInterrupt:
         console.print("\n[dim]bye.[/dim]")
         sys.exit(0)
+    except Exception:
+        # Uncaught failure during startup or the run loop. In the windowless
+        # daemon (run_silent.vbs) the traceback would vanish with no console,
+        # leaving "dictation just stopped" with no trace — and because atexit
+        # clears the PID file on this exit, the watchdog reads it as a clean
+        # quit and won't relaunch. Record the reason before we die so the
+        # crash is debuggable from wispr.log; re-raise to exit non-zero.
+        _log.exception("daemon crashed with an unhandled exception")
+        raise
 
 
 if __name__ == "__main__":
