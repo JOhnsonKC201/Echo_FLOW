@@ -85,6 +85,8 @@ voice-action shortcuts, settings, light/dark theme, and notification sounds.
 - **Never blocks dictation.** Flask runs in a daemon thread; the window runs in a
   separate process. A crash in either can't wedge the hotkey path.
 - **Works offline forever.** No SPA framework, no Node toolchain.
+- **Keyboard-first.** Press **⌘/Ctrl+K** anywhere in the dashboard to jump to any
+  page; the sidebar collapses to a drawer on narrow windows.
 
 Open it from **Tray → Open Dashboard**, `run_dashboard.bat`, or a browser.
 
