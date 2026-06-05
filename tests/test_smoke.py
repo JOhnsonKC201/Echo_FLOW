@@ -1,4 +1,5 @@
 """Smoke tests — lock down current correct behavior so refactors are safe."""
+import logging
 import sqlite3
 from pathlib import Path
 
@@ -260,6 +261,65 @@ def test_phase_respects_disabled_flag(temp_db):
     assert decision.name == "manual"
     assert decision.transcribe_backend == "local"
     assert decision.cleanup_provider == "ollama"
+
+
+class _RecordCollector(logging.Handler):
+    """Capture records directly off the wispr.phase logger.
+
+    The app's log.setup() sets propagate=False on the `wispr` logger, so
+    pytest's caplog (which listens on the root logger) misses these records
+    once any other test has called setup(). Attaching here is isolation-proof.
+    """
+
+    def __init__(self):
+        super().__init__(level=logging.DEBUG)
+        self.records = []
+
+    def emit(self, record):
+        self.records.append(record)
+
+
+def _capture_phase_logs():
+    from src import phase as phase_mod
+    logger = phase_mod._log
+    handler = _RecordCollector()
+    prev_level = logger.level
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+    return phase_mod, logger, handler, prev_level
+
+
+def test_ollama_alive_offline_is_quiet():
+    """An unreachable Ollama is an expected, handled state — it must NOT emit an
+    ERROR-level traceback (those flood _live_err.txt on every daemon restart and
+    bury real bugs). Regression guard for the noisy-log fix."""
+    phase_mod, logger, handler, prev = _capture_phase_logs()
+    try:
+        # Port 1 is dead → connection error → expected False, logged at debug.
+        assert phase_mod._ollama_alive("http://localhost:1") is False
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(prev)
+    loud = [r for r in handler.records if r.levelno >= logging.WARNING]
+    assert loud == [], f"offline Ollama should not log at WARNING+; got {loud}"
+    assert any(r.levelno == logging.DEBUG for r in handler.records)
+
+
+def test_ollama_alive_unexpected_error_still_loud(monkeypatch):
+    """A non-network error (genuine bug) must still surface with a traceback so
+    it stays visible — we only quieted the expected connection-failure case."""
+    phase_mod, logger, handler, prev = _capture_phase_logs()
+
+    def _boom(*_a, **_k):
+        raise ValueError("unexpected non-network failure")
+
+    monkeypatch.setattr(phase_mod.requests, "get", _boom)
+    try:
+        assert phase_mod._ollama_alive("http://localhost:11434") is False
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(prev)
+    assert any(r.levelno >= logging.ERROR for r in handler.records)
 
 
 # --- H2: warmup propagates HTTP errors ---------------------------------------

@@ -57,7 +57,17 @@ def _ollama_alive(base_url: str) -> bool:
     try:
         r = requests.get(f"{base_url.rstrip('/')}/api/tags", timeout=1.0)
         return r.status_code == 200
+    except requests.exceptions.RequestException as e:
+        # Ollama being unreachable is an *expected, handled* state — it is the
+        # signal this function exists to return, and decide() degrades to the
+        # `none` provider on a False. Logging a full ERROR traceback here floods
+        # the error stream (WARNING+) on every restart and buries real bugs.
+        # Record it quietly at debug instead.
+        _log.debug("Ollama not reachable at %s: %s", base_url, e)
+        return False
     except Exception as e:
+        # Anything that isn't a network error is genuinely unexpected — keep the
+        # traceback so it stays visible.
         _log.exception(f"Suppressed in _ollama_alive: {e}")
         return False
 
