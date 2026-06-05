@@ -1174,3 +1174,56 @@ kbd {
   display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* --- Elevated search surface: icon field, "/" hint, chips, motion ------ */
+.search-lede { max-width: 640px; line-height: 1.55; margin-bottom: 14px; }
+
+.search-wrap { position: relative; display: flex; align-items: center; }
+.search-wrap .search-field { padding-left: 42px; padding-right: 42px; }
+.search-ico {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  width: 17px; height: 17px; color: var(--muted);
+  pointer-events: none; transition: color .15s ease;
+}
+.search-wrap:focus-within .search-ico { color: var(--accent); }
+/* "/" focus hint — inherits the global <kbd> chrome; fades out once focused. */
+.search-kbd {
+  position: absolute; right: 11px; top: 50%; transform: translateY(-50%);
+  cursor: pointer; opacity: .65; transition: opacity .15s ease;
+}
+.search-kbd:hover { opacity: 1; }
+.search-wrap:focus-within .search-kbd { opacity: 0; pointer-events: none; }
+
+.search-suggestions { margin: 14px 2px 2px; }
+.search-suggestions[hidden] { display: none; }
+.search-suggestions .section-label { display: block; margin-bottom: 9px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.search-chip {
+  padding: 6px 13px; border-radius: 999px;
+  background: color-mix(in oklab, var(--panel-2) 92%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+  color: var(--muted); font-size: 12.5px; line-height: 1.2; cursor: pointer;
+  transition: color .14s ease, border-color .14s ease,
+              background .14s ease, transform .14s ease;
+}
+.search-chip:hover {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent) 10%, var(--panel-2));
+  transform: translateY(-1px);
+}
+.search-chip:active { transform: translateY(0); }
+
+/* Centered empty state with a soft glyph above the copy. */
+.placeholder .ph-inner { display: grid; justify-items: center; padding: 8px 20px; }
+.placeholder .ph-ico {
+  width: 30px; height: 30px; color: var(--muted-2); margin-bottom: 12px; opacity: .85;
+}
+
+/* Result cards rise in with a capped per-card stagger (--d set inline). */
+@media (prefers-reduced-motion: no-preference) {
+  .search-card {
+    animation: ef-rise .42s cubic-bezier(.2,.7,.2,1) both;
+    animation-delay: var(--d, 0ms);
+  }
+}
