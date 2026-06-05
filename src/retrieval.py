@@ -137,45 +137,17 @@ class Retriever:
             return None
 
     def search(self, query_text: str, style: str | None = None) -> list[tuple[str, str, float]]:
-        """Return [(raw, cleaned, similarity), …] sorted desc."""
-        if not self.cfg.enabled:
-            return []
-        qv = self.embed_text(query_text)
-        if qv is None:
-            return []
-        # Defense-in-depth: filter mobile-sourced rows out of RAG by default.
-        # Schema guarantees source defaults to 'desktop' for legacy rows.
-        source_filter = "" if self.cfg.trust_mobile else " AND source != 'mobile'"
-        try:
-            with closing(self._conn()) as conn:
-                if style:
-                    rows = conn.execute(
-                        "SELECT raw_text, cleaned_text, embedding FROM dictations "
-                        "WHERE embedding IS NOT NULL AND style = ? AND raw_text != cleaned_text"
-                        + source_filter,
-                        (style,),
-                    ).fetchall()
-                else:
-                    rows = conn.execute(
-                        "SELECT raw_text, cleaned_text, embedding FROM dictations "
-                        "WHERE embedding IS NOT NULL AND raw_text != cleaned_text"
-                        + source_filter
-                    ).fetchall()
-        except Exception:
-            return []
-        if not rows:
-            return []
-        scored: list[tuple[str, str, float]] = []
-        for raw, cleaned, blob in rows:
-            try:
-                v = from_blob(blob)
-                sim = float(np.dot(qv, v))   # both are L2-normalized → cosine
-                if sim >= self.cfg.min_similarity:
-                    scored.append((raw, cleaned, sim))
-            except Exception:
-                continue
-        scored.sort(key=lambda x: x[2], reverse=True)
-        return scored[: self.cfg.k]
+        """Return [(raw, cleaned, similarity), …] sorted desc.
+
+        Thin projection over search_with_ids — callers that don't need the
+        matched row's primary key drop it here. Keeping one query + scoring
+        path avoids the two implementations silently drifting (e.g. the
+        mobile-source filter being fixed in one but not the other).
+        """
+        return [
+            (raw, cleaned, sim)
+            for (_rid, raw, cleaned, sim) in self.search_with_ids(query_text, style)
+        ]
 
     def search_with_ids(
         self, query_text: str, style: str | None = None
