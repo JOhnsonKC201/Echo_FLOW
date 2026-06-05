@@ -57,11 +57,11 @@ def current_wpm(
     window_days: int = 7,
     include_mobile: bool = False,
 ) -> int:
-    """Median-ish WPM across recent dictations.
+    """Mean WPM across recent dictations.
 
-    We compute per-dictation WPM (words / minutes-spoken) and average. That's
-    more meaningful than total_words / total_seconds because long pauses
-    between dictations shouldn't drag the average down.
+    We compute per-dictation WPM (words / minutes-spoken) and take the
+    arithmetic mean. That's more meaningful than total_words / total_seconds
+    because long pauses between dictations shouldn't drag the average down.
     """
     cutoff = _now_ts() - (window_days * 86400)
     where_src = _source_clause(include_mobile)
