@@ -28,3 +28,6 @@ dist/
 
 # Local icon backups (originals preserved in git history)
 assets/_original_icons/
+
+# Personal walkthrough script — kept local, not for the public repo
+docs/VIDEO_SCRIPT.md
