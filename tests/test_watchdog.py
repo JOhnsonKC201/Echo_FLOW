@@ -70,3 +70,57 @@ def test_read_pid_returns_none_on_garbage(monkeypatch, tmp_path):
     pid_file.write_text("not-a-number")
     monkeypatch.setattr(watchdog, "PID_FILE", pid_file)
     assert watchdog._read_pid() is None
+
+
+# --- _decide (relaunch decision) ---------------------------------------------
+
+def test_decide_stop_flag_wins():
+    """A deliberate quit (stop sentinel) must stand down even if the PID is
+    dead — otherwise the watchdog resurrects a daemon the user shut off."""
+    assert watchdog._decide(stop_requested=True, pid=999, alive=False) == "stop"
+    assert watchdog._decide(stop_requested=True, pid=None, alive=False) == "stop"
+
+
+def test_decide_dead_pid_relaunches():
+    """PID present but dead, no stop flag → that's a crash → relaunch."""
+    assert watchdog._decide(stop_requested=False, pid=4321, alive=False) == "relaunch"
+
+
+def test_decide_alive_is_ok():
+    assert watchdog._decide(stop_requested=False, pid=4321, alive=True) == "ok"
+
+
+def test_decide_no_pid_is_ok():
+    """No PID file yet (daemon still starting / never started) → do nothing,
+    so we never relaunch into a startup race."""
+    assert watchdog._decide(stop_requested=False, pid=None, alive=False) == "ok"
+
+
+# --- RestartLimiter (crash-loop circuit breaker) -----------------------------
+
+def test_restart_limiter_allows_up_to_limit():
+    lim = watchdog.RestartLimiter(limit=3, window_s=600)
+    assert [lim.allow(now=100.0 + i) for i in range(5)] == [True, True, True, False, False]
+
+
+def test_restart_limiter_window_slides():
+    """Attempts older than the window fall off, re-opening the breaker."""
+    lim = watchdog.RestartLimiter(limit=2, window_s=100)
+    assert lim.allow(now=0.0) is True
+    assert lim.allow(now=10.0) is True
+    assert lim.allow(now=20.0) is False          # 3rd within 100s → blocked
+    # Jump past the window so the first two stamps expire.
+    assert lim.allow(now=200.0) is True
+    assert lim.allow(now=205.0) is True
+    assert lim.allow(now=210.0) is False
+
+
+# --- Cross-module contract ---------------------------------------------------
+
+def test_watchdog_and_singleton_agree_on_paths():
+    """The daemon writes wispr.pid / wispr.stop (singleton) and the watchdog
+    reads them — they declare the paths independently. If a rename drifts one
+    side, the watchdog silently stops working, so pin the contract here."""
+    from src import singleton
+    assert watchdog.PID_FILE == singleton._PID_FILE
+    assert watchdog.STOP_FLAG == singleton._STOP_FLAG

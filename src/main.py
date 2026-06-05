@@ -1454,6 +1454,11 @@ class App:
 
     def tray_quit(self):
         console.print("[dim]Quit requested from tray.[/dim]")
+        # Tell the watchdog this is deliberate so it doesn't relaunch us.
+        # MUST precede os._exit(): that hard-exits and skips atexit entirely,
+        # which is exactly why the old atexit-based PID cleanup never ran here.
+        from .singleton import request_stop
+        request_stop()
         os._exit(0)
 
     def run(self):
@@ -1632,7 +1637,7 @@ class App:
 
 def main():
     # Single-instance guard — if another daemon is running, exit immediately.
-    from .singleton import acquire_or_exit
+    from .singleton import acquire_or_exit, request_stop
     acquire_or_exit()
     cfg = load_config()
     try:
@@ -1640,6 +1645,8 @@ def main():
         app.run()
     except KeyboardInterrupt:
         console.print("\n[dim]bye.[/dim]")
+        # Deliberate quit — signal the watchdog to stand down.
+        request_stop()
         sys.exit(0)
     except Exception:
         # Uncaught failure during startup or the run loop. In the windowless

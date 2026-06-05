@@ -1,13 +1,23 @@
-"""Watchdog: relaunches the daemon if it crashes.
+"""Watchdog: relaunches the daemon if it crashes, but not if the user quit.
 
 Lifecycle:
-1. Daemon writes its PID to data/wispr.pid at startup, deletes it on graceful exit.
-2. This watchdog polls every 30s:
-   - If wispr.pid is missing → daemon hasn't started yet or quit cleanly. Don't restart.
-   - If wispr.pid exists but the PID is dead → daemon crashed. Relaunch via run.bat.
-   - If wispr.pid exists and the PID is alive → all good.
-3. The singleton lock in main.py prevents double-launch if the user manually
+1. The daemon writes its PID to data/wispr.pid at startup and leaves it there
+   for its whole life (including across a crash — see src/singleton.py). On a
+   deliberate quit it first writes data/wispr.stop.
+2. This watchdog polls every 30s and decides via _decide():
+   - wispr.stop present  → user quit on purpose → stand down (stop watching).
+   - PID present but dead → crash → relaunch via run_silent.vbs.
+   - PID alive, or no PID yet during startup → do nothing.
+3. A RestartLimiter caps relaunches (MAX_RESTARTS within RESTART_WINDOW_S) so a
+   daemon that dies instantly (bad config, missing model) isn't respawned
+   forever; when the breaker opens it writes data/wispr.crashloop and gives up.
+4. The singleton lock in main.py prevents double-launch if the user manually
    started the daemon while we were about to relaunch.
+
+Why the stop sentinel instead of "PID missing": the tray-quit path calls
+os._exit(), which skips atexit, and an exception crash used to clear the PID via
+atexit — so "dead/missing PID" alone could never distinguish a deliberate quit
+from a crash. Intent (wispr.stop) and health (PID liveness) are now separate.
 
 The watchdog itself uses a separate PID file (data/watchdog.pid) and the same
 single-instance trick on a different port, so only one watchdog runs.
@@ -26,6 +36,49 @@ WATCHDOG_PORT = 47824
 POLL_SECONDS = 30
 PID_FILE = Path("data/wispr.pid")
 WATCHDOG_PID_FILE = Path("data/watchdog.pid")
+STOP_FLAG = Path("data/wispr.stop")        # present ⇒ user quit; do not relaunch
+CRASHLOOP_FLAG = Path("data/wispr.crashloop")  # written when the breaker trips
+
+# Crash-loop circuit breaker: never relaunch more than MAX_RESTARTS times within
+# RESTART_WINDOW_S. A daemon that dies instantly (corrupt config, missing model)
+# would otherwise be respawned every POLL_SECONDS forever.
+MAX_RESTARTS = 5
+RESTART_WINDOW_S = 600
+
+
+class RestartLimiter:
+    """Sliding-window rate limiter for relaunches.
+
+    allow(now) records the attempt and returns True while under the cap; once
+    MAX_RESTARTS land inside RESTART_WINDOW_S it returns False (breaker open).
+    Pure and deterministic — `now` is injected so it is unit-testable.
+    """
+
+    def __init__(self, limit: int = MAX_RESTARTS, window_s: float = RESTART_WINDOW_S):
+        self.limit = limit
+        self.window_s = window_s
+        self._stamps: list[float] = []
+
+    def allow(self, now: float) -> bool:
+        self._stamps = [t for t in self._stamps if now - t < self.window_s]
+        if len(self._stamps) >= self.limit:
+            return False
+        self._stamps.append(now)
+        return True
+
+
+def _decide(stop_requested: bool, pid: int | None, alive: bool) -> str:
+    """Pure relaunch decision. Returns 'stop' | 'relaunch' | 'ok'.
+
+    - stop_requested → the user deliberately quit; stand down.
+    - pid present but dead, and no stop → the daemon crashed; relaunch.
+    - otherwise (alive, or no PID yet during startup) → do nothing.
+    """
+    if stop_requested:
+        return "stop"
+    if pid is not None and not alive:
+        return "relaunch"
+    return "ok"
 
 
 def _is_alive(pid: int) -> bool:
@@ -95,6 +148,9 @@ def _acquire_lock() -> socket.socket | None:
 
 
 def main():
+    import logging
+    log = logging.getLogger("wispr.watchdog")
+
     # Single-instance for the watchdog itself
     lock = _acquire_lock()
     if lock is None:
@@ -103,20 +159,41 @@ def main():
 
     WATCHDOG_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     WATCHDOG_PID_FILE.write_text(str(os.getpid()))
+    limiter = RestartLimiter()
 
     try:
         # Give the daemon ~15s to come up before we start checking
         time.sleep(15)
         while True:
             pid = _read_pid()
-            if pid is not None and not _is_alive(pid):
-                # Daemon was running, now it's dead → relaunch
+            action = _decide(STOP_FLAG.exists(), pid, _is_alive(pid) if pid else False)
+            if action == "stop":
+                # User deliberately quit (tray Quit / Ctrl+C wrote the sentinel).
+                # Stand down so we don't resurrect a daemon they shut off.
+                log.info("stop requested — watchdog standing down")
+                break
+            if action == "relaunch":
+                if not limiter.allow(time.time()):
+                    # Breaker open: the daemon keeps dying. Stop respawning a
+                    # broken build/config and leave a trace + marker so the
+                    # user knows recovery was abandoned (not silently looping).
+                    log.error(
+                        "daemon crash-looped (>=%d restarts in %ds) — giving up; "
+                        "fix the cause and relaunch manually",
+                        MAX_RESTARTS, RESTART_WINDOW_S)
+                    try:
+                        CRASHLOOP_FLAG.write_text("crash-loop; watchdog gave up")
+                    except Exception:
+                        pass
+                    break
+                # Daemon was running, now it's dead → relaunch. Unlink first so a
+                # slow/failed relaunch reads as "missing" (no retry) rather than
+                # "dead" (which would re-trip the breaker on the next poll).
                 try:
                     PID_FILE.unlink()
                 except Exception as e:
-                    import logging
-                    logging.getLogger("wispr.watchdog").warning(
-                        "stale PID file unlink failed: %s", e)
+                    log.warning("stale PID file unlink failed: %s", e)
+                log.warning("daemon (pid %s) is dead — relaunching", pid)
                 _relaunch()
             time.sleep(POLL_SECONDS)
     finally:

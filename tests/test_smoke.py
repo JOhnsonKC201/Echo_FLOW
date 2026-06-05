@@ -1,5 +1,6 @@
 """Smoke tests — lock down current correct behavior so refactors are safe."""
 import logging
+import os
 import sqlite3
 from pathlib import Path
 
@@ -545,3 +546,33 @@ def test_singleton_blocks_second(monkeypatch):
             singleton.acquire_or_exit()
     finally:
         s.close()
+
+
+def test_request_stop_writes_flag(monkeypatch, tmp_path):
+    """A deliberate quit must drop the stop sentinel the watchdog reads."""
+    from src import singleton
+    flag = tmp_path / "wispr.stop"
+    monkeypatch.setattr(singleton, "_STOP_FLAG", flag)
+    assert not flag.exists()
+    singleton.request_stop()
+    assert flag.exists()
+
+
+def test_acquire_clears_stale_stop_flag(monkeypatch, tmp_path):
+    """A fresh start means 'should be running' — acquire_or_exit must drop a
+    stop flag left by a previous quit, or the watchdog would immediately stand
+    down for a daemon that is, in fact, up."""
+    from src import singleton
+    flag = tmp_path / "wispr.stop"
+    pid_file = tmp_path / "wispr.pid"
+    flag.write_text("123")  # stale flag from a prior deliberate quit
+    monkeypatch.setattr(singleton, "_STOP_FLAG", flag)
+    monkeypatch.setattr(singleton, "_PID_FILE", pid_file)
+    monkeypatch.setattr(singleton, "_LOCK_PORT", 53117)  # isolated, free port
+    singleton.acquire_or_exit()
+    assert not flag.exists(), "acquire must clear a stale stop flag"
+    assert pid_file.read_text().strip() == str(os.getpid())
+    # Release the lock socket we just acquired so we don't leak it.
+    if singleton._lock_socket is not None:
+        singleton._lock_socket.close()
+        singleton._lock_socket = None

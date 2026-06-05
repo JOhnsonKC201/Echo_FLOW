@@ -1,14 +1,26 @@
-"""Single-instance lock. Prevents multiple daemons running at once.
+"""Single-instance lock + run/stop intent for the watchdog.
 
-Uses a TCP socket bound to localhost as the lock — if another process holds it,
-we exit immediately. The OS releases the port when the process dies, so no
-stale lock files to clean up.
+The lock is a TCP socket bound to localhost — if another process holds it, we
+exit immediately. The OS releases the port when the process dies, so there is no
+stale lock file to clean up.
 
-Also writes data/wispr.pid for the watchdog to monitor.
+Two on-disk files coordinate with the watchdog (src/watchdog.py):
+
+  data/wispr.pid   — this daemon's PID. Written at startup and left in place for
+                     the process lifetime, INCLUDING across a crash. The watchdog
+                     reads it to tell "alive" from "died". It is intentionally NOT
+                     cleared on exit: a crash must remain detectable.
+  data/wispr.stop  — intent sentinel. Present ⇒ "the user asked to stop; do not
+                     relaunch." Written on a deliberate quit, cleared on startup.
+
+This split lets the watchdog distinguish a deliberate quit (stop flag present →
+leave it down) from a crash (no stop flag, PID dead → relaunch). Before, both
+looked identical: a dead/missing PID. os._exit() in the tray-quit path skips
+atexit entirely, so the old atexit-based PID cleanup could never have made that
+distinction reliably anyway.
 """
 from __future__ import annotations
 
-import atexit
 import os
 import socket
 import sys
@@ -22,6 +34,7 @@ _log = wlog.get("singleton")
 _LOCK_PORT = 47823
 _lock_socket: socket.socket | None = None
 _PID_FILE = Path("data/wispr.pid")
+_STOP_FLAG = Path("data/wispr.stop")
 
 
 def _write_pid():
@@ -32,12 +45,25 @@ def _write_pid():
         _log.exception(f"Suppressed in _write_pid: {e}")
 
 
-def _clear_pid():
+def _clear_stop_flag():
+    """A fresh start means 'this daemon should be running' — drop any stop
+    sentinel left by a previous deliberate quit so the watchdog watches us."""
     try:
-        if _PID_FILE.exists():
-            _PID_FILE.unlink()
+        if _STOP_FLAG.exists():
+            _STOP_FLAG.unlink()
     except Exception as e:
-        _log.exception(f"Suppressed in _clear_pid: {e}")
+        _log.exception(f"Suppressed in _clear_stop_flag: {e}")
+
+
+def request_stop():
+    """Record that this shutdown is deliberate, so the watchdog does NOT
+    relaunch the daemon. Call this on every intentional quit path BEFORE
+    exiting (including os._exit(), which skips atexit handlers)."""
+    try:
+        _STOP_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        _STOP_FLAG.write_text(str(os.getpid()))
+    except Exception as e:
+        _log.exception(f"Suppressed in request_stop: {e}")
 
 
 def acquire_or_exit() -> None:
@@ -52,4 +78,4 @@ def acquire_or_exit() -> None:
         print("Another Echo Flow instance is already running. Exiting.")
         sys.exit(0)
     _write_pid()
-    atexit.register(_clear_pid)
+    _clear_stop_flag()
