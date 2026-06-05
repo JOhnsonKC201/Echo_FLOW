@@ -6,7 +6,7 @@
   --panel-2: #1d222b;
   --border: #23282f;
   --muted: #7a8294;
-  --muted-2: #565d6c;       /* tertiary text */
+  --muted-2: #767e8e;       /* tertiary text — WCAG AA on --bg (4.67:1) */
   --text: #e7e9ee;
   --accent: #3eaf6f;         /* tighter, less saturated than #58c77a */
   --accent-2: #4aa9ff;
@@ -27,7 +27,7 @@
   --panel-2: #f1ece0;
   --border: #e6e0d0;
   --muted: #6c6a62;
-  --muted-2: #9a978c;
+  --muted-2: #726f5d;       /* tertiary text — WCAG AA on --bg (4.64:1) */
   --text: #1c2230;
   --accent: #1a4a3a;
   --accent-2: #1f6fd0;
@@ -1227,3 +1227,170 @@ kbd {
     animation-delay: var(--d, 0ms);
   }
 }
+
+/* ====================================================================== *
+ * Responsive layout — phones & tablets.
+ *
+ * The shell is a fixed sidebar + fixed topbar + margin-offset content
+ * (see .sidebar / .topbar / .content above). Below the tablet breakpoint
+ * the sidebar becomes an off-canvas drawer toggled by the topbar
+ * hamburger (body.nav-open, wired in app.js), and the multi-column grids
+ * collapse to a single column. Tokens only — no new colors.
+ * ====================================================================== */
+
+/* Hamburger + scrim are inert at desktop widths. */
+.nav-toggle { display: none; }
+.sidebar-backdrop { display: none; }
+
+/* Group the hamburger with the breadcrumb so the topbar keeps its
+   two-cluster space-between layout. Harmless on desktop. */
+.topbar-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+@media (max-width: 860px) {
+  /* Reveal the menu trigger at the far left of the topbar. */
+  .nav-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; padding: 0; flex: none;
+    border-radius: 9px; border: 1px solid transparent;
+    background: transparent; color: var(--text); cursor: pointer;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .nav-toggle:hover { background: var(--panel); border-color: var(--border); }
+  .nav-toggle svg { width: 18px; height: 18px; }
+
+  /* Sidebar slides off-canvas and overlays content when open. */
+  .sidebar {
+    width: min(86vw, var(--sidebar-w));
+    transform: translateX(-100%);
+    transition: transform .26s cubic-bezier(.2,.7,.2,1);
+    z-index: 60;
+    box-shadow: 0 0 40px -8px rgba(0,0,0,.5);
+  }
+  body.nav-open .sidebar { transform: translateX(0); }
+
+  /* Dimmed scrim behind the open drawer. */
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 55;
+    background: color-mix(in oklab, #000 55%, transparent);
+    opacity: 0; pointer-events: none;
+    transition: opacity .26s ease;
+  }
+  body.nav-open .sidebar-backdrop { opacity: 1; pointer-events: auto; }
+
+  /* Topbar + content reclaim the full width. */
+  .topbar  { left: 0; padding: 0 14px; }
+  .content { margin-left: 0; padding: 16px 14px; }
+
+  /* Collapse the major multi-column grids to a single column. */
+  .home-grid     { grid-template-columns: 1fr; gap: 16px; }
+  .home-stats    { position: static; top: auto; flex-direction: row; flex-wrap: wrap; }
+  .home-stats .stat-card { flex: 1 1 150px; }
+  .insights-tiles { grid-template-columns: 1fr; }
+  .insights-row   { grid-template-columns: 1fr; }
+  .style-row      { grid-template-columns: 1fr; gap: 6px; }
+
+  /* Drop the fixed time column; let the source pill sit under the preview. */
+  .dictation-row { grid-template-columns: 64px minmax(0, 1fr); gap: 8px 12px; }
+  .dictation-row .src-pill { grid-column: 2; justify-self: start; }
+}
+
+@media (max-width: 480px) {
+  .content { padding: 14px 11px; }
+  .welcome { font-size: 19px; }
+  .home-stats { flex-direction: column; }
+  /* Fully stack dictation rows so long previews never crush the time col. */
+  .dictation-row { grid-template-columns: 1fr; gap: 4px; }
+  .dictation-row .preview { white-space: normal; }
+}
+
+/* The drawer slide honors reduced-motion (snaps instead of sliding). */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .sidebar-backdrop { transition: none; }
+}
+
+/* ====================================================================== *
+ * Skeleton loading placeholders — token-driven shimmer.
+ *
+ * A .skeleton element is a muted block with a light sweep; compose the
+ * .skel-* line/bar shapes inside an .inbox-card to mimic a real result
+ * while async data is in flight. Sweep is disabled under reduced-motion
+ * (the muted blocks stay, so the loading affordance survives).
+ * ====================================================================== */
+.skeleton {
+  position: relative; overflow: hidden;
+  background: color-mix(in oklab, var(--panel-2) 78%, var(--bg));
+  border-radius: 6px;
+}
+.skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg,
+    transparent,
+    color-mix(in oklab, var(--text) 8%, transparent),
+    transparent);
+  animation: ef-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes ef-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; }
+}
+
+/* Shapes for a skeleton search/inbox card. */
+.skel-bar  { height: 6px;  width: 100%; margin-bottom: 13px; }
+.skel-line { height: 11px; margin: 8px 0; }
+.skel-line.w-90 { width: 90%; }
+.skel-line.w-60 { width: 60%; }
+.skel-line.w-40 { width: 40%; }
+.skel-card { pointer-events: none; }
+.skel-card .inbox-actions .skel-line { height: 26px; width: 64px; margin: 0; border-radius: 9px; }
+
+/* ====================================================================== *
+ * Command palette (Cmd/Ctrl+K) — fast keyboard navigation overlay.
+ *
+ * Populated at runtime from the sidebar nav items (app.js), so it stays
+ * in sync with the navigation automatically. Pop animation respects
+ * reduced-motion.
+ * ====================================================================== */
+.cmdk[hidden] { display: none; }
+.cmdk {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 12vh 16px 16px;
+}
+.cmdk-backdrop {
+  position: absolute; inset: 0;
+  background: color-mix(in oklab, #000 50%, transparent);
+}
+.cmdk-panel {
+  position: relative; width: min(560px, 100%);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 14px; overflow: hidden;
+  box-shadow: 0 24px 60px -20px rgba(0,0,0,.6);
+  animation: ef-pop .16s cubic-bezier(.2,.7,.2,1) both;
+}
+@keyframes ef-pop { from { opacity: 0; transform: translateY(-6px) scale(.99); } }
+@media (prefers-reduced-motion: reduce) { .cmdk-panel { animation: none; } }
+.cmdk-input {
+  width: 100%; border: 0; border-bottom: 1px solid var(--border);
+  background: transparent; color: var(--text);
+  padding: 15px 18px; font-size: 15px; font-family: inherit; outline: none;
+}
+.cmdk-input::placeholder { color: var(--muted-2); }
+.cmdk-list {
+  list-style: none; margin: 0; padding: 6px;
+  max-height: 50vh; overflow-y: auto;
+}
+.cmdk-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 8px;
+  color: var(--muted); font-size: 13.5px; cursor: pointer;
+}
+.cmdk-item::before {
+  content: ""; width: 5px; height: 5px; border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 50%, transparent); flex: none;
+}
+.cmdk-item[aria-selected="true"], .cmdk-item:hover {
+  background: var(--panel-2); color: var(--text);
+}
+.cmdk-item[aria-selected="true"]::before { background: var(--accent); }
+.cmdk-empty { padding: 16px 18px; color: var(--muted); font-size: 13px; }

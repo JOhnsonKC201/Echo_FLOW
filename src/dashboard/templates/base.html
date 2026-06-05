@@ -20,7 +20,7 @@
 {% endif %}
 </head>
 <body data-page="{{ active }}">
-<aside class="sidebar">
+<aside class="sidebar" id="sidebar">
   <div class="brand">
     <img class="logo-img" src="{{ url_for('static', filename='logo.png') }}"
          alt="Echo Flow" width="28" height="28">
@@ -38,6 +38,9 @@
     <div class="muted">v0.1 dashboard</div>
   </div>
 </aside>
+{# Off-canvas drawer scrim — inert on desktop (CSS display:none), fades in
+   under the sidebar when body.nav-open on narrow viewports. #}
+<div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 <header class="topbar">
   {# Section display names — keep in sync with SECTIONS in dashboard/app.py.
      Falls back to the active key's title-case for anything not listed. #}
@@ -49,13 +52,24 @@
     'scratchpad': 'Scratchpad', 'privacy': 'Privacy',
     'settings': 'Settings', 'notifications': 'Notifications'
   } %}
-  <div class="crumb">{{ _crumbs.get(active, active|capitalize) }}</div>
-  <div class="topbar-actions">
-    <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light theme" type="button">
-      <span class="theme-icon">{% if theme == 'light' %}☀{% else %}☾{% endif %}</span>
+  <div class="topbar-left">
+    {# Mobile-only menu trigger; hidden via CSS at desktop widths. #}
+    <button class="nav-toggle" id="nav-toggle" type="button"
+            aria-label="Open navigation menu" aria-expanded="false" aria-controls="sidebar">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round"/>
+      </svg>
     </button>
-    <a class="bell" href="/notifications" title="Notifications">
-      <span class="bell-glyph">🔔</span>
+    <div class="crumb">{{ _crumbs.get(active, active|capitalize) }}</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light theme"
+            aria-label="Toggle dark or light theme" type="button">
+      <span class="theme-icon" aria-hidden="true">{% if theme == 'light' %}☀{% else %}☾{% endif %}</span>
+    </button>
+    <a class="bell" href="/notifications" title="Notifications" aria-label="Notifications">
+      <span class="bell-glyph" aria-hidden="true">🔔</span>
       <span class="bell-badge" id="bell-badge" hidden>0</span>
     </a>
   </div>
@@ -63,6 +77,16 @@
 <main class="content">
   {% block content %}{% endblock %}
 </main>
+{# Command palette (Cmd/Ctrl+K). Populated from the sidebar nav by app.js. #}
+<div class="cmdk" id="cmdk" hidden role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="cmdk-backdrop" data-cmdk-close></div>
+  <div class="cmdk-panel">
+    <input type="text" class="cmdk-input" id="cmdk-input" placeholder="Jump to a page…"
+           autocomplete="off" spellcheck="false" aria-label="Search pages"
+           role="combobox" aria-expanded="true" aria-controls="cmdk-list" aria-autocomplete="list">
+    <ul class="cmdk-list" id="cmdk-list" role="listbox" aria-label="Pages"></ul>
+  </div>
+</div>
 <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </body>
 </html>

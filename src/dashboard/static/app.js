@@ -59,11 +59,132 @@ async function toggleTheme() {
   } catch { /* swallow */ }
 }
 
+// Off-canvas sidebar drawer for narrow viewports. Desktop never opens it
+// (the hamburger is display:none), so this is inert there.
+function setupNavDrawer() {
+  const toggle = document.getElementById("nav-toggle");
+  const backdrop = document.getElementById("sidebar-backdrop");
+  const sidebar = document.getElementById("sidebar");
+  if (!toggle || !sidebar) return;
+
+  const setOpen = (open) => {
+    document.body.classList.toggle("nav-open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+  const close = () => setOpen(false);
+
+  toggle.addEventListener("click", () =>
+    setOpen(!document.body.classList.contains("nav-open")));
+  if (backdrop) backdrop.addEventListener("click", close);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.body.classList.contains("nav-open")) close();
+  });
+  // Tapping a destination closes the drawer so the target page is visible.
+  sidebar.querySelectorAll(".nav-item").forEach(a => a.addEventListener("click", close));
+  // Returning to desktop width should never leave a stuck-open drawer.
+  window.matchMedia("(min-width: 861px)").addEventListener("change", (e) => {
+    if (e.matches) close();
+  });
+}
+
+// Command palette (Cmd/Ctrl+K) — keyboard-first navigation. Entries are
+// derived from the sidebar nav so the palette never drifts from the menu.
+function setupCommandPalette() {
+  const root = document.getElementById("cmdk");
+  const input = document.getElementById("cmdk-input");
+  const list = document.getElementById("cmdk-list");
+  if (!root || !input || !list) return;
+
+  const entries = $$("#sidebar .nav-item").map(a => ({
+    label: (a.textContent || "").trim(),
+    url: a.getAttribute("href"),
+  })).filter(e => e.label && e.url);
+  if (!entries.length) return;
+
+  let selected = 0;
+  let lastFocus = null;
+
+  const render = (q) => {
+    const needle = q.trim().toLowerCase();
+    const matches = needle
+      ? entries.filter(e => e.label.toLowerCase().includes(needle))
+      : entries;
+    selected = 0;
+    if (!matches.length) {
+      list.innerHTML = '<li class="cmdk-empty">No pages match.</li>';
+      return [];
+    }
+    list.innerHTML = "";
+    matches.forEach((e, i) => {
+      const li = document.createElement("li");
+      li.className = "cmdk-item";
+      li.id = "cmdk-opt-" + i;
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", i === 0 ? "true" : "false");
+      li.dataset.url = e.url;
+      li.textContent = e.label;
+      li.addEventListener("click", () => { window.location.href = e.url; });
+      li.addEventListener("mousemove", () => setSelected(i));
+      list.appendChild(li);
+    });
+    input.setAttribute("aria-activedescendant", "cmdk-opt-0");
+    return matches;
+  };
+
+  const setSelected = (i) => {
+    const items = $$(".cmdk-item", list);
+    if (!items.length) return;
+    selected = (i + items.length) % items.length;
+    items.forEach((el, idx) => el.setAttribute("aria-selected", idx === selected ? "true" : "false"));
+    const el = items[selected];
+    input.setAttribute("aria-activedescendant", el.id);
+    el.scrollIntoView({ block: "nearest" });
+  };
+
+  const open = () => {
+    if (!root.hidden) return;
+    lastFocus = document.activeElement;
+    input.value = "";
+    render("");
+    root.hidden = false;
+    input.focus();
+  };
+  const close = () => {
+    if (root.hidden) return;
+    root.hidden = true;
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  };
+
+  // Global open shortcut: Cmd/Ctrl+K.
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+      e.preventDefault();
+      root.hidden ? open() : close();
+    }
+  });
+
+  input.addEventListener("input", () => render(input.value));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setSelected(selected + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSelected(selected - 1); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      const el = $$(".cmdk-item", list)[selected];
+      if (el && el.dataset.url) window.location.href = el.dataset.url;
+    } else if (e.key === "Escape") { e.preventDefault(); close(); }
+  });
+  root.addEventListener("click", (e) => {
+    if (e.target.hasAttribute("data-cmdk-close")) close();
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   refreshBell();
   setInterval(refreshBell, 5000);
   const tb = document.getElementById("theme-toggle");
   if (tb) tb.addEventListener("click", toggleTheme);
+  setupNavDrawer();
+  setupCommandPalette();
 });
 
 window.EF = { $, $$, escapeHtml, fetchJson };

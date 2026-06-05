@@ -140,6 +140,28 @@
     return li;
   }
 
+  // Skeleton placeholders shown while a query is in flight — shaped like a
+  // real result card so the layout doesn't jump when results land.
+  function renderSkeletons(n) {
+    showSuggestions(false);
+    empty.hidden = true;
+    ctx.hidden = true;
+    results.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < n; i++) {
+      const li = document.createElement('li');
+      li.className = 'inbox-card skel-card';
+      li.setAttribute('aria-hidden', 'true');
+      li.innerHTML =
+        '<div class="skeleton skel-bar"></div>' +
+        '<div class="skeleton skel-line w-90"></div>' +
+        '<div class="skeleton skel-line w-60"></div>' +
+        '<div class="inbox-actions"><div class="skeleton skel-line"></div></div>';
+      frag.appendChild(li);
+    }
+    results.appendChild(frag);
+  }
+
   function render(items, contextLabel) {
     results.innerHTML = '';
     showSuggestions(false);
@@ -164,6 +186,7 @@
 
   function fetchResults(url, mySeq, contextLabel) {
     status.textContent = 'Searching…';
+    renderSkeletons(4);
     fetch(url, { headers: { 'Accept': 'application/json' } })
       .then(function (res) { return res.json(); })
       .then(function (data) {
@@ -173,6 +196,7 @@
       })
       .catch(function () {
         if (mySeq !== seq) return;
+        results.innerHTML = '';        // drop the skeletons
         status.textContent = 'Search unavailable.';
       });
   }
