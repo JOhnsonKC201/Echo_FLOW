@@ -11,6 +11,10 @@ from typing import Callable
 from PIL import Image, ImageDraw
 import pystray
 
+from . import log as wlog
+
+_log = wlog.get("tray")
+
 
 def _make_icon(active: bool = True, color: str = "ok") -> Image.Image:
     """Generate a 64x64 icon. Filled = active, hollow = paused."""
@@ -111,7 +115,10 @@ class TrayApp:
             fn(*args)
             self.refresh()
         except Exception as e:
-            print(f"[tray] action failed: {e}")
+            # The tray runs in the windowless daemon — print() goes nowhere, so
+            # a menu action that silently failed left no trace. Log it.
+            _log.warning("tray action %s failed: %s",
+                         getattr(fn, "__name__", fn), e)
 
     def _quit(self):
         self.on_quit()

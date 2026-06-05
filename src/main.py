@@ -1045,7 +1045,7 @@ class App:
                         try:
                             self.pattern_miner.record(raw, cleaned)
                         except Exception as e:
-                            print(f"[pattern_miner] failed: {e}")
+                            _log.warning("pattern_miner record failed: %s", e)
                     # Background teacher distillation: re-clean via a stronger
                     # cloud model and store as source='teacher'. Off by default;
                     # opt in via cleanup.learning.teacher_enabled.
@@ -1055,7 +1055,11 @@ class App:
                             window_title=title, lang=lang, duration_ms=duration_ms,
                         )
                 except Exception as e:
-                    print(f"[log] failed: {e}")
+                    # Background persist/grade/embed thread — in the windowless
+                    # daemon a bare print() goes nowhere, so a failed history
+                    # write (the row that powers re-paste, RAG, and the
+                    # dashboard) would vanish silently. Log with a traceback.
+                    _log.exception("async log/grade/embed failed: %s", e)
             threading.Thread(target=_log_async, daemon=True).start()
 
             # Post-process: suggest tags + extract action items.

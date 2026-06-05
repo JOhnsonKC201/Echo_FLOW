@@ -17,6 +17,10 @@ import sqlite3
 import threading
 from contextlib import closing
 
+from . import log as wlog
+
+_log = wlog.get("editor")
+
 
 def _re_embed_if_possible(db_path: str, row_id: int, raw_text: str):
     """Background re-embed so the saved correction joins the RAG pool fresh."""
@@ -31,7 +35,10 @@ def _re_embed_if_possible(db_path: str, row_id: int, raw_text: str):
                 )
                 conn.commit()
         except Exception as e:
-            print(f"[editor] re-embed failed: {e}")
+            # Background thread in the windowless daemon — a bare print()
+            # vanishes. A failed re-embed means the user's correction won't
+            # join the RAG pool, so make it visible in the log.
+            _log.warning("re-embed after edit failed (row %s): %s", row_id, e)
     threading.Thread(target=worker, daemon=True).start()
 
 
