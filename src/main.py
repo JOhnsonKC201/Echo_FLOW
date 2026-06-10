@@ -366,6 +366,7 @@ class App:
         self._record_thread: threading.Thread | None = None
         self._active = False
         self._paused = False
+        self._state_lock = threading.Lock()  # guards _active/_paused check-and-set
         # M8: focused_title() involves a Win32 round-trip (~3-15ms in some
         # configurations). Cache at hotkey-press time so the hot path between
         # ASR and cleanup doesn't pay for it. Consumed + cleared per dictation.
@@ -1092,9 +1093,10 @@ class App:
 
     # --- hold mode ---
     def on_press_hold(self):
-        if self._active or self._paused:
-            return
-        self._active = True
+        with self._state_lock:
+            if self._active or self._paused:
+                return
+            self._active = True
         # M8: capture focused window title NOW, before recording. This is the
         # window the user intends to dictate into; capturing later (after ASR)
         # races with focus changes and costs a Win32 round-trip on the hot path.
@@ -1109,9 +1111,10 @@ class App:
         self.recorder.start()
 
     def on_release_hold(self):
-        if not self._active:
-            return
-        self._active = False
+        with self._state_lock:
+            if not self._active:
+                return
+            self._active = False
         t_release = time.perf_counter()
         audio = self.recorder.stop()
         _log.info("hotkey released: stop, captured %d samples", len(audio))
@@ -1123,9 +1126,10 @@ class App:
 
     def on_cancel_hold(self):
         """Veto: another combo (e.g. Ctrl+Shift+Win) is forming — abort recording."""
-        if not self._active:
-            return
-        self._active = False
+        with self._state_lock:
+            if not self._active:
+                return
+            self._active = False
         try:
             self.recorder.stop()   # discard whatever was captured
         except Exception as e:
@@ -1137,9 +1141,10 @@ class App:
 
     # --- toggle mode ---
     def on_toggle(self):
-        if self._active or self._paused:
-            return
-        self._active = True
+        with self._state_lock:
+            if self._active or self._paused:
+                return
+            self._active = True
         # M8: cache focused title at press time (see on_press_hold).
         try:
             self._press_title = self.injector.focused_title()
@@ -1151,7 +1156,8 @@ class App:
 
         def _run():
             audio = self.recorder.record_until_silence(max_seconds=120.0)
-            self._active = False
+            with self._state_lock:
+                self._active = False
             wsound.play("stop", self.cfg.get("sound"))
             console.print("[bold]■ stop[/bold]")
             self._do_dictation(audio)
@@ -1185,10 +1191,12 @@ class App:
         }
 
     def tray_pause_toggle(self):
-        self._paused = not self._paused
-        console.print(f"[yellow]{'⏸ Paused' if self._paused else '▶ Resumed'}[/yellow]")
+        with self._state_lock:
+            self._paused = not self._paused
+            _now_paused = self._paused
+        console.print(f"[yellow]{'⏸ Paused' if _now_paused else '▶ Resumed'}[/yellow]")
         if self.tray:
-            self.tray.set_state("paused" if self._paused else "ok")
+            self.tray.set_state("paused" if _now_paused else "ok")
 
     def tray_edit_last(self):
         # Tk must run on its own main thread; spawn a subprocess so it gets one.
