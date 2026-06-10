@@ -394,7 +394,7 @@ def make_app(app_ref, bound_port: int | None = None):
             except Exception as e:
                 _log.warning("dictionary add failed: %s", e)
                 msg = f"Error: {e}"
-        return redirect(f"/dictionary?flash={msg}")
+        return redirect("/dictionary?flash=" + _qp(msg))
 
     @flask_app.post("/dictionary/delete")
     def dictionary_delete():
@@ -413,7 +413,7 @@ def make_app(app_ref, bound_port: int | None = None):
             except Exception as e:
                 _log.warning("dictionary delete failed: %s", e)
                 msg = f"Error: {e}"
-        return redirect(f"/dictionary?flash={msg}")
+        return redirect("/dictionary?flash=" + _qp(msg))
 
     @flask_app.post("/dictionary/casing/add")
     def dictionary_casing_add():
@@ -438,7 +438,7 @@ def make_app(app_ref, bound_port: int | None = None):
             except Exception as e:
                 _log.warning("casing add failed: %s", e)
                 msg = f"Error: {e}"
-        return redirect(f"/dictionary?flash={msg}")
+        return redirect("/dictionary?flash=" + _qp(msg))
 
     @flask_app.post("/dictionary/casing/delete")
     def dictionary_casing_delete():
@@ -464,7 +464,7 @@ def make_app(app_ref, bound_port: int | None = None):
             except Exception as e:
                 _log.warning("casing delete failed: %s", e)
                 msg = f"Error: {e}"
-        return redirect(f"/dictionary?flash={msg}")
+        return redirect("/dictionary?flash=" + _qp(msg))
 
     @flask_app.post("/dictionary/import")
     def dictionary_import():
@@ -480,7 +480,7 @@ def make_app(app_ref, bound_port: int | None = None):
             msg = "History disabled — cannot import."
         elif not raw.strip():
             msg = "Nothing to import — paste or upload some terms first."
-            return redirect(f"/dictionary?flash={msg}")
+            return redirect("/dictionary?flash=" + _qp(msg))
         else:
             try:
                 result = _vocab.bulk_import(history.conn, raw)
@@ -491,7 +491,7 @@ def make_app(app_ref, bound_port: int | None = None):
             except Exception as e:
                 _log.warning("dictionary import failed: %s", e)
                 msg = f"Error: {e}"
-        return redirect(f"/dictionary?flash={msg}")
+        return redirect("/dictionary?flash=" + _qp(msg))
 
     @flask_app.get("/snippets")
     def snippets():
@@ -522,7 +522,7 @@ def make_app(app_ref, bound_port: int | None = None):
         try:
             _sn.add_snippet(history.conn, code, expansion)
             _maybe_reload_config(app_ref)
-            return redirect(f"/snippets?flash=Saved {code!r}.")
+            return redirect("/snippets?flash=" + _qp(f"Saved {code!r}."))
         except ValueError as e:
             return redirect("/snippets?flash=" + _qp(str(e)))
 
@@ -539,7 +539,7 @@ def make_app(app_ref, bound_port: int | None = None):
         try:
             _sn.update_snippet(history.conn, sid, code, expansion)
             _maybe_reload_config(app_ref)
-            return redirect(f"/snippets?flash=Updated {code!r}.")
+            return redirect("/snippets?flash=" + _qp(f"Updated {code!r}."))
         except ValueError as e:
             return redirect("/snippets?flash=" + _qp(str(e)))
 
@@ -575,7 +575,7 @@ def make_app(app_ref, bound_port: int | None = None):
         _maybe_reload_config(app_ref)
         msg = (f"Imported {r['added']} new, updated {r['updated']}, "
                f"skipped {r['invalid']} malformed.")
-        return redirect(f"/snippets?flash={msg}")
+        return redirect("/snippets?flash=" + _qp(msg))
 
     @flask_app.get("/search")
     def search_page():
@@ -690,7 +690,7 @@ def make_app(app_ref, bound_port: int | None = None):
         try:
             _tf.add_transform(history.conn, name=name, system_prompt=prompt, hotkey=hotkey)
             _refresh_transform_hotkeys(app_ref)
-            return redirect(f"/transforms?flash=Added {name!r}.")
+            return redirect("/transforms?flash=" + _qp(f"Added {name!r}."))
         except ValueError as e:
             return redirect("/transforms?flash=" + _qp(str(e)))
 
@@ -888,10 +888,10 @@ def make_app(app_ref, bound_port: int | None = None):
         exp = app_ref.cfg.get("experimental")
         if isinstance(exp, dict):
             exp["command_prefix"] = prefix
-        return redirect(
-            f"/commands?flash=Prefix set to '{prefix}' - active on your next "
+        return redirect("/commands?flash=" + _qp(
+            f"Prefix set to '{prefix}' - active on your next "
             "command, no restart needed."
-        )
+        ))
 
     # --- Actions (Phase 14 Action Mode — read-only panel) --------------
     @flask_app.get("/actions")

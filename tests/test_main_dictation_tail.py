@@ -4,10 +4,9 @@ Covers the stage AFTER transcription+cleanup succeed:
   - happy path: the CLEANED text is injected, a history row is persisted
     (with the quality score from the async grader), and the in-memory
     re-paste cache is primed
-  - injection failure: pins the REAL current behavior — the exception
-    propagates out of _do_dictation (it runs on a daemon thread in prod),
-    the history row is NOT written, but the text survives in
-    _last_cleaned_text so the Ctrl+Win re-paste recovers it
+  - injection failure: the paste stage is contained — the dictation is
+    still persisted to history, the tray leaves "thinking", and the text
+    survives in _last_cleaned_text so the Ctrl+Win re-paste recovers it
   - history failure: the async logger swallows the error — injection has
     already happened and nothing propagates to the hotkey thread
 
@@ -129,23 +128,26 @@ def test_happy_path_injects_cleaned_text_and_persists_history(temp_db, quiet_tai
 
 
 def test_injection_failure_text_survives_for_repaste(temp_db, quiet_tail, monkeypatch):
-    """Pins current behavior when the paste itself blows up:
-      - the exception escapes _do_dictation (daemon thread in prod, so the
-        hotkey listener survives — but see report: the history block below
-        the inject is never reached, so the row is silently dropped)
-      - the text is NOT lost: it was cached in _last_cleaned_text BEFORE
-        injection, so the Ctrl+Win re-paste handler recovers it."""
+    """Regression: a paste failure used to propagate out of _do_dictation,
+    killing the daemon thread BEFORE the history block — the dictation was
+    silently dropped and the tray stayed stuck on "thinking". The paste stage
+    is now contained: no exception escapes, the row is still persisted, and
+    the cached text remains recoverable via the paste-last hotkey."""
     history, _path = temp_db
     app = _make_app(history)
+    app.tray = MagicMock()
     app.injector.inject.side_effect = RuntimeError("paste target vanished")
 
-    with pytest.raises(RuntimeError, match="paste target vanished"):
-        app._do_dictation(_audio())
+    # Must not raise — the paste failure is contained.
+    app._do_dictation(_audio())
 
-    # Current (buggy-but-pinned) behavior: no history row was written —
-    # the async logger lives AFTER the inject call and is never reached.
+    # The tray must not be left stuck on "thinking".
+    app.tray.set_state.assert_called_with("ok")
+
+    # The dictation is NOT lost: the history row is written even though the
+    # paste blew up.
     count = history.conn.execute("SELECT COUNT(*) FROM dictations").fetchone()[0]
-    assert count == 0
+    assert count == 1
 
     # Recovery path: the cleaned text was cached before the paste attempt...
     assert app._last_cleaned_text == CLEANED

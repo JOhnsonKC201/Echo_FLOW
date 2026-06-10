@@ -116,10 +116,15 @@ def test_dictionary_import_paste_plus_upload_merges(tmp_path):
 
 
 def test_dictionary_import_rejects_empty(tmp_path):
+    import urllib.parse
     client, _ = _client(tmp_path)
     r = client.post("/dictionary/import", headers=HOST, data={"bulk": ""})
     assert r.status_code == 302
-    assert "Nothing%20to%20import" in r.headers["Location"]
+    # Assert on the decoded message, not the encoding (quote_plus uses '+'
+    # for spaces; the old bare f-string happened to produce '%20').
+    q = urllib.parse.urlparse(r.headers["Location"]).query
+    flash = urllib.parse.parse_qs(q).get("flash", [""])[0]
+    assert "Nothing to import" in flash
 
 
 def test_snippets_import_via_csv_upload(tmp_path):

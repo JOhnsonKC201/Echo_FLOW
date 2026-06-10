@@ -911,51 +911,68 @@ class App:
                 self.tray.set_state("ok" if not self._paused else "paused")
             return
 
-        pad_target = getattr(self, "_scratchpad_target_id", None)
-        if pad_target and self.history is not None:
-            try:
-                from .dashboard import scratchpad as _spad
-                ok = _spad.append_to_scratchpad(self.history.conn, pad_target, cleaned)
-                if ok:
-                    console.print(f"[cyan]→ appended to scratchpad #{pad_target}[/cyan]")
-                else:
-                    self.injector.inject(cleaned)
-            except Exception as e:
-                _log.warning("scratchpad append failed: %s — falling back to inject", e)
-                self.injector.inject(cleaned)
-        else:
-            # Phase 12: trailing voice command. If experimental.press_enter_command
-            # is on and the dictation ends with "press enter" / "submit" / "send it",
-            # paste the stripped text first, then fire Enter. Skipped when
-            # routing to a scratchpad — that path doesn't inject keystrokes.
-            payload = cleaned
-            trailing_cmd: str | None = None
-            if (self.cfg.get("experimental", {}) or {}).get("press_enter_command"):
-                from . import actions as _actions
-                detected = _actions.detect_trailing_command(cleaned)
-                if detected is not None:
-                    trailing_cmd, payload = detected
-            # PASTE FIRST — user feels the speed. When firing a trailing
-            # command, suppress the auto-appended trailing space so Enter
-            # lands right after the final character of the payload.
-            if trailing_cmd is not None:
-                prev_ts = self.injector.trailing_space
-                self.injector.trailing_space = False
+        # A paste failure (target window gone, clipboard locked) must not
+        # abort the pipeline: it used to kill this daemon thread before the
+        # history block below, silently losing the dictation and leaving the
+        # tray stuck on "thinking". The cleaned text is already cached in
+        # _last_cleaned_text, so the paste-last hotkey recovers it.
+        try:
+            pad_target = getattr(self, "_scratchpad_target_id", None)
+            if pad_target and self.history is not None:
                 try:
-                    self.injector.inject(payload)
-                finally:
-                    self.injector.trailing_space = prev_ts
+                    from .dashboard import scratchpad as _spad
+                    ok = _spad.append_to_scratchpad(self.history.conn, pad_target, cleaned)
+                    if ok:
+                        console.print(f"[cyan]→ appended to scratchpad #{pad_target}[/cyan]")
+                    else:
+                        self.injector.inject(cleaned)
+                except Exception as e:
+                    _log.warning("scratchpad append failed: %s — falling back to inject", e)
+                    self.injector.inject(cleaned)
             else:
-                self.injector.inject(payload)
-            if trailing_cmd == "enter":
-                self.injector.send_key("enter")
-                _log.info("trailing-command: enter fired")
-            if use_prompt:
+                # Phase 12: trailing voice command. If experimental.press_enter_command
+                # is on and the dictation ends with "press enter" / "submit" / "send it",
+                # paste the stripped text first, then fire Enter. Skipped when
+                # routing to a scratchpad — that path doesn't inject keystrokes.
+                payload = cleaned
+                trailing_cmd: str | None = None
+                if (self.cfg.get("experimental", {}) or {}).get("press_enter_command"):
+                    from . import actions as _actions
+                    detected = _actions.detect_trailing_command(cleaned)
+                    if detected is not None:
+                        trailing_cmd, payload = detected
+                # PASTE FIRST — user feels the speed. When firing a trailing
+                # command, suppress the auto-appended trailing space so Enter
+                # lands right after the final character of the payload.
+                if trailing_cmd is not None:
+                    prev_ts = self.injector.trailing_space
+                    self.injector.trailing_space = False
+                    try:
+                        self.injector.inject(payload)
+                    finally:
+                        self.injector.trailing_space = prev_ts
+                else:
+                    self.injector.inject(payload)
+                if trailing_cmd == "enter":
+                    self.injector.send_key("enter")
+                    _log.info("trailing-command: enter fired")
+                if use_prompt:
+                    wnotify.notify(
+                        "Echo Flow",
+                        "Prompt rewritten via Groq → pasted.",
+                        "info",
+                    )
+        except Exception:
+            _log.exception("inject failed — dictation NOT pasted; "
+                           "recoverable via the paste-last hotkey")
+            try:
                 wnotify.notify(
                     "Echo Flow",
-                    "Prompt rewritten via Groq → pasted.",
-                    "info",
+                    "Paste failed — use the paste-last hotkey to recover your dictation.",
+                    "error",
                 )
+            except Exception:
+                pass
         t3 = time.perf_counter()
         if self.tray:
             self.tray.set_state("ok" if not self._paused else "paused")
