@@ -29,3 +29,14 @@ def test_metadata_fields_are_escaped_in_template(tmp_path):
     assert "${r.window}" not in html
     assert "${r.lang}" not in html
     assert "${r.style}" not in html
+
+
+def test_data_json_cannot_break_out_of_script_block(tmp_path):
+    """Regression: __DATA__ is embedded in an inline <script> block via
+    json.dumps, which does not escape '</script>'. Before the fix, dictated
+    text containing a literal '</script>' closed the block and injected live
+    markup into history.html (stored XSS). The JSON now escapes '</'."""
+    payload = "</script><script>alert(1)</script>"
+    html = _render(tmp_path, payload)
+    assert payload not in html
+    assert "<\\/script>" in html  # data survives with the JS-safe escape

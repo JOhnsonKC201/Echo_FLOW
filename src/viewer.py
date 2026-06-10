@@ -133,7 +133,10 @@ def render_history(db_path: str, out_path: str | None = None, open_browser: bool
     out = (HTML_TMPL
         .replace("__STATS__", html.escape(stats))
         .replace("__ROWS__", rows_html)
-        .replace("__DATA__", json.dumps(data, ensure_ascii=False)))
+        # Escape `</` so a dictation containing a literal `</script>` cannot
+        # close the inline <script> block and inject markup (stored XSS).
+        .replace("__DATA__",
+                 json.dumps(data, ensure_ascii=False).replace("</", "<\\/")))
 
     if out_path is None:
         out_path = str(Path(db_path).parent / "history.html")

@@ -910,12 +910,20 @@ def render_graph(
     if ts_max <= ts_min:
         ts_max = ts_min + 1
 
+    def _script_json(obj) -> str:
+        # The JSON is embedded inside an inline <script> block. json.dumps does
+        # NOT escape `</`, so dictated text containing `</script>` would close
+        # the block and inject live markup (stored XSS in the report file).
+        # `<\/` is a valid JSON/JS escape for `</`. Same defense as
+        # dashboard/graph_obsidian.py.
+        return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
+
     out = (_HTML
-        .replace("__DICT_DATA__", json.dumps(dict_graph, ensure_ascii=False))
-        .replace("__CONCEPT_DATA__", json.dumps(concept_graph, ensure_ascii=False))
-        .replace("__NOTES_DATA__", json.dumps(notes_graph, ensure_ascii=False))
-        .replace("__TAG_USAGE__", json.dumps(tag_usage, ensure_ascii=False))
-        .replace("__TAGS_INDEX__", json.dumps(tags_index, ensure_ascii=False))
+        .replace("__DICT_DATA__", _script_json(dict_graph))
+        .replace("__CONCEPT_DATA__", _script_json(concept_graph))
+        .replace("__NOTES_DATA__", _script_json(notes_graph))
+        .replace("__TAG_USAGE__", _script_json(tag_usage))
+        .replace("__TAGS_INDEX__", _script_json(tags_index))
         .replace("__TS_MIN__", str(ts_min))
         .replace("__TS_MAX__", str(ts_max)))
 
