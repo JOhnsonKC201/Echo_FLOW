@@ -96,6 +96,38 @@ def pick_style(
     return fallback if fallback is not None else config_default
 
 
+def migrate_profiles_to_polished(conn: sqlite3.Connection) -> bool:
+    """One-shot: upgrade every existing profile row to the 'polished' style.
+
+    The table was seeded from an old config.yaml whose catch-all was the
+    minimal-touch 'default' (never fixes grammar) — and seed_from_config never
+    re-syncs, so the user's later config change to 'polished' silently never
+    took effect. The 'prompt' style is left alone (PE mode is a different
+    feature, not a polish level).
+
+    Guarded by an app_meta flag so it runs exactly once: a user who later
+    deliberately picks 'default'/'code' in the dashboard is never overridden
+    again. Returns True when rows were migrated.
+    """
+    flag = "style_all_polished_v1"
+    ensure_table(conn)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)"
+    )
+    if conn.execute("SELECT 1 FROM app_meta WHERE key = ?", (flag,)).fetchone():
+        return False
+    with conn:
+        cur = conn.execute(
+            "UPDATE style_profiles SET style = 'polished', updated_at = ? "
+            "WHERE style != 'prompt'",
+            (time.time(),),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO app_meta(key, value) VALUES(?, ?)", (flag, "1")
+        )
+    return cur.rowcount > 0
+
+
 def seed_from_config(conn: sqlite3.Connection, config_profiles: list) -> int:
     """One-shot: seed empty table from config.yaml cleanup.profiles."""
     ensure_table(conn)

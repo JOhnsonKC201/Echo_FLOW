@@ -95,3 +95,23 @@ def test_learned_provider_no_fallback_flattens_casing(tmp_path, monkeypatch):
 
     assert "Create a skill all your explanation" in out
     assert "Your" not in out and "Bulky" not in out
+
+
+def test_phase_degraded_chain_flattens_casing(tmp_path, monkeypatch):
+    """The full degraded path: Ollama down → phase.decide() picks 'learned'
+    (no longer 'none') → learned has no data → ollama fallback raises →
+    the deterministic polish still flattens Whisper Title-Case. This is the
+    exact chain that used to paste 'Write Me A Reply' verbatim."""
+    cleaner = _cleaner(tmp_path)
+    cleaner.provider = "learned"  # what phase.decide() now applies when degraded
+    cleaner.cfg["learned"] = {"fallback_to_ollama": True}
+
+    def _boom(*a, **k):
+        raise RuntimeError("ollama is down")
+
+    monkeypatch.setattr(cleaner, "_via_ollama", _boom)
+
+    out, _skipped = cleaner.clean(RAW_TITLECASED)
+
+    assert "Create a skill all your explanation" in out
+    assert "Your" not in out and "Bulky" not in out and "Things" not in out

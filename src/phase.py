@@ -7,7 +7,13 @@ which local cleanup path is used:
   Phase 2 — Self-Sufficient (>= self_sufficient_after, with enough learned
                              patterns + quality): Local Whisper + learned
 
-If Ollama is unreachable, we degrade to raw Whisper output (`none`).
+Exception: when the user has explicitly opted into cloud cleanup
+(cleanup.allow_cloud_cleanup + a cloud provider name), that choice is
+honored — Cleaner.clean() itself falls back groq→ollama→finalized-raw.
+
+If Ollama is unreachable, we degrade to the `learned` provider, whose
+no-data path is a deterministic polish (casing flatten + punctuation) —
+never `none`, which would paste raw Title-Case Whisper output untouched.
 """
 from __future__ import annotations
 
@@ -30,8 +36,9 @@ PHASE_SELF_SUFFICIENT = "self_sufficient"
 class PhaseDecision:
     name: str
     transcribe_backend: str   # always "local"
-    cleanup_provider: str     # "ollama" | "learned" | "none"
+    cleanup_provider: str     # "ollama" | "learned" | "groq" | "anthropic" | "none"
     reason: str
+    degraded: bool = False    # True when no LLM provider is reachable
 
 
 def _dictation_count(db_path: str) -> int:
@@ -121,12 +128,19 @@ def decide(cfg: dict, db_path: str) -> PhaseDecision:
     are ignored — they are normalized to a local provider here.
     """
     pcfg = cfg.get("phasing", {})
+    ccfg = cfg.get("cleanup", {}) or {}
+    provider_intent = ccfg.get("provider", "ollama")
+    cloud_opted_in = bool(ccfg.get("allow_cloud_cleanup")) and \
+        provider_intent in ("groq", "anthropic")
+
     if not pcfg.get("enabled", True):
-        # Respect manual config but force local-only.
-        provider = cfg.get("cleanup", {}).get("provider", "ollama")
-        if provider in ("groq", "anthropic", "openai"):
+        # Respect manual config but force local-only — unless the user has
+        # explicitly opted into cloud cleanup, which is their call to make.
+        provider = provider_intent
+        if provider in ("groq", "anthropic", "openai") and not cloud_opted_in:
             _log.warning(
-                "cleanup.provider=%s is a legacy cloud provider; using ollama.",
+                "cleanup.provider=%s is a cloud provider without "
+                "cleanup.allow_cloud_cleanup; using ollama.",
                 provider,
             )
             provider = "ollama"
@@ -135,6 +149,17 @@ def decide(cfg: dict, db_path: str) -> PhaseDecision:
             transcribe_backend="local",
             cleanup_provider=provider,
             reason="phasing disabled in config",
+        )
+
+    # Cloud cleanup opt-in: the user explicitly chose a cloud provider AND
+    # flipped allow_cloud_cleanup. Honor it ahead of auto-phasing — an
+    # explicit choice outranks the self-sufficiency heuristic. Cleaner.clean()
+    # handles the groq→ollama fallback and finalized-raw on total failure, so
+    # this is safe even with no API key and Ollama down.
+    if cloud_opted_in:
+        return PhaseDecision(
+            PHASE_INDEPENDENT, "local", provider_intent,
+            f"cloud cleanup opt-in → {provider_intent} with local fallback",
         )
 
     n = _dictation_count(db_path)
@@ -162,7 +187,12 @@ def decide(cfg: dict, db_path: str) -> PhaseDecision:
             PHASE_INDEPENDENT, "local", "ollama",
             f"{n} dictations → local Whisper + Ollama",
         )
+    # Never "none" here: that would paste raw Whisper output with no casing
+    # or punctuation pass at all. The learned provider with no data degrades
+    # to a deterministic polish (_polish_text/_finalize), which still fixes
+    # Title-Case storms and adds punctuation.
     return PhaseDecision(
-        PHASE_INDEPENDENT, "local", "none",
-        "Ollama unreachable → raw local Whisper output",
+        PHASE_INDEPENDENT, "local", "learned",
+        "Ollama unreachable → learned/deterministic polish",
+        degraded=True,
     )

@@ -36,6 +36,45 @@ def test_whisper_confidence_no_signal_neutral():
     assert g.whisper_confidence({"avg_logprob": None, "no_speech_prob": None, "compression_ratio": None}) == 50.0
 
 
+# --- Title-Case storm penalty ---
+
+
+def test_storm_penalty_full_storm():
+    """A storm used to grade 93-99 (no casing signal), so the verify pass
+    never fired. A full storm must deduct enough to drop below the verify
+    min_score (55)."""
+    p = g.titlecase_storm_penalty("Write Me A Reply Right Now Please Sir.")
+    assert p >= 45.0
+
+
+def test_storm_penalty_clean_prose_with_proper_nouns():
+    assert g.titlecase_storm_penalty("I met Sarah in London last week.") == 0.0
+    assert g.titlecase_storm_penalty("Let's ship the migration tonight.") == 0.0
+
+
+def test_storm_penalty_short_text_exempt():
+    # Titles/names/short answers are legitimately capitalized.
+    assert g.titlecase_storm_penalty("Morgan State University") == 0.0
+
+
+def test_storm_drops_composite_below_verify_threshold():
+    """End-to-end through grade(): healthy signals minus the storm penalty
+    must land under 55 so cleanup.verify triggers the improvement pass."""
+    meta = {"avg_logprob": -0.2, "no_speech_prob": 0.05, "compression_ratio": 1.6}
+    storm = "And You Do All By Yourself Every Single Day My Friend."
+    score = g.grade(raw=storm.lower(), cleaned=storm, whisper_meta=meta)
+    assert score.overall < 55.0
+    assert "title-case storm" in score.explanation
+
+
+def test_no_storm_no_penalty_in_grade():
+    meta = {"avg_logprob": -0.2, "no_speech_prob": 0.05, "compression_ratio": 1.6}
+    clean = "Let's ship the migration tonight."
+    score = g.grade(raw="lets ship the migration tonight", cleaned=clean,
+                    whisper_meta=meta)
+    assert "title-case storm" not in score.explanation
+
+
 # --- Hallucination signal ---
 
 

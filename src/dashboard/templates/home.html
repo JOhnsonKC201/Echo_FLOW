@@ -8,6 +8,13 @@
       <span class="muted small">last {{ items|length }} dictations</span>
     </div>
     {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+    {% if cleanup_degraded %}
+      <div class="flash" role="alert">
+        ⚠ Cleanup LLM is unreachable — dictations get deterministic polish only
+        (casing + punctuation, no grammar). Start Ollama or set GROQ_API_KEY,
+        then restart Echo Flow.
+      </div>
+    {% endif %}
 
     {% if not items %}
       <div class="placeholder">

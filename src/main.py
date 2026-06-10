@@ -139,7 +139,8 @@ def _audit_cloud_keys(cfg: dict) -> None:
     error mid-dictation.
     """
     pe = cfg.get("prompt_engineering", {}) or {}
-    learning = ((cfg.get("cleanup") or {}).get("learning") or {})
+    cleanup_cfg = cfg.get("cleanup") or {}
+    learning = (cleanup_cfg.get("learning") or {})
     needs: dict[str, list[str]] = {}
     if pe.get("enabled") and pe.get("provider") == "groq":
         needs.setdefault("GROQ_API_KEY", []).append("Prompt-Engineering mode")
@@ -147,6 +148,13 @@ def _audit_cloud_keys(cfg: dict) -> None:
         needs.setdefault("ANTHROPIC_API_KEY", []).append("Prompt-Engineering mode")
     if learning.get("teacher_enabled"):
         needs.setdefault("GROQ_API_KEY", []).append("Teacher distillation")
+    # Cloud cleanup opt-in: every regular dictation routes through this
+    # provider, so a missing key here means EVERY cleanup silently falls back.
+    if cleanup_cfg.get("allow_cloud_cleanup"):
+        if cleanup_cfg.get("provider") == "groq":
+            needs.setdefault("GROQ_API_KEY", []).append("Cloud cleanup")
+        elif cleanup_cfg.get("provider") == "anthropic":
+            needs.setdefault("ANTHROPIC_API_KEY", []).append("Cloud cleanup")
     for env_key, features in needs.items():
         if not os.environ.get(env_key, "").strip():
             _log.warning(
@@ -236,6 +244,18 @@ class App:
         _announce(
             f"[magenta]Phase: {self.phase.name}[/magenta] — {self.phase.reason}"
         )
+        if getattr(self.phase, "degraded", False):
+            # Raw-ish mode used to be silent — the user only noticed when
+            # dictations came out unpolished. Say it once, loudly.
+            try:
+                wnotify.notify(
+                    "Echo Flow",
+                    "Cleanup LLM offline — using deterministic polish only. "
+                    "Start Ollama or set GROQ_API_KEY, then restart.",
+                    "warning",
+                )
+            except Exception as e:
+                _log.warning("degraded-mode toast failed: %s", e)
         # Apply phase decision over static config
         cfg["whisper"]["backend"] = self.phase.transcribe_backend
         cfg["cleanup"]["provider"] = self.phase.cleanup_provider
@@ -327,6 +347,12 @@ class App:
                 _log.warning("snippet provider wiring failed: %s", e)
             try:
                 from .dashboard import style_profiles as _sp
+                # One-shot: rows seeded from an old config carried the
+                # minimal-touch 'default' catch-all, so grammar fixing never
+                # ran. Upgrade everything to 'polished' once; dashboard edits
+                # after that are authoritative.
+                if _sp.migrate_profiles_to_polished(self.history.conn):
+                    _log.info("style profiles migrated to 'polished' (one-shot)")
                 self.cleaner.set_style_provider(
                     lambda title, h=self.history: _sp.pick_style(h.conn, title, config_default="")
                 )

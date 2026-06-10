@@ -151,13 +151,15 @@ cleanup:
   #   polished — everyday default: fixes grammar + restructures rambling speech
   #              into clean sentences, preserving meaning (recommended).
   #   default  — minimal-touch: punctuation + fillers only, never rephrases.
+  # All profiles use "polished" (grammar + punctuation everywhere) per user
+  # preference. Re-differentiate per-app styles in Dashboard → Style if wanted.
   profiles:
     - match: ["Code", "Cursor", "Sublime", "PyCharm", "Vim"]
-      style: "code"
+      style: "polished"
     - match: ["Slack", "Discord", "Teams", "WhatsApp"]
-      style: "casual"
+      style: "polished"
     - match: ["Gmail", "Outlook", "Mail"]
-      style: "email"
+      style: "polished"
     - match: []
       style: "polished"
 

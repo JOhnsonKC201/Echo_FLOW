@@ -117,6 +117,39 @@ def test_pattern_miner_casing_roundtrip(tmp_path):
     assert canon.get("tiktok") == "TikTok"
 
 
+def test_record_casing_ignores_titlecase_storm_sources(tmp_path):
+    """An edit that fixes a Whisper Title-Case storm ("Write Me A Reply For
+    Tiktok Now" → lowercased) is correcting NOISE — mining canon entries from
+    it would lock in casings the user never chose."""
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    sqlite3.connect(db).close()
+    pm = PatternMiner(db)
+    n = pm.record_casing(
+        "Write Me A Reply For Tiktok Now Please",
+        "Write me a reply for TikTok now please",
+    )
+    assert n == 0
+    _invalidate_casing_cache()
+    assert pm.canonical_casings() == {}
+
+
+def test_record_casing_still_learns_from_normal_edits(tmp_path):
+    """The storm guard must not block ordinary casing corrections in
+    normally-cased text."""
+    from src.learn import PatternMiner, _invalidate_casing_cache
+    db = str(tmp_path / "h.db")
+    sqlite3.connect(db).close()
+    pm = PatternMiner(db)
+    n = pm.record_casing(
+        "we pushed the fix to github this morning",
+        "we pushed the fix to GitHub this morning",
+    )
+    assert n == 1
+    _invalidate_casing_cache()
+    assert pm.canonical_casings().get("github") == "GitHub"
+
+
 def test_add_casing_directly(tmp_path):
     from src.learn import PatternMiner, _invalidate_casing_cache
     db = str(tmp_path / "h.db")
@@ -367,12 +400,24 @@ def test_finalize_respects_flatten_disabled():
 
 # ----- end-to-end via clean() ----------------------------------------------
 
-def test_clean_skip_path_flattens_titlecase():
+def test_clean_titlecase_storm_no_longer_skips_but_still_flattens():
+    """Title-Case storms used to take the skip-when-clean fast path (they
+    looked 'clean': short, capitalized, punctuated). The hardened heuristic
+    now routes them to the polish pass — and even when every provider fails
+    (as in this offline test), the passthrough still flattens the casing."""
     c = _cleaner_with_canon({})
     out, skipped = c.clean("Machine Learning Feeds Here The Most.")
-    assert skipped is True  # short + capitalized + punctuated => skip LLM
+    assert skipped is False  # storm must NOT skip the polish pass
     assert out.startswith("Machine ")
     assert "learning feeds here the most" in out
+
+
+def test_clean_skip_path_still_taken_for_genuinely_clean_text():
+    """The fast path survives for genuinely clean input (no storm)."""
+    c = _cleaner_with_canon({})
+    out, skipped = c.clean("Let's ship the migration tonight.")
+    assert skipped is True
+    assert "ship the migration tonight" in out
 
 
 def test_clean_llm_path_finalizes_model_titlecase(monkeypatch):

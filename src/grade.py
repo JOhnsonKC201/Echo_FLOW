@@ -125,6 +125,36 @@ def pattern_coverage(cleaned: str, pattern_miner, learner=None) -> float:
     return 100.0 * covered / len(tokens)
 
 
+def titlecase_storm_penalty(cleaned: str) -> float:
+    """0-50 deduction when the cleaned output Capitalizes Most Words.
+
+    Title-Case storms used to grade 93-99 because no signal looked at
+    casing, so the verify/improve pass (cleanup.verify.min_score) never
+    fired on the most visible failure mode. Mid-sentence words only —
+    sentence-initial capitals are correct. <4 words is exempt (titles,
+    names, short answers are legitimately capitalized).
+    """
+    try:
+        from .cleanup import _is_simple_title
+    except Exception:
+        return 0.0
+    matches = list(re.finditer(r"[A-Za-z][\w']*", cleaned or ""))
+    if len(matches) < 4:
+        return 0.0
+    starts = {0}
+    for i in range(1, len(matches)):
+        between = cleaned[matches[i - 1].end():matches[i].start()]
+        if any(p in between for p in ".!?"):
+            starts.add(i)
+    mid = [m.group(0) for i, m in enumerate(matches) if i not in starts]
+    if not mid:
+        return 0.0
+    ratio = sum(1 for w in mid if _is_simple_title(w)) / len(mid)
+    if ratio <= 0.4:
+        return 0.0
+    return min(50.0, (ratio - 0.4) * 100.0)
+
+
 # --- Composite ---
 
 
@@ -155,6 +185,12 @@ def grade(
     S = semantic_coherence(raw, cleaned, retriever)
     P = pattern_coverage(cleaned, pattern_miner, learner)
     overall = w["W"] * W + w["H"] * H + w["S"] * S + w["P"] * P
+    # Post-composite deduction (NOT a fifth weighted signal — the weights
+    # table and the SGD calibration assume exactly W/H/S/P): Title-Case
+    # storms must drop below cleanup.verify.min_score so the improvement
+    # pass actually fires on them.
+    t_penalty = titlecase_storm_penalty(cleaned)
+    overall = max(0.0, overall - t_penalty)
     score = QualityScore(
         overall=round(overall, 1),
         whisper_conf=round(W, 1),
@@ -164,6 +200,8 @@ def grade(
         explanation="",
     )
     score.explanation = _explain(score)
+    if t_penalty > 0:
+        score.explanation += f", T=-{t_penalty:.0f} (title-case storm)"
     return score
 
 

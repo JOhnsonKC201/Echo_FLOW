@@ -42,8 +42,13 @@ def _is_simple_title(w: str) -> bool:
     "iOS", "mRNA"), and anything with digits, so the de-Title-Case flattener
     only touches ordinary capitalized words.
     """
-    if len(w) < 2 or not w[0].isupper():
+    if not w or not w[0].isupper():
         return False
+    if len(w) == 1:
+        # Mid-sentence capitalized "A" is a Title-Case artifact ("Write Me A
+        # Reply") and should flatten; sentence-initial "A" is re-capped by
+        # _cap. "I" is protected by the allowlist + the \bi\b → I rule.
+        return w == "A"
     rest = w[1:]
     for ch in _APOS:
         rest = rest.replace(ch, "")
@@ -660,6 +665,23 @@ class Cleaner:
         for i in range(len(tokens) - 1):
             if tokens[i] == tokens[i + 1] and len(tokens[i]) > 1:
                 return False
+        # Title-Case storm: Whisper sometimes Capitalizes Every Word, which
+        # passed every check above ("Write Me A Reply.") and skipped the LLM.
+        # Count mid-sentence words with the simple-title shape; ≥2 of them
+        # making up >50% of mid-sentence words means this needs the polish
+        # pass (which flattens casing), not the skip path.
+        matches = list(_re.finditer(r"[A-Za-z][\w']*", s))
+        if len(matches) > 1:
+            starts = {0}
+            for i in range(1, len(matches)):
+                between = s[matches[i - 1].end():matches[i].start()]
+                if any(p in between for p in ".!?"):
+                    starts.add(i)
+            mid = [m.group(0) for i, m in enumerate(matches) if i not in starts]
+            if mid:
+                titled = sum(1 for w in mid if _is_simple_title(w))
+                if titled >= 2 and titled / len(mid) > 0.5:
+                    return False
         return True
 
     @staticmethod

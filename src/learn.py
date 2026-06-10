@@ -339,6 +339,22 @@ def _diff_casing_pairs(before: str, after: str) -> list[tuple[str, str]]:
     return pairs
 
 
+def _is_titlecase_storm(text: str) -> bool:
+    """True when text Capitalizes Most Words (a Whisper casing artifact).
+
+    ≥4 alpha words with ≥50% in the simple Title-Case shape. Used to keep
+    record_casing from mining canon entries out of storm text — those
+    capitalizations are noise, not user intent.
+    """
+    import re as _re
+    from .cleanup import _is_simple_title
+    words = _re.findall(r"[A-Za-z][\w']*", text or "")
+    if len(words) < 4:
+        return False
+    titled = sum(1 for w in words if _is_simple_title(w))
+    return titled / len(words) >= 0.5
+
+
 class PatternMiner:
     """Mines (raw, cleaned) pairs into learned token substitutions."""
 
@@ -431,6 +447,12 @@ class PatternMiner:
         explicitly chose edit-once-apply-forever.
         """
         if not before or not after:
+            return 0
+        if _is_titlecase_storm(before):
+            # The pre-edit text Capitalized Every Word (Whisper artifact). A
+            # user edit that fixes the storm is correcting noise, not teaching
+            # casings — canonizing it would lowercase-lock ordinary words or,
+            # worse, learn "You"/"Reply" as canon from the unfixed parts.
             return 0
         pairs = _diff_casing_pairs(before, after)
         if not pairs:

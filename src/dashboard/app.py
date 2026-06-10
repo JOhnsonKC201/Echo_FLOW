@@ -174,6 +174,8 @@ def make_app(app_ref, bound_port: int | None = None):
             time_saved_today=analytics.humanize_ms(today["time_saved_ms"]),
             acceptance_pct=acc_pct,
             flash=_req.args.get("flash", ""),
+            cleanup_degraded=bool(getattr(getattr(app_ref, "phase", None),
+                                          "degraded", False)),
         )
 
     @flask_app.post("/inbox/rate")
@@ -1210,11 +1212,14 @@ def make_app(app_ref, bound_port: int | None = None):
         cfg = getattr(app_ref, "cfg", {}) or {}
         pe = (cfg.get("prompt_engineering") or {})
         learning = ((cfg.get("cleanup") or {}).get("learning") or {})
+        phase = getattr(app_ref, "phase", None)
         return jsonify({
             "ok": True,
             "history": history is not None and getattr(history, "conn", None) is not None,
             "cleaner": cleaner is not None and bool(getattr(cleaner, "enabled", False)),
-            "phase": getattr(getattr(app_ref, "phase", None), "name", None),
+            "phase": getattr(phase, "name", None),
+            "cleanup_provider": getattr(cleaner, "provider", None),
+            "cleanup_degraded": bool(getattr(phase, "degraded", False)),
             "features": {
                 "pe_enabled": bool(pe.get("enabled")),
                 "pe_provider": pe.get("provider"),

@@ -74,6 +74,22 @@ def test_skip_polish_long_blocks():
     assert Cleaner._is_already_clean(long) is False
 
 
+def test_skip_polish_titlecase_storm_blocks():
+    """Whisper sometimes Capitalizes Every Word; that passed every old check
+    (short, capitalized, punctuated, no fillers) and skipped the LLM — the
+    storm was pasted as-is. It must go to the polish pass instead."""
+    from src.cleanup import Cleaner
+    assert Cleaner._is_already_clean("Write Me A Reply.") is False
+    assert Cleaner._is_already_clean("And You Do All By Yourself.") is False
+
+
+def test_skip_polish_proper_nouns_still_skip():
+    """A clean sentence with legitimate proper nouns must keep skipping —
+    the storm check counts mid-sentence Title-Case ratio, not presence."""
+    from src.cleanup import Cleaner
+    assert Cleaner._is_already_clean("I met Sarah in London.") is True
+
+
 def test_clean_skips_llm_on_clean_input(monkeypatch):
     """End-to-end: clean() short-circuits without hitting Ollama."""
     from src.cleanup import Cleaner
@@ -230,8 +246,9 @@ def test_history_log_embedding_blob(temp_db):
 # --- Phase decisions ----------------------------------------------------------
 
 def test_phase_decision_independent_when_no_history(temp_db):
-    """Local-only: a fresh install with Ollama unreachable falls back to raw output,
-    transcribe backend is always local."""
+    """Local-only: a fresh install with Ollama unreachable degrades to the
+    learned/deterministic-polish provider (NEVER "none" — that pasted raw
+    Title-Case Whisper output untouched). Transcribe backend stays local."""
     from src import phase as phase_mod
     _, path = temp_db
     cfg = {
@@ -243,8 +260,9 @@ def test_phase_decision_independent_when_no_history(temp_db):
     decision = phase_mod.decide(cfg, path)
     assert decision.name == "independent"
     assert decision.transcribe_backend == "local"
-    # Port 1 is dead → ollama_alive is False → cleanup_provider == "none"
-    assert decision.cleanup_provider == "none"
+    # Port 1 is dead → ollama_alive is False → degraded deterministic polish.
+    assert decision.cleanup_provider == "learned"
+    assert decision.degraded is True
 
 
 def test_phase_respects_disabled_flag(temp_db):
