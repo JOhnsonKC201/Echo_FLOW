@@ -7,6 +7,7 @@ __pycache__/
 *.log
 ruvector.db
 .pytest_cache/
+.coverage
 
 # Runtime data — everything in data/ except the .gitkeep placeholder
 data/*
