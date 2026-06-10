@@ -6,7 +6,10 @@ works end-to-end. Subsequent phases fill the section blueprints in.
 """
 from __future__ import annotations
 
+import html as _html
+import re as _re
 from pathlib import Path
+from urllib.parse import quote_plus as _qp
 
 from .. import log as wlog
 
@@ -121,6 +124,12 @@ def make_app(app_ref, bound_port: int | None = None):
     @flask_app.context_processor
     def _inject_theme_context():
         acc = (app_ref.cfg.get("dashboard") or {}).get("accent_color")
+        # Re-validate at render time: the value lands inside a <style> block,
+        # where Jinja2's HTML-escaping is no defense (CSS injection needs no
+        # angle brackets). The settings save path validates too, but
+        # config.yaml can be edited by hand.
+        if acc and not _re.fullmatch(r"#[0-9a-fA-F]{6}", str(acc)):
+            acc = None
         return {"accent_color": acc}
 
     @flask_app.before_request
@@ -194,7 +203,7 @@ def make_app(app_ref, bound_port: int | None = None):
             history.rate_dictation(did, rating)
         except Exception as e:
             _log.warning("rate_dictation failed: %s", e)
-            return redirect(f"/?flash=Error: {e}")
+            return redirect("/?flash=" + _qp(f"Error: {e}"))
         # Anchor jump back to the rated card.
         return redirect(f"/#d-{did}")
 
@@ -258,7 +267,7 @@ def make_app(app_ref, bound_port: int | None = None):
                 )
         except Exception as e:
             _log.warning("inbox edit save failed: %s", e)
-            return redirect(f"/inbox/{did}/edit?flash=Error: {e}")
+            return redirect(f"/inbox/{did}/edit?flash=" + _qp(f"Error: {e}"))
         return redirect(f"/#d-{did}")
 
     def _insights_render(tab: str):
@@ -515,7 +524,7 @@ def make_app(app_ref, bound_port: int | None = None):
             _maybe_reload_config(app_ref)
             return redirect(f"/snippets?flash=Saved {code!r}.")
         except ValueError as e:
-            return redirect(f"/snippets?flash={e}")
+            return redirect("/snippets?flash=" + _qp(str(e)))
 
     @flask_app.post("/snippets/update")
     def snippets_update():
@@ -532,7 +541,7 @@ def make_app(app_ref, bound_port: int | None = None):
             _maybe_reload_config(app_ref)
             return redirect(f"/snippets?flash=Updated {code!r}.")
         except ValueError as e:
-            return redirect(f"/snippets?flash={e}")
+            return redirect("/snippets?flash=" + _qp(str(e)))
 
     @flask_app.post("/snippets/delete")
     def snippets_delete():
@@ -646,7 +655,7 @@ def make_app(app_ref, bound_port: int | None = None):
             _maybe_reload_config(app_ref)
             return redirect("/style?flash=Profiles saved.")
         except ValueError as e:
-            return redirect(f"/style?flash={e}")
+            return redirect("/style?flash=" + _qp(str(e)))
 
     @flask_app.get("/transforms")
     def transforms():
@@ -683,7 +692,7 @@ def make_app(app_ref, bound_port: int | None = None):
             _refresh_transform_hotkeys(app_ref)
             return redirect(f"/transforms?flash=Added {name!r}.")
         except ValueError as e:
-            return redirect(f"/transforms?flash={e}")
+            return redirect("/transforms?flash=" + _qp(str(e)))
 
     @flask_app.post("/transforms/delete")
     def transforms_delete():
@@ -699,7 +708,7 @@ def make_app(app_ref, bound_port: int | None = None):
                 return redirect("/transforms?flash=Removed.")
             return redirect("/transforms?flash=Not found.")
         except ValueError as e:
-            return redirect(f"/transforms?flash={e}")
+            return redirect("/transforms?flash=" + _qp(str(e)))
 
     @flask_app.post("/transforms/bind-hotkey")
     def transforms_bind_hotkey():
@@ -715,7 +724,7 @@ def make_app(app_ref, bound_port: int | None = None):
             _refresh_transform_hotkeys(app_ref)
             return redirect("/transforms?flash=Hotkey updated.")
         except ValueError as e:
-            return redirect(f"/transforms?flash={e}")
+            return redirect("/transforms?flash=" + _qp(str(e)))
 
     @flask_app.post("/transforms/toggle")
     def transforms_toggle():
@@ -731,7 +740,7 @@ def make_app(app_ref, bound_port: int | None = None):
             _refresh_transform_hotkeys(app_ref)
             return redirect("/transforms?flash=Updated.")
         except ValueError as e:
-            return redirect(f"/transforms?flash={e}")
+            return redirect("/transforms?flash=" + _qp(str(e)))
 
     @flask_app.get("/scratchpad")
     def scratchpad():
@@ -1004,7 +1013,7 @@ def make_app(app_ref, bound_port: int | None = None):
             return redirect("/privacy?flash=Dictation history wiped.")
         except Exception as e:
             _log.warning("privacy wipe failed: %s", e)
-            return redirect(f"/privacy?flash=Error: {e}")
+            return redirect("/privacy?flash=" + _qp(f"Error: {e}"))
 
     @flask_app.get("/privacy/export.zip")
     def privacy_export():
@@ -1037,7 +1046,7 @@ def make_app(app_ref, bound_port: int | None = None):
             return redirect("/privacy?flash=Opening data folder…")
         except Exception as e:
             _log.warning("open data folder failed: %s", e)
-            return redirect(f"/privacy?flash=Could not open: {e}")
+            return redirect("/privacy?flash=" + _qp(f"Could not open: {e}"))
 
     # --- Settings (Phase 8) ---------------------------------------------
     from . import settings_routes as _settings
@@ -1257,8 +1266,9 @@ def make_app(app_ref, bound_port: int | None = None):
                 html = graph_obsidian.render(db_path)
             except Exception as e:
                 _log.warning("graph render failed: %s", e)
-                return Response(f"<h1>Graph render failed</h1><pre>{e}</pre>",
-                                mimetype="text/html")
+                return Response(
+                    f"<h1>Graph render failed</h1><pre>{_html.escape(str(e))}</pre>",
+                    mimetype="text/html")
             _graph_cache["mtime"] = mtime
             _graph_cache["html"] = html
         return Response(html, mimetype="text/html")

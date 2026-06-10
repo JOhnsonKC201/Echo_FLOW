@@ -10,6 +10,7 @@ language, and audio device are not hot-reloadable.
 from __future__ import annotations
 
 from typing import Any, Callable
+from urllib.parse import quote_plus as _qp
 
 from . import config_writer as cw
 
@@ -305,4 +306,4 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             return redirect("/settings/privacy?flash=Dictation history wiped.")
         except Exception as e:
             log.warning("privacy wipe failed: %s", e)
-            return redirect(f"/settings/privacy?flash=Error: {e}")
+            return redirect("/settings/privacy?flash=" + _qp(f"Error: {e}"))
