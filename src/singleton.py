@@ -61,7 +61,14 @@ def request_stop():
     exiting (including os._exit(), which skips atexit handlers)."""
     try:
         _STOP_FLAG.parent.mkdir(parents=True, exist_ok=True)
-        _STOP_FLAG.write_text(str(os.getpid()))
+        # The tray-quit path calls os._exit() immediately after this, which
+        # does not drain OS write buffers — fsync so the sentinel is durably
+        # on disk first, or the watchdog would resurrect a daemon the user
+        # just quit.
+        with open(_STOP_FLAG, "w") as f:
+            f.write(str(os.getpid()))
+            f.flush()
+            os.fsync(f.fileno())
     except Exception as e:
         _log.exception(f"Suppressed in request_stop: {e}")
 

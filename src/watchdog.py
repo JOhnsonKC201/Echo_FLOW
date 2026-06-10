@@ -5,12 +5,16 @@ Lifecycle:
    for its whole life (including across a crash — see src/singleton.py). On a
    deliberate quit it first writes data/wispr.stop.
 2. This watchdog polls every 30s and decides via _decide():
-   - wispr.stop present  → user quit on purpose → stand down (stop watching).
+   - wispr.stop present  → user quit on purpose → idle (don't relaunch), but
+     stay resident: a manual relaunch clears the flag (singleton) and the
+     watchdog resumes watching the new daemon.
    - PID present but dead → crash → relaunch via run_silent.vbs.
    - PID alive, or no PID yet during startup → do nothing.
 3. A RestartLimiter caps relaunches (MAX_RESTARTS within RESTART_WINDOW_S) so a
    daemon that dies instantly (bad config, missing model) isn't respawned
-   forever; when the breaker opens it writes data/wispr.crashloop and gives up.
+   forever; when the breaker opens it writes data/wispr.crashloop and stops
+   relaunching — but keeps polling, and resumes (fresh limiter, flag cleared)
+   once it sees a manually-started daemon alive again.
 4. The singleton lock in main.py prevents double-launch if the user manually
    started the daemon while we were about to relaunch.
 
@@ -147,9 +151,100 @@ def _acquire_lock() -> socket.socket | None:
         return None
 
 
+def _clear_crashloop_flag(log):
+    """Drop a stale crash-loop marker. Called when watching (re)starts so the
+    on-disk state reflects "the watchdog is on duty", not a past breaker trip."""
+    try:
+        if CRASHLOOP_FLAG.exists():
+            CRASHLOOP_FLAG.unlink()
+    except Exception as e:
+        log.warning("crashloop flag unlink failed: %s", e)
+
+
+def _run_loop(log, *, sleep=time.sleep, now=time.time, startup_delay: float = 15):
+    """The supervision loop. Runs forever; tests inject `sleep` to script ticks
+    and break out (any exception from sleep propagates to the caller).
+
+    States:
+    - watching: relaunch on crash, idle on stop flag.
+    - breaker_open: crash-loop detected; don't relaunch, but keep polling and
+      resume watching (fresh limiter) once a daemon is alive again.
+    """
+    limiter = RestartLimiter()
+    breaker_open = False
+    idle_logged = False  # log state transitions once, not every 30s tick
+
+    # Give the daemon ~15s to come up before we start checking
+    sleep(startup_delay)
+    while True:
+        pid = _read_pid()
+        alive = _is_alive(pid) if pid else False
+        action = _decide(STOP_FLAG.exists(), pid, alive)
+
+        if breaker_open:
+            # Crash-loop breaker tripped. Never relaunch in this state — wait
+            # until the user fixes the cause and manually starts a daemon
+            # (which we observe as an alive PID), then resume watching.
+            if alive:
+                log.info("daemon is back (pid %s) — resuming watch", pid)
+                breaker_open = False
+                limiter = RestartLimiter()
+                _clear_crashloop_flag(log)
+            sleep(POLL_SECONDS)
+            continue
+
+        if action == "stop":
+            # User deliberately quit (tray Quit / Ctrl+C wrote the sentinel).
+            # Idle — do NOT relaunch — but stay resident: a manual relaunch
+            # clears wispr.stop (singleton._clear_stop_flag) and the next
+            # tick resumes normal watching.
+            if not idle_logged:
+                log.info("stop requested — idling until manual relaunch")
+                idle_logged = True
+            sleep(POLL_SECONDS)
+            continue
+        if idle_logged:
+            log.info("stop flag cleared — resuming watch")
+            idle_logged = False
+
+        if action == "relaunch":
+            if not limiter.allow(now()):
+                # Breaker opens: the daemon keeps dying. Stop respawning a
+                # broken build/config and leave a trace + marker so the
+                # user knows recovery was paused (not silently looping).
+                log.error(
+                    "daemon crash-looped (>=%d restarts in %ds) — pausing "
+                    "relaunches; fix the cause and start it manually",
+                    MAX_RESTARTS, RESTART_WINDOW_S)
+                try:
+                    CRASHLOOP_FLAG.write_text("crash-loop; watchdog paused relaunches")
+                except Exception:
+                    pass
+                breaker_open = True
+                sleep(POLL_SECONDS)
+                continue
+            # Daemon was running, now it's dead → relaunch. Unlink first so a
+            # slow/failed relaunch reads as "missing" (no retry) rather than
+            # "dead" (which would re-trip the breaker on the next poll).
+            try:
+                PID_FILE.unlink()
+            except Exception as e:
+                log.warning("stale PID file unlink failed: %s", e)
+            log.warning("daemon (pid %s) is dead — relaunching", pid)
+            _relaunch()
+        sleep(POLL_SECONDS)
+
+
 def main():
     import logging
     log = logging.getLogger("wispr.watchdog")
+
+    # Sentinel paths are cwd-relative (shared contract with src/singleton.py).
+    # run_silent.vbs launches us with cwd = repo root, but Task Scheduler or a
+    # debugger may not — normalize so the sentinels always resolve to the same
+    # data/ directory the daemon uses.
+    if not getattr(sys, "frozen", False):
+        os.chdir(Path(__file__).resolve().parent.parent)
 
     # Single-instance for the watchdog itself
     lock = _acquire_lock()
@@ -159,43 +254,12 @@ def main():
 
     WATCHDOG_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     WATCHDOG_PID_FILE.write_text(str(os.getpid()))
-    limiter = RestartLimiter()
+    # A fresh watchdog means "watching again" — a crashloop marker from a
+    # previous generation is stale by definition.
+    _clear_crashloop_flag(log)
 
     try:
-        # Give the daemon ~15s to come up before we start checking
-        time.sleep(15)
-        while True:
-            pid = _read_pid()
-            action = _decide(STOP_FLAG.exists(), pid, _is_alive(pid) if pid else False)
-            if action == "stop":
-                # User deliberately quit (tray Quit / Ctrl+C wrote the sentinel).
-                # Stand down so we don't resurrect a daemon they shut off.
-                log.info("stop requested — watchdog standing down")
-                break
-            if action == "relaunch":
-                if not limiter.allow(time.time()):
-                    # Breaker open: the daemon keeps dying. Stop respawning a
-                    # broken build/config and leave a trace + marker so the
-                    # user knows recovery was abandoned (not silently looping).
-                    log.error(
-                        "daemon crash-looped (>=%d restarts in %ds) — giving up; "
-                        "fix the cause and relaunch manually",
-                        MAX_RESTARTS, RESTART_WINDOW_S)
-                    try:
-                        CRASHLOOP_FLAG.write_text("crash-loop; watchdog gave up")
-                    except Exception:
-                        pass
-                    break
-                # Daemon was running, now it's dead → relaunch. Unlink first so a
-                # slow/failed relaunch reads as "missing" (no retry) rather than
-                # "dead" (which would re-trip the breaker on the next poll).
-                try:
-                    PID_FILE.unlink()
-                except Exception as e:
-                    log.warning("stale PID file unlink failed: %s", e)
-                log.warning("daemon (pid %s) is dead — relaunching", pid)
-                _relaunch()
-            time.sleep(POLL_SECONDS)
+        _run_loop(log)
     finally:
         try:
             WATCHDOG_PID_FILE.unlink()

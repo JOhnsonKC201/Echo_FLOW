@@ -121,9 +121,15 @@ class TrayApp:
                          getattr(fn, "__name__", fn), e)
 
     def _quit(self):
-        self.on_quit()
+        # Stop the tray icon BEFORE on_quit: the quit handler ends in
+        # os._exit(), so anything after it never runs — and skipping
+        # icon.stop() can leave a ghost icon in the Windows tray.
         if self._icon:
-            self._icon.stop()
+            try:
+                self._icon.stop()
+            except Exception as e:
+                _log.warning("tray icon stop failed: %s", e)
+        self.on_quit()
 
     def set_state(self, state: str):
         """state: ok | paused | rec | thinking"""
