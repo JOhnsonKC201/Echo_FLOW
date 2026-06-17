@@ -1,0 +1,9 @@
+# Development / test dependencies — NOT required to run Echo Flow.
+# Install on top of the runtime stack:
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# (scripts\run_tests.bat installs these automatically.)
+pytest>=8.0
+pytest-mock>=3.12
+pytest-cov>=5.0       # coverage: pytest --cov=src --cov-report=term-missing
+pytest-timeout>=2.3   # per-test timeout guard: pytest --timeout=120

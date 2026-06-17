@@ -30,7 +30,8 @@ jobs:
       - name: Install minimal test deps
         run: |
           python -m pip install --upgrade pip
-          pip install flask pyyaml numpy requests pytest pytest-mock
+          # Curated minimal subset (no heavy ML stack) + the test runner.
+          pip install flask pyyaml numpy requests pytest pytest-mock pytest-timeout
         shell: pwsh
       - name: Run pytest (logic suite)
         run: python -m pytest tests/ -q --tb=short
@@ -59,12 +60,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install the full runtime stack. The integration tests import
-          # src.main, which top-level-imports the whole pipeline (faster-whisper,
-          # sounddevice, sentence-transformers, pystray/Pillow, pyperclip, …), so
-          # the previous curated subset could not collect them. This mirrors the
-          # local `scripts/run_tests.bat` environment exactly.
-          pip install -r requirements.txt
+          # Install the full runtime stack plus the dev/test tooling. The
+          # integration tests import src.main, which top-level-imports the whole
+          # pipeline (faster-whisper, sounddevice, sentence-transformers,
+          # pystray/Pillow, pyperclip, …), so the curated subset can't collect
+          # them. This mirrors the local `scripts/run_tests.bat` environment.
+          pip install -r requirements.txt -r requirements-dev.txt
         shell: pwsh
 
       - name: Run pytest

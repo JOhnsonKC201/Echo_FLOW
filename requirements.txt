@@ -22,5 +22,6 @@ pywebview>=5.0 ; sys_platform == "win32"
 pymupdf>=1.24
 python-docx>=1.1
 dateparser>=1.2
-pytest>=8.0
-pytest-mock>=3.12
+
+# Test/dev tooling lives in requirements-dev.txt — it is NOT needed to run
+# Echo Flow. Contributors: pip install -r requirements.txt -r requirements-dev.txt
