@@ -170,3 +170,43 @@ def test_corrupt_config_does_not_crash_and_keeps_previous_state():
     # Only the one successful reload invalidated caches.
     assert app.learner.invalidate_cache.call_count == 1
     assert app.cleaner.invalidate_casing_cache.call_count == 1
+
+
+class _PartialFailCfg:
+    """Usable for the vocabulary-related keys, then raises once reload asks for
+    'prompt_engineering' — i.e. fails *after* the new initial_prompt would have
+    been derived but *before* anything is applied. Exercises true mid-reload
+    atomicity, which _CorruptCfg (raises on the very first access) cannot."""
+
+    def __init__(self, base):
+        self._base = base
+
+    def get(self, key, default=None):
+        if key == "prompt_engineering":
+            raise RuntimeError("boom mid-reload")
+        return self._base.get(key, default)
+
+    def __getitem__(self, key):
+        return self._base[key]
+
+
+def test_reload_is_atomic_on_midway_failure():
+    """A failure after the vocabulary is derived but before the apply phase must
+    leave ALL live state at its previous value — never a half-applied mix (new
+    initial_prompt but stale PE/learner/cleaner state)."""
+    app = _make_app(_cfg())
+    app.reload_config()  # establish good state
+    good_prompt = app.transcriber.cfg.initial_prompt
+    assert "Kubernetes" in good_prompt
+    pe_before = app._pe_cfg
+    invalidate_before = app.learner.invalidate_cache.call_count
+
+    # New cfg would change initial_prompt to include "Zeroconf" if apply ran,
+    # but it raises while reload is still deriving (at 'prompt_engineering').
+    app.cfg = _PartialFailCfg(_cfg(custom_vocabulary=["Zeroconf"]))
+    app.reload_config()  # must not raise; must not partially apply
+
+    assert app.transcriber.cfg.initial_prompt == good_prompt
+    assert "Zeroconf" not in app.transcriber.cfg.initial_prompt
+    assert app._pe_cfg is pe_before
+    assert app.learner.invalidate_cache.call_count == invalidate_before

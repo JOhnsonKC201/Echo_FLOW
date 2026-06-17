@@ -120,14 +120,17 @@ def similar_to_id(
     dictation_id: int,
     *,
     limit: int = 8,
-    min_sim: float = 0.0,
+    min_sim: float = -1.0,
     trust_mobile: bool = False,
 ) -> list[dict]:
     """Nearest-neighbors of an existing dictation — the "Find similar" affordance.
 
     Uses the row's *stored* embedding (no re-embedding) and excludes the row
-    itself. `min_sim=0.0` so it always surfaces the closest matches, like the
-    Embedding Projector's "nearest points" panel.
+    itself. `min_sim=-1.0` (cosine's floor) so it always surfaces the closest
+    matches up to `limit`, even weakly- or negatively-correlated rows — like the
+    Embedding Projector's "nearest points" panel. The per-row `similarity` field
+    lets the UI decide what to dim or hide. (A `0.0` floor silently dropped
+    negatively-correlated neighbors, contradicting "always surfaces".)
     """
     try:
         row = conn.execute(

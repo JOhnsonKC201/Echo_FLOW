@@ -172,8 +172,24 @@ def test_similar_to_id_excludes_self_and_ranks_neighbors(tmp_path):
 
     ids = [r["id"] for r in results]
     assert anchor not in ids
-    # min_sim defaults to 0.0 so the orthogonal row (cos == 0.0) still appears.
+    # min_sim floor is -1.0, so the orthogonal row (cos == 0.0) still appears,
+    # ranked below the 45-degree neighbor.
     assert ids == [near, far]
+
+
+def test_similar_to_id_surfaces_negative_cosine_neighbors(tmp_path):
+    """Docstring contract: 'Find similar' surfaces the *closest* rows up to the
+    limit even when nothing is positively correlated. A negatively-correlated
+    neighbor (the only other row) must appear, not be silently dropped — which
+    is what the old min_sim=0.0 floor did."""
+    h = _h(tmp_path)
+    anchor = _seed(h.conn, "anchor", E1)
+    opposite = _seed(h.conn, "opposite", _vec(-1, 0, 0, 0))  # cos == -1.0 vs E1
+
+    results = ss.similar_to_id(h.conn, anchor)
+
+    assert [r["id"] for r in results] == [opposite]
+    assert results[0]["similarity"] < 0  # genuinely negative, yet surfaced
 
 
 def test_similar_to_id_unknown_id_returns_empty(tmp_path):

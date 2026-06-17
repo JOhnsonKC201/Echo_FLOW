@@ -72,6 +72,31 @@ def test_loop_relaunches_dead_daemon(monkeypatch, tmp_path):
         "stale PID must be unlinked so a slow relaunch reads as 'missing'"
 
 
+def test_loop_defers_relaunch_when_stale_pid_unlink_fails(monkeypatch, tmp_path):
+    """If the stale PID file can't be removed (locked / permission denied),
+    relaunching over it would leave a stale PID that a recycled OS PID could
+    later read as 'alive', masking a genuine crash. The loop must defer — not
+    relaunch — and retry on the next poll."""
+    import pathlib
+
+    _setup_paths(monkeypatch, tmp_path)
+    watchdog.PID_FILE.write_text("4242")
+    monkeypatch.setattr(watchdog, "_is_alive", lambda pid: False)
+    relaunches = []
+    monkeypatch.setattr(watchdog, "_relaunch", lambda: relaunches.append(1))
+
+    def _boom(self, *a, **k):
+        raise OSError("cannot unlink")
+    monkeypatch.setattr(pathlib.Path, "unlink", _boom)
+
+    sleep = _ScriptedSleep([None, None])  # startup + one deferred poll, then exit
+    with pytest.raises(_LoopExit):
+        watchdog._run_loop(_log(), sleep=sleep, startup_delay=0)
+
+    assert relaunches == [], "must not relaunch over a stale PID it couldn't clear"
+    assert watchdog.PID_FILE.exists(), "the un-removable PID file is still there"
+
+
 def test_loop_does_nothing_while_daemon_alive(monkeypatch, tmp_path):
     _setup_paths(monkeypatch, tmp_path)
     watchdog.PID_FILE.write_text("4242")

@@ -598,9 +598,13 @@ class History:
         ).fetchall()
 
     def open_action_items(self, limit: int = 50) -> list[tuple]:
+        # `id` is a tiebreaker: items extracted in the same second share a
+        # created_at, and without it SQLite's order among ties is unspecified
+        # (the dashboard list would shuffle between requests). Newest first.
         return self.conn.execute(
             "SELECT id, dictation_id, text, created_at "
-            "FROM action_items WHERE completed = 0 ORDER BY created_at DESC LIMIT ?",
+            "FROM action_items WHERE completed = 0 "
+            "ORDER BY created_at DESC, id DESC LIMIT ?",
             (limit,),
         ).fetchall()
 

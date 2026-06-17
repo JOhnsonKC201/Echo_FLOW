@@ -116,3 +116,20 @@ def test_open_action_items_only_lists_incomplete(tmp_path):
 
     assert a_open in ids
     assert a_done not in ids
+
+
+def test_open_action_items_breaks_created_at_ties_by_id(tmp_path):
+    """Items extracted within the same second share a created_at; without an id
+    tiebreaker SQLite's order among ties is unspecified and the dashboard list
+    would shuffle between requests. Newest id first is the documented order."""
+    h = _h(tmp_path)
+    a1 = h.add_action_item(1, "first")
+    a2 = h.add_action_item(1, "second")
+    a3 = h.add_action_item(1, "third")
+    # Force identical timestamps so created_at alone cannot order them.
+    h.conn.execute("UPDATE action_items SET created_at = 1000.0")
+    h.conn.commit()
+
+    ids = [row[0] for row in h.open_action_items()]
+
+    assert ids == [a3, a2, a1]

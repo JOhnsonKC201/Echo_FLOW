@@ -527,31 +527,47 @@ class App:
         additions take effect on the next dictation without a daemon
         restart). Other settings (mic device, hotkey, model) still
         require a full restart — the dashboard surfaces that as a banner.
+
+        Atomic: everything that can fail (the vocabulary/DB read, config
+        lookups) is computed *first*. Only once it all succeeds are the values
+        applied to live state. A failure midway therefore leaves the previous
+        config fully intact rather than half-applied (e.g. a new initial_prompt
+        but stale PE/learner/cleaner state).
         """
+        _MISSING = object()
         try:
+            # --- derive (may raise) — touch no live state yet ---
             vocab = self._build_custom_vocabulary()
-            ip = _format_initial_prompt(vocab[:80]) if vocab else None
-            if hasattr(self.transcriber, "cfg"):
-                self.transcriber.cfg.initial_prompt = ip
-                _log.info(
-                    "reload_config: initial_prompt refreshed with %d terms",
-                    len(vocab[:80]),
-                )
-            self._pe_cfg = self.cfg.get("prompt_engineering", {"enabled": False})
-            # Refresh learner trust flags so dashboard toggles (trust_teacher,
-            # trust_mobile) take effect on the next dictation without a restart.
-            if self.learner is not None:
-                lc = ((self.cfg.get("cleanup") or {}).get("learning") or {})
-                self.learner.cfg.trust_mobile = bool(lc.get("trust_mobile", False))
-                self.learner.cfg.trust_teacher = bool(lc.get("trust_teacher", True))
-                self.learner.invalidate_cache()
-            # Refresh the cleaner's casing config + drop its protected-set cache
-            # so dictionary edits and casing.* toggles apply without a restart.
-            if self.cleaner is not None:
-                self.cleaner.cfg = self.cfg.get("cleanup", self.cleaner.cfg)
-                self.cleaner.invalidate_casing_cache()
+            initial_prompt = _format_initial_prompt(vocab[:80]) if vocab else None
+            pe_cfg = self.cfg.get("prompt_engineering", {"enabled": False})
+            lc = ((self.cfg.get("cleanup") or {}).get("learning") or {})
+            trust_mobile = bool(lc.get("trust_mobile", False))
+            trust_teacher = bool(lc.get("trust_teacher", True))
+            cleanup_cfg = self.cfg.get("cleanup", _MISSING)
         except Exception as e:
-            _log.warning("reload_config failed: %s", e)
+            _log.warning("reload_config: re-derive failed, keeping previous config: %s", e)
+            return
+
+        # --- apply (assignments only; the fallible work is done above) ---
+        if hasattr(self.transcriber, "cfg"):
+            self.transcriber.cfg.initial_prompt = initial_prompt
+            _log.info(
+                "reload_config: initial_prompt refreshed with %d terms",
+                len(vocab[:80]),
+            )
+        self._pe_cfg = pe_cfg
+        # Refresh learner trust flags so dashboard toggles (trust_teacher,
+        # trust_mobile) take effect on the next dictation without a restart.
+        if self.learner is not None:
+            self.learner.cfg.trust_mobile = trust_mobile
+            self.learner.cfg.trust_teacher = trust_teacher
+            self.learner.invalidate_cache()
+        # Refresh the cleaner's casing config + drop its protected-set cache
+        # so dictionary edits and casing.* toggles apply without a restart.
+        if self.cleaner is not None:
+            if cleanup_cfg is not _MISSING:
+                self.cleaner.cfg = cleanup_cfg
+            self.cleaner.invalidate_casing_cache()
 
     def _build_custom_vocabulary(self) -> list[str]:
         """Assemble the vocabulary list used to bias the Whisper decoder.

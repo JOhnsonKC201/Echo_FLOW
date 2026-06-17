@@ -228,8 +228,16 @@ def _run_loop(log, *, sleep=time.sleep, now=time.time, startup_delay: float = 15
             # "dead" (which would re-trip the breaker on the next poll).
             try:
                 PID_FILE.unlink()
+            except FileNotFoundError:
+                pass  # already gone — exactly the state we want
             except Exception as e:
-                log.warning("stale PID file unlink failed: %s", e)
+                # Couldn't clear the stale PID file. Relaunching now would leave
+                # it on disk, where a recycled OS PID (Windows reuses PIDs) could
+                # later read as "alive" and mask a genuine crash. Defer to the
+                # next poll instead of relaunching over stale state.
+                log.warning("stale PID unlink failed (%s) — deferring relaunch", e)
+                sleep(POLL_SECONDS)
+                continue
             log.warning("daemon (pid %s) is dead — relaunching", pid)
             _relaunch()
         sleep(POLL_SECONDS)
