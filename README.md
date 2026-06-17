@@ -3,7 +3,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20iOS-1f6fd0)
 ![audio](https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a)
 ![cloud](https://img.shields.io/badge/cloud-opt--in%20only-6c6a62)
-![tests](https://img.shields.io/badge/tests-833%20passing-3eaf6f)
+[![tests](https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml/badge.svg)](https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 **Local-first voice dictation for Windows.** Hold a hotkey, talk, release — the
@@ -315,7 +315,7 @@ src/              the app — daemon, dashboard, voice pipeline
   ├── hotkey.py       global push-to-talk listener
   ├── inject.py       paste/type at the cursor
   └── dashboard/      Flask app, routes, templates, static assets
-tests/            pytest suite (833 tests) — scripts\run_tests.bat
+tests/            pytest suite (run: scripts\run_tests.bat; status: CI badge above)
 scripts/          setup, backfills, helpers
 docs/             architecture, dashboard, mobile, audits, action-layer specs
 assets/           app icons
