@@ -42,6 +42,40 @@ def _re_embed_if_possible(db_path: str, row_id: int, raw_text: str):
     threading.Thread(target=worker, daemon=True).start()
 
 
+def review_queue(db_path: str, n: int = 20) -> list[tuple]:
+    """The N lowest-quality *un-edited* dictations (cleaned_text still equals
+    original_cleaned), worst first.
+
+    Pure data access — :func:`open_review_queue` renders these rows in Tk. Kept
+    at module scope (not nested in the dialog) so it is unit-testable without a
+    display. Returns ``[]`` on any DB error so the dialog degrades to an empty
+    list rather than crashing.
+    """
+    try:
+        with closing(sqlite3.connect(db_path)) as conn:
+            return conn.execute(
+                "SELECT id, ts, quality_score, raw_text, cleaned_text "
+                "FROM dictations "
+                "WHERE quality_score IS NOT NULL "
+                "AND original_cleaned IS NOT NULL "
+                "AND cleaned_text = original_cleaned "
+                "AND raw_text != '' "
+                "ORDER BY quality_score ASC LIMIT ?",
+                (n,),
+            ).fetchall()
+    except Exception:
+        return []
+
+
+def _review_snippet(text: str | None, width: int = 70) -> str:
+    """Collapse a cleaned dictation to a single-line list label, ellipsizing
+    past ``width``. Shared by the review-queue list rendering."""
+    s = (text or "").replace("\n", " ").strip()
+    if len(s) > width:
+        s = s[:width].rstrip() + "…"
+    return s
+
+
 def open_editor(db_path: str, row_id: int | None = None,
                 learn_casing: bool = True) -> None:
     """Open the edit dialog. Must run on the main thread on macOS;
@@ -392,22 +426,6 @@ def open_review_queue(db_path: str, n: int = 20) -> None:
     import tkinter as tk
     from tkinter import ttk, messagebox
 
-    def fetch_queue() -> list[tuple]:
-        try:
-            with closing(sqlite3.connect(db_path)) as conn:
-                return conn.execute(
-                    "SELECT id, ts, quality_score, raw_text, cleaned_text "
-                    "FROM dictations "
-                    "WHERE quality_score IS NOT NULL "
-                    "AND original_cleaned IS NOT NULL "
-                    "AND cleaned_text = original_cleaned "
-                    "AND raw_text != '' "
-                    "ORDER BY quality_score ASC LIMIT ?",
-                    (n,),
-                ).fetchall()
-        except Exception:
-            return []
-
     root = tk.Tk()
     root.title("Echo Flow — Review Queue (worst first)")
     root.geometry("760x480")
@@ -429,7 +447,7 @@ def open_review_queue(db_path: str, n: int = 20) -> None:
     id_map: dict[int, int] = {}   # listbox-index → row_id
 
     def refresh():
-        rows = fetch_queue()
+        rows = review_queue(db_path, n)
         lb.delete(0, "end")
         id_map.clear()
         if not rows:
@@ -438,10 +456,7 @@ def open_review_queue(db_path: str, n: int = 20) -> None:
         header_var.set(f"{len(rows)} dictation(s) sorted by quality (worst first). "
                        f"Double-click or Enter to edit.")
         for i, (rid, _ts, q, _raw, cleaned) in enumerate(rows):
-            snippet = (cleaned or "").replace("\n", " ").strip()
-            if len(snippet) > 70:
-                snippet = snippet[:70].rstrip() + "…"
-            lb.insert("end", f"[Q:{q:5.1f}]  {snippet}")
+            lb.insert("end", f"[Q:{q:5.1f}]  {_review_snippet(cleaned)}")
             id_map[i] = rid
 
     def edit_selected(_event=None):
