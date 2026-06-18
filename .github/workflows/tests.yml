@@ -31,7 +31,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # Curated minimal subset (no heavy ML stack) + the test runner.
-          pip install flask pyyaml numpy requests pytest pytest-mock pytest-timeout
+          # rich + Pillow are top-level (non-lazy) imports in src (log.py, tray.py),
+          # so they're required for the suite to *collect*; the conftest stubs the
+          # remaining native shims (sounddevice, pynput, pystray, ...).
+          pip install flask pyyaml numpy requests rich Pillow pytest pytest-mock pytest-timeout
         shell: pwsh
       - name: Run pytest (logic suite)
         run: python -m pytest tests/ -q --tb=short

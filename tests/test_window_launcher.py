@@ -40,6 +40,10 @@ def test_save_window_state_writes_width_height_schema(tmp_path, monkeypatch):
     from src.dashboard import window as W
     state_path = tmp_path / "sub" / "state.json"  # exercise the mkdir branch
     monkeypatch.setattr(W, "_STATE_FILE", state_path)
+    # Pin a large screen so the saved size (1234x678) isn't mistaken for a
+    # maximized window: a headless CI session reports 1024x768, below which the
+    # guard would discard these dims and write the default instead.
+    monkeypatch.setattr(W, "_primary_screen_size", lambda: (3840, 2160))
 
     # Fake pywebview window that exposes get_size() like the real one does.
     fake_win = types.SimpleNamespace(

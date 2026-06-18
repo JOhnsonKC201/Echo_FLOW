@@ -45,6 +45,10 @@ def test_load_window_state_missing_returns_empty(monkeypatch, tmp_path):
 def test_save_then_load_window_state(monkeypatch, tmp_path):
     from src.dashboard import window as w
     monkeypatch.setattr(w, "_STATE_FILE", tmp_path / "win.json")
+    # Pin a large screen: the real screen may be <= the saved size (a headless
+    # CI session reports 1024x768), which would trip the maximized-size guard
+    # in _save_window_state and discard the dimensions we're round-tripping.
+    monkeypatch.setattr(w, "_primary_screen_size", lambda: (3840, 2160))
     class _Win:
         width = 1024; height = 768
         def get_size(self):

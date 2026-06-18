@@ -114,5 +114,11 @@ def test_set_state_updates_icon_when_present():
 
 
 def test_build_menu_constructs_without_error():
+    # _build_menu references pystray.Menu.SEPARATOR, which the conftest's
+    # minimal stub doesn't provide. On the dep-light lane (pystray stubbed)
+    # skip; the full lane has real pystray and exercises this.
+    import pystray
+    if getattr(pystray, "__stubbed_for_tests__", False):
+        pytest.skip("needs real pystray (Menu.SEPARATOR), stubbed on the dep-light lane")
     t = _tray(on_open_dashboard=lambda: None, dashboard_hotkey_label="Ctrl+Shift+Alt")
     assert t._build_menu() is not None
