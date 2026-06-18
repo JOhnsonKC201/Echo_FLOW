@@ -123,6 +123,7 @@ def make_app(app_ref, bound_port: int | None = None):
     # can override --accent without each route having to remember it.
     @flask_app.context_processor
     def _inject_theme_context():
+        from .. import __version__ as _app_version
         acc = (app_ref.cfg.get("dashboard") or {}).get("accent_color")
         # Re-validate at render time: the value lands inside a <style> block,
         # where Jinja2's HTML-escaping is no defense (CSS injection needs no
@@ -130,7 +131,7 @@ def make_app(app_ref, bound_port: int | None = None):
         # config.yaml can be edited by hand.
         if acc and not _re.fullmatch(r"#[0-9a-fA-F]{6}", str(acc)):
             acc = None
-        return {"accent_color": acc}
+        return {"accent_color": acc, "app_version": _app_version}
 
     @flask_app.before_request
     def _enforce_host_header():
