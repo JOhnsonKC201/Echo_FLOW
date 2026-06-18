@@ -45,6 +45,7 @@ the Whisper model once; after that it works fully offline.
 
 - [Features](#features)
 - [How it works](#how-it-works)
+- [Screenshots](#screenshots)
 - [Installation](#installation)
 - [Daily workflow](#daily-workflow)
 - [Configuration](#configuration)
@@ -170,6 +171,37 @@ sequenceDiagram
     P->>Cur: polished text pasted (~1s)
     Note over R,Cur: end-to-end ≈ 1–2s · nothing leaves your machine
 ```
+
+---
+
+## Screenshots
+
+> Captured against a **seeded demo database** — no real dictation data.
+
+**Home** — your dictation inbox, quality-scored, with live time-saved / acceptance / latency stats.
+
+![Echo Flow dashboard — Home](docs/img/dashboard-home.png)
+
+**Outcomes** — how Echo shows up in your work: words-per-minute, the fixes it made, your app mix, a streak heatmap, and a quality trajectory.
+
+![Echo Flow dashboard — Outcomes](docs/img/dashboard-insights.png)
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/img/dashboard-graph.png" alt="Echo Flow — knowledge graph"><br>
+      <sub><b>Knowledge graph</b> — dictations, notes &amp; concepts, force-directed.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/img/dashboard-dictionary.png" alt="Echo Flow — dictionary"><br>
+      <sub><b>Dictionary</b> — learned casings (<code>github → GitHub</code>) &amp; custom vocabulary.</sub>
+    </td>
+  </tr>
+</table>
+
+**Privacy** — a local-only audit ledger: exactly what touches the network. By default, nothing.
+
+![Echo Flow dashboard — Privacy](docs/img/dashboard-privacy.png)
 
 ---
 
