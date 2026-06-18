@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="Echo Flow — local-first voice dictation for Windows">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0f1a"/>
+      <stop offset="1" stop-color="#0d2018"/>
+    </linearGradient>
+    <linearGradient id="grn" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3eaf6f"/>
+      <stop offset="1" stop-color="#58c77a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.30" cy="0.5" r="0.55">
+      <stop offset="0" stop-color="#58c77a" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#58c77a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#bg)"/>
+  <rect width="1200" height="300" fill="url(#glow)"/>
+
+  <!-- microphone motif (echoes the tray glyph) -->
+  <g transform="translate(140 150)" fill="none" stroke="url(#grn)" stroke-width="7" stroke-linecap="round">
+    <rect x="-26" y="-80" width="52" height="88" rx="26"/>
+    <path d="M -46 -16 a 46 46 0 0 0 92 0"/>
+    <line x1="0" y1="30" x2="0" y2="60"/>
+    <line x1="-26" y1="60" x2="26" y2="60"/>
+  </g>
+
+  <!-- waveform: voice flowing into text -->
+  <g fill="url(#grn)">
+    <rect x="240" y="135" width="9" height="30"  rx="4.5"/>
+    <rect x="259" y="110" width="9" height="80"  rx="4.5"/>
+    <rect x="278" y="78"  width="9" height="144" rx="4.5"/>
+    <rect x="297" y="120" width="9" height="60"  rx="4.5"/>
+    <rect x="316" y="92"  width="9" height="116" rx="4.5"/>
+    <rect x="335" y="128" width="9" height="44"  rx="4.5"/>
+    <rect x="354" y="104" width="9" height="92"  rx="4.5"/>
+    <rect x="373" y="138" width="9" height="24"  rx="4.5"/>
+  </g>
+
+  <!-- wordmark + accent underline -->
+  <text x="418" y="138" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="94" font-weight="700" fill="#ffffff">Echo <tspan fill="url(#grn)">Flow</tspan></text>
+  <rect x="422" y="158" width="150" height="5" rx="2.5" fill="url(#grn)"/>
+
+  <!-- tagline -->
+  <text x="422" y="200" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="30" fill="#c9d4cf">Local-first voice dictation for Windows</text>
+  <!-- subline -->
+  <text x="422" y="238" font-family="Consolas, ui-monospace, monospace" font-size="19" fill="#7fae97">100% on-device  ·  opt-in cloud only  ·  learns your voice</text>
+</svg>

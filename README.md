@@ -1,15 +1,22 @@
-# Echo Flow
+<div align="center">
 
-![platform](https://img.shields.io/badge/platform-Windows%20%7C%20iOS-1f6fd0)
-![audio](https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a)
-![cloud](https://img.shields.io/badge/cloud-opt--in%20only-6c6a62)
-[![tests](https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml/badge.svg)](https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml)
-![license](https://img.shields.io/badge/license-MIT-green)
+<img src="assets/banner.svg" alt="Echo Flow — local-first voice dictation for Windows" width="100%">
 
-**Local-first voice dictation for Windows.** Hold a hotkey, talk, release — the
-cleaned-up text lands wherever your cursor is. No subscription, no account, and
-your audio never leaves your machine unless you explicitly opt into a cloud
-feature.
+<p>
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20iOS-1f6fd0">
+  <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-3776ab">
+  <img alt="audio" src="https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a">
+  <img alt="cloud" src="https://img.shields.io/badge/cloud-opt--in%20only-6c6a62">
+  <a href="https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml/badge.svg"></a>
+  <img alt="version" src="https://img.shields.io/badge/version-0.2.0-58c77a">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
+</p>
+
+<strong>Hold a hotkey, talk, release — polished text lands wherever your cursor is.</strong>
+
+No subscription, no account, and your audio never leaves your machine unless you opt in.
+
+</div>
 
 > Everything the commercial dictation apps charge a monthly fee for, running
 > entirely on your hardware, where your voice never touches someone else's server.
@@ -20,6 +27,17 @@ Hold Ctrl+Shift → talk → release → polished text appears at your cursor.
 
 A green microphone in the system tray means it's ready. First launch downloads
 the Whisper model once; after that it works fully offline.
+
+### Echo Flow vs. the subscription apps
+
+| | 🟢 Echo Flow | ☁️ Typical cloud dictation app |
+|---|---|---|
+| **Price** | Free · MIT | $10–30 / month |
+| **Your audio** | Stays on device (cloud is opt-in) | Uploaded every time |
+| **Works offline** | ✅ | ❌ |
+| **Account required** | ❌ none | ✅ sign-up |
+| **Learns your corrections** | ✅ locally, forever | Limited / cloud-side |
+| **Knowledge layer** (notes · tags · graph · search) | ✅ built in | ❌ |
 
 ---
 
@@ -56,6 +74,17 @@ the Whisper model once; after that it works fully offline.
 ### It learns your voice
 Every correction you make through the tray menu feeds back into cleanup. After a
 few hundred dictations it knows your jargon, names, and writing style.
+
+```mermaid
+flowchart LR
+    D["🎙️ You dictate"] --> G["Self-grade<br/>0–100 quality"]
+    G --> H[("history.db")]
+    E["✏️ You fix it once<br/>(tray edit)"] --> L["Learn<br/>casings + patterns"]
+    L --> H
+    H -->|"few-shot + learned rules"| C["Next cleanup<br/>gets smarter"]
+    C --> D
+    L -.->|"enough signal"| F["LLM-free<br/>'learned' mode"]
+```
 
 | Capability | Detail |
 |---|---|
@@ -118,6 +147,28 @@ flowchart LR
         G
         DB
     end
+```
+
+**What happens when you talk** — the live path, end to end:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor You
+    participant H as Hotkey listener
+    participant R as Recorder
+    participant W as Whisper · local
+    participant P as Cleanup · local
+    participant Cur as Cursor
+    You->>H: hold Ctrl+Shift
+    H->>R: start capture
+    You-->>R: speak…
+    You->>H: release
+    H->>R: stop
+    R->>W: audio buffer
+    W->>P: raw transcript (~0.5s)
+    P->>Cur: polished text pasted (~1s)
+    Note over R,Cur: end-to-end ≈ 1–2s · nothing leaves your machine
 ```
 
 ---
