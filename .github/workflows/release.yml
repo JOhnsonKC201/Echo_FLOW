@@ -1,0 +1,191 @@
+name: release
+
+# Build the signed (when a cert secret is present) Windows installer and
+# publish it as a GitHub Release. Triggered by pushing a version tag:
+#
+#     git tag v0.2.1 && git push origin v0.2.1
+#
+# `workflow_dispatch` lets you do a dry-run build (uploads the installer as a
+# CI artifact, but does NOT create a release) without tagging.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build for a dry run (e.g. 0.2.1) — no release is created"
+        required: true
+        default: "0.0.0-dev"
+
+permissions:
+  contents: write # create releases + upload assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      # These resolve to "" when the secrets are not configured, which makes the
+      # signing steps below no-op. Drop a cert in later and signing turns on with
+      # zero workflow changes.
+      CODESIGN_PFX_BASE64: ${{ secrets.CODESIGN_PFX_BASE64 }}
+      CODESIGN_PFX_PASSWORD: ${{ secrets.CODESIGN_PFX_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $v = $env:GITHUB_REF -replace "^refs/tags/v", ""
+          } else {
+            $v = "${{ github.event.inputs.version }}"
+          }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Resolved version: $v"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Verify tag matches src/__init__.py __version__
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $pkg = (python -c "import re,pathlib; t=pathlib.Path('src/__init__.py').read_text(encoding='utf-8'); m=re.search(r'__version__\s*=\s*[\x22\x27]([^\x22\x27]+)[\x22\x27]', t); print(m.group(1) if m else 'NONE')").Trim()
+          $tag = "${{ steps.ver.outputs.version }}"
+          if ($pkg -ne $tag) {
+            Write-Error "Tag v$tag does not match src/__init__.py __version__ ($pkg). Bump src/__init__.py before tagging."
+            exit 1
+          }
+          Write-Host "Version check OK: $pkg"
+
+      - name: Build daemon bundle (PyInstaller)
+        shell: pwsh
+        run: pyinstaller --noconfirm --clean EchoFlow-Daemon.spec
+
+      - name: Sign bundled exe (only if a cert secret is present)
+        if: ${{ env.CODESIGN_PFX_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CODESIGN_PFX_BASE64))
+          ./installer/sign.ps1 -PfxPath $pfx -PfxPassword $env:CODESIGN_PFX_PASSWORD
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Package web-installer payload (+ hash)
+        id: payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force installer\Output | Out-Null
+          $zip = "installer/Output/EchoFlow-Daemon-Payload-${{ steps.ver.outputs.version }}.zip"
+          Compress-Archive -Path dist\EchoFlow-Daemon\* -DestinationPath $zip -Force
+          $h = (Get-FileHash $zip -Algorithm SHA256).Hash
+          "$h *$(Split-Path $zip -Leaf)" | Out-File "$zip.sha256" -Encoding ascii
+          "sha256=$h" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Payload SHA256: $h"
+
+      - name: Build installers (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $ver  = "${{ steps.ver.outputs.version }}"
+          # Full offline installer (bundles the whole payload).
+          & $iscc /DMyAppVersion=$ver installer\EchoFlow-Daemon.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC (full) failed with exit $LASTEXITCODE" }
+          # Lightweight web bootstrapper — downloads the payload (hashed above)
+          # from the release at install time.
+          $url = "https://github.com/JOhnsonKC201/Echo_FLOW/releases/download/v$ver/EchoFlow-Daemon-Payload-$ver.zip"
+          & $iscc /DMyAppVersion=$ver /DPayloadUrl=$url /DPayloadSha256=${{ steps.payload.outputs.sha256 }} installer\EchoFlow-Web-Setup.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC (web) failed with exit $LASTEXITCODE" }
+
+      - name: Sign installers (only if a cert secret is present)
+        if: ${{ env.CODESIGN_PFX_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          # sign.ps1 signs every installer\Output\*.exe — both the full and web
+          # installers in one pass.
+          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          ./installer/sign.ps1 -PfxPath $pfx -PfxPassword $env:CODESIGN_PFX_PASSWORD
+
+      - name: Compute SHA256 (installers)
+        id: hash
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          function HashOne($exe) {
+            if (-not (Test-Path $exe)) { throw "Not found: $exe" }
+            $h = (Get-FileHash $exe -Algorithm SHA256).Hash
+            "$h *$(Split-Path $exe -Leaf)" | Out-File "$exe.sha256" -Encoding ascii
+            return $h
+          }
+          $full = HashOne "installer/Output/EchoFlow-Daemon-Setup-$ver.exe"
+          $web  = HashOne "installer/Output/EchoFlow-Web-Setup-$ver.exe"
+          "sha256=$full"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sha256_web=$web"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Full installer: $full"
+          Write-Host "Web installer:  $web"
+
+      - name: Build summary (winget inputs)
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $signed = if ($env:CODESIGN_PFX_BASE64 -ne '') { "yes" } else { "no (unsigned — SmartScreen prompt expected)" }
+          @(
+            "## Echo Flow $v",
+            "",
+            "Signed: $signed",
+            "",
+            "| asset | SHA256 |",
+            "|---|---|",
+            "| ``EchoFlow-Daemon-Setup-$v.exe`` (full offline) | ``${{ steps.hash.outputs.sha256 }}`` |",
+            "| ``EchoFlow-Web-Setup-$v.exe`` (tiny bootstrapper) | ``${{ steps.hash.outputs.sha256_web }}`` |",
+            "| ``EchoFlow-Daemon-Payload-$v.zip`` (web payload) | ``${{ steps.payload.outputs.sha256 }}`` |",
+            "",
+            "winget points at the **full** installer: paste its SHA256 + the release download URL into ``packaging/winget/``."
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Upload CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoFlow-${{ steps.ver.outputs.version }}-installers
+          path: |
+            installer/Output/EchoFlow-Daemon-Setup-${{ steps.ver.outputs.version }}.exe
+            installer/Output/EchoFlow-Daemon-Setup-${{ steps.ver.outputs.version }}.exe.sha256
+            installer/Output/EchoFlow-Web-Setup-${{ steps.ver.outputs.version }}.exe
+            installer/Output/EchoFlow-Web-Setup-${{ steps.ver.outputs.version }}.exe.sha256
+            installer/Output/EchoFlow-Daemon-Payload-${{ steps.ver.outputs.version }}.zip
+            installer/Output/EchoFlow-Daemon-Payload-${{ steps.ver.outputs.version }}.zip.sha256
+          if-no-files-found: error
+
+      - name: Create GitHub Release (draft)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Echo Flow ${{ steps.ver.outputs.version }}
+          draft: true # review, then publish manually — also lets you fill the winget hash first
+          generate_release_notes: true
+          files: |
+            installer/Output/EchoFlow-Daemon-Setup-${{ steps.ver.outputs.version }}.exe
+            installer/Output/EchoFlow-Daemon-Setup-${{ steps.ver.outputs.version }}.exe.sha256
+            installer/Output/EchoFlow-Web-Setup-${{ steps.ver.outputs.version }}.exe
+            installer/Output/EchoFlow-Web-Setup-${{ steps.ver.outputs.version }}.exe.sha256
+            installer/Output/EchoFlow-Daemon-Payload-${{ steps.ver.outputs.version }}.zip
+            installer/Output/EchoFlow-Daemon-Payload-${{ steps.ver.outputs.version }}.zip.sha256

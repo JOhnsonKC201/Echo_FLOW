@@ -7,8 +7,16 @@ exists for users who already run the daemon some other way (dev checkout,
 
 | Installer                                  | What it contains                                   | Who it's for                          |
 |--------------------------------------------|----------------------------------------------------|---------------------------------------|
-| `EchoFlow-Daemon-Setup-<ver>.exe`          | Daemon + embedded dashboard + Flask + ML stack     | **Most users.** Real install.         |
+| `EchoFlow-Daemon-Setup-<ver>.exe`          | Daemon + embedded dashboard + Flask + ML stack (full offline, hundreds of MB) | **Most users.** One-click, works with no further download. |
+| `EchoFlow-Web-Setup-<ver>.exe`             | Tiny bootstrapper that **downloads** the daemon payload from the GitHub release at install time (SHA256-verified) | Users who want a small, shareable installer / a download with a progress bar. Installs the same product. |
 | `EchoFlow-Setup-<ver>.exe`                 | Dashboard shell only (`app.py` PyInstaller bundle) | Devs / users running the daemon raw   |
+
+> The full and web installers share the same `AppId` and install location, so
+> they resolve to one entry in Apps & Features — installing one upgrades/replaces
+> the other rather than producing a duplicate. The web installer fetches
+> `EchoFlow-Daemon-Payload-<ver>.zip` (also published on the release) and extracts
+> it into the install dir; total bytes are similar to the full installer, but the
+> initial download is tiny and integrity-checked.
 
 Both installers are **per-user** (no admin required), install under
 `%LOCALAPPDATA%\Programs\EchoFlow`, and store runtime data under
@@ -52,6 +60,26 @@ iscc installer\EchoFlow-Daemon.iss   # full-product installer (recommended)
 ```
 
 Outputs land in `installer\Output\`.
+
+### The web (bootstrapper) installer
+
+`EchoFlow-Web-Setup.iss` builds a tiny installer that downloads the payload at
+install time instead of bundling it. It needs the payload zip's URL + SHA256,
+which CI computes; for a manual build it falls back to the matching release URL
+and skips hash verification:
+
+```powershell
+# Build the payload the bootstrapper will fetch (a zip of the daemon bundle):
+Compress-Archive -Path dist\EchoFlow-Daemon\* `
+  -DestinationPath installer\Output\EchoFlow-Daemon-Payload-<ver>.zip -Force
+
+# Build the bootstrapper (CI passes /DPayloadUrl + /DPayloadSha256):
+iscc /DMyAppVersion=<ver> installer\EchoFlow-Web-Setup.iss
+```
+
+In a tagged release the whole thing is automated — see
+[`RELEASING.md`](./RELEASING.md). Requires Inno Setup **6.1+** for the native
+download API.
 
 ## What the daemon installer wires up
 

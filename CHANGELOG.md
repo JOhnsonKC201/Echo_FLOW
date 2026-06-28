@@ -6,7 +6,39 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+- **Automated signed-release pipeline.** A new `release` GitHub Actions workflow
+  (`.github/workflows/release.yml`) builds the daemon installer on a tagged
+  push (`v*`): PyInstaller → Inno Setup → SHA256 → draft GitHub Release with the
+  installer + checksum attached. Code signing is an **opt-in step** that
+  activates automatically when a `CODESIGN_PFX_BASE64` secret is present — ship
+  unsigned today, drop a cert in later with zero workflow changes. A
+  `workflow_dispatch` path does a dry-run build without creating a release. The
+  job also fails fast if the tag doesn't match `src/__init__.py` `__version__`.
+  Runbook in [`installer/RELEASING.md`](installer/RELEASING.md).
+- **winget manifest.** `packaging/winget/` ships a schema-1.6.0 manifest
+  (`JOhnsonKC201.EchoFlow`) so the app can be installed with
+  `winget install JOhnsonKC201.EchoFlow` once published. Per-release update and
+  submission steps in [`packaging/winget/README.md`](packaging/winget/README.md).
+- **Lightweight web installer** (`installer/EchoFlow-Web-Setup.iss`). A tiny
+  per-user bootstrapper that downloads the daemon payload from the GitHub
+  release at install time (SHA256-verified, progress bar) and extracts it,
+  instead of bundling hundreds of MB. Shares its AppId and install location
+  with the full installer, so both resolve to one installed product. The
+  release workflow now publishes three assets: the full offline installer, the
+  web installer, and the `EchoFlow-Daemon-Payload-<ver>.zip` it fetches.
+- **Opt-in self-update check** (`update.check_on_startup`, default **off**).
+  When enabled, the daemon makes a single anonymous GitHub Releases API call at
+  launch and shows a tray toast if a newer version exists — no history, config,
+  or identifiers are ever sent (`src/update_check.py`). The /privacy ledger is
+  updated to report this honestly: with the check on, it no longer claims zero
+  egress and names the endpoint. Fully covered by `tests/test_update_check.py`.
+
+### Changed
+- Installer version is now single-sourced. Both `.iss` scripts honor an
+  `iscc /DMyAppVersion=<ver>` override (CI passes the tag); the hardcoded
+  `#define` is now just a local-build fallback. Fixed the stale repo URL in
+  `installer/EchoFlow.iss`.
 
 ## 0.2.0 — 2026-06-17
 

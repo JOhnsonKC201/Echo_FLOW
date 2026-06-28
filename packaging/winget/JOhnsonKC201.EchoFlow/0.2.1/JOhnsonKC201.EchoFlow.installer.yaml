@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+#
+# PER-RELEASE EDITS (see packaging/winget/README.md):
+#   1. PackageVersion           -> the new version
+#   2. Installers[0].InstallerUrl -> the published release asset URL
+#   3. Installers[0].InstallerSha256 -> the SHA256 printed by the release job
+#   4. ReleaseDate              -> the publish date (YYYY-MM-DD)
+#
+# `InstallerType: inno` lets winget supply the correct silent switches
+# (/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-) automatically, so none are
+# specified here. The install is per-user (Scope: user), matching the Inno
+# script's PrivilegesRequired=lowest.
+PackageIdentifier: JOhnsonKC201.EchoFlow
+PackageVersion: 0.2.1
+InstallerLocale: en-US
+Platform:
+  - Windows.Desktop
+MinimumOSVersion: 10.0.0.0
+InstallerType: inno
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+ReleaseDate: 2026-06-27
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/JOhnsonKC201/Echo_FLOW/releases/download/v0.2.1/EchoFlow-Daemon-Setup-0.2.1.exe
+    # Placeholder (quoted so this template stays a valid 64-hex string until
+    # replaced with the real release hash, which contains letters and won't
+    # need quoting).
+    InstallerSha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    AppsAndFeaturesEntries:
+      - DisplayName: Echo Flow
+        Publisher: Echo Flow
+        DisplayVersion: 0.2.1
+        # Inno's per-user uninstall key is "{AppId}_is1"; AppId is set in
+        # installer/EchoFlow-Daemon.iss. This lets winget match installed/
+        # upgrade state.
+        ProductCode: "{A2F8D6F0-9B7E-4B6F-9D6C-ECHOFLOWDMN01}_is1"
+ManifestType: installer
+ManifestVersion: 1.6.0

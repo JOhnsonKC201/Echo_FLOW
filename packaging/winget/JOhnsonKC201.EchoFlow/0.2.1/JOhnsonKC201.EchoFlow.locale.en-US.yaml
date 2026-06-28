@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: JOhnsonKC201.EchoFlow
+PackageVersion: 0.2.1
+PackageLocale: en-US
+Publisher: Echo Flow
+PublisherUrl: https://github.com/JOhnsonKC201/Echo_FLOW
+PublisherSupportUrl: https://github.com/JOhnsonKC201/Echo_FLOW/issues
+PackageName: Echo Flow
+PackageUrl: https://github.com/JOhnsonKC201/Echo_FLOW
+License: MIT
+LicenseUrl: https://github.com/JOhnsonKC201/Echo_FLOW/blob/main/LICENSE
+Copyright: Copyright (c) Echo Flow
+ShortDescription: Local-first voice dictation for Windows — hold a hotkey, talk, release, and polished text lands at your cursor.
+Description: |-
+  Echo Flow is local-first voice dictation for Windows. Hold a hotkey, talk,
+  release — Whisper transcribes on your own CPU/GPU, a local LLM lightly
+  polishes the text, and the result is pasted wherever your cursor is. No
+  subscription, no account, and your audio never leaves your machine unless
+  you explicitly opt in to a cloud cleanup path. It also learns your
+  corrections over time and ships a local knowledge layer (notes, tags, and a
+  searchable graph of your dictations).
+Moniker: echoflow
+Tags:
+  - dictation
+  - speech-to-text
+  - voice
+  - whisper
+  - productivity
+  - local-first
+  - privacy
+  - accessibility
+  - transcription
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

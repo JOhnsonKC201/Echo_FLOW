@@ -14,9 +14,13 @@
 ;   4. Find Output\EchoFlow-Setup.exe.
 
 #define MyAppName       "Echo Flow"
-#define MyAppVersion    "0.1.0"
+; Version is injected by CI via `iscc /DMyAppVersion=<ver>`; the default below
+; is only the fallback for local manual builds.
+#ifndef MyAppVersion
+  #define MyAppVersion  "0.2.0"
+#endif
 #define MyAppPublisher  "Echo Flow"
-#define MyAppURL        "https://github.com/JOhnsonKC201/echo-flow"
+#define MyAppURL        "https://github.com/JOhnsonKC201/Echo_FLOW"
 #define MyAppExeName    "EchoFlow.exe"
 
 ; --- Source: switch between PyInstaller and Nuitka outputs ----------------

@@ -14,7 +14,11 @@
 ; ============================================================================
 
 #define MyAppName        "Echo Flow"
-#define MyAppVersion     "0.2.0"
+; Version is injected by CI via `iscc /DMyAppVersion=<ver>`; the default below
+; is only the fallback for local manual builds.
+#ifndef MyAppVersion
+  #define MyAppVersion   "0.2.0"
+#endif
 #define MyAppPublisher   "Echo Flow"
 #define MyAppExeName     "EchoFlow-Daemon.exe"
 #define MyAppId          "{{A2F8D6F0-9B7E-4B6F-9D6C-ECHOFLOWDMN01}}"
