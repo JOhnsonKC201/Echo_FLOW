@@ -211,6 +211,15 @@ dashboard:
   open_hotkey: "<ctrl>+<cmd>"  # Global hotkey to open the dashboard window (Ctrl+Win). Set "" to disable.
   onboarded: true            # Phase 11 first-run tour gate; flips true after /onboarding/finish.
 
+# Self-update check — the ONE network call Echo Flow can make about itself, and
+# it is OFF by default. When check_on_startup is true, the daemon performs a
+# single anonymous HTTPS GET to the GitHub releases API at launch to see whether
+# a newer version exists (no history, config, or identifiers are ever sent). The
+# /privacy ledger reflects this honestly: with it on, egress is no longer zero.
+update:
+  check_on_startup: false   # opt in to a single GitHub releases check at launch
+  notify: true              # show a tray toast when a newer version is available
+
 # Experimental features (off by default). Surfaced in the dashboard's
 # Settings → Experimental panel. These ship in later phases; toggling
 # them now persists the preference but has no runtime effect yet.

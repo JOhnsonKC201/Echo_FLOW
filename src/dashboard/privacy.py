@@ -43,6 +43,24 @@ def bridge_state(cfg: dict) -> dict:
     return {"state": "lan", "bind_address": addr, "warn": True}
 
 
+def update_check_state(cfg: dict) -> dict:
+    """Describe the opt-in self-update check's outbound behavior.
+
+    The self-update check is Echo Flow's only self-referential network call.
+    Off by default; when on, the daemon contacts api.github.com once at startup.
+    Surfaced here so the privacy ledger never overstates "zero egress".
+
+    Returns {"enabled": bool, "endpoint": str | None, "warn": bool}.
+    """
+    u = (cfg or {}).get("update", {}) or {}
+    on = bool(u.get("check_on_startup", False))
+    return {
+        "enabled": on,
+        "endpoint": "api.github.com (GitHub Releases)" if on else None,
+        "warn": on,
+    }
+
+
 def dir_size_bytes(path: Path) -> int:
     """Recursive size of a directory in bytes. Returns 0 if missing."""
     if not path.exists():
@@ -77,16 +95,28 @@ def ledger(cfg: dict, history_db: Path, cfg_path: Path, data_dir: Path) -> dict:
             last_cfg_write = os.path.getmtime(cfg_path)
     except OSError:
         last_cfg_write = None
-    return {
-        # The Big Truth — architectural, not measured. If you want to verify,
-        # run Wireshark or `netstat -an | findstr ESTABLISHED` and confirm
-        # Echo Flow's PID only talks to 127.0.0.1.
-        "egress_30d": 0,
-        "egress_provenance": (
+    upd = update_check_state(cfg)
+    if upd["enabled"]:
+        egress_note = (
+            "One opt-in exception is ACTIVE: the startup update check contacts "
+            "api.github.com once per launch to compare versions. No telemetry, "
+            "history, or identifiers are sent. Disable with "
+            "update.check_on_startup: false."
+        )
+    else:
+        egress_note = (
             "Architectural fact: Echo Flow only opens sockets to "
             "127.0.0.1 (Ollama, mobile bridge, dashboard). No telemetry, "
             "no cloud sync. Verify with `netstat -an`."
-        ),
+        )
+    return {
+        # The Big Truth — architectural, not measured. If you want to verify,
+        # run Wireshark or `netstat -an | findstr ESTABLISHED` and confirm
+        # Echo Flow's PID only talks to 127.0.0.1 (plus api.github.com once at
+        # launch IF the opt-in update check is enabled).
+        "egress_30d": 0,
+        "egress_provenance": egress_note,
+        "update_check": upd,
         "bridge": bridge_state(cfg),
         "ollama_url": ((cfg.get("cleanup", {}) or {}).get("ollama", {}) or {}).get(
             "base_url", "http://localhost:11434"

@@ -52,6 +52,16 @@
       <span class="k">Last config write</span>
       <span class="v num">{{ last_cfg_human }}</span>
     </li>
+    <li>
+      <span class="k">Self-update check</span>
+      <span class="v">
+        {% if ledger.update_check.enabled %}
+          <span class="num" style="color: var(--warn);">on — contacts {{ ledger.update_check.endpoint }} at launch</span>
+        {% else %}
+          <span class="num muted">off (no version check, no network)</span>
+        {% endif %}
+      </span>
+    </li>
   </ul>
 
   <div class="muted small">{{ ledger.egress_provenance }}</div>

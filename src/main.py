@@ -48,6 +48,8 @@ from .tray import TrayApp
 from .editor import open_editor
 from .viewer import render_history
 from .graph import render_graph
+from . import update_check as wupdate
+from . import __version__ as APP_VERSION
 
 
 console = Console(legacy_windows=False)
@@ -1579,6 +1581,13 @@ class App:
             time.sleep(1.0)
             wnotify.set_tray(getattr(self.tray, "_icon", None))
             wnotify.notify("Echo Flow", "Ready. Hold Ctrl+Shift to dictate.", "info")
+            # Opt-in (default OFF) self-update check. Returns instantly and
+            # spawns its own daemon thread; with the feature disabled it makes
+            # zero network calls. Reflected honestly in the /privacy ledger.
+            try:
+                wupdate.maybe_check_async(self.cfg, APP_VERSION, notify=wnotify.notify)
+            except Exception as e:
+                _log.debug("update check kickoff failed: %s", e)
         threading.Thread(target=_wire_notify, daemon=True).start()
 
         # Mobile bridge: optional HTTP server so the user's phone can hit the
