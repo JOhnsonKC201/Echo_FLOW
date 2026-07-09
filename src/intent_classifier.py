@@ -34,10 +34,24 @@ import numpy as np
 from . import intent_model as _im
 from .intent_seed import LABEL_SPEC, SEED
 
-# Bump when the artifact format or seed semantics change so a stale cache on
-# disk is ignored rather than mis-loaded.
-ARTIFACT_VERSION = 1
+# Bump when the artifact format, the embed-input transform, or seed semantics
+# change so a stale cache on disk is ignored (fails the version check → retrain)
+# rather than mis-loaded. v2: embed input goes through prepare_text (train/serve
+# consistency) instead of raw seed text.
+ARTIFACT_VERSION = 2
 DEFAULT_ARTIFACT_PATH = os.path.join("data", "intent_model.npz")
+
+
+def prepare_text(body: str) -> str:
+    """The exact text the embedder sees, at BOTH train and inference time.
+
+    Applies the shared command normalization and lower-cases it. Using one
+    transform on both sides avoids train/serve skew: the seed is authored
+    lower-case and clean, but a live transcript may carry capitalization,
+    filler, or trailing punctuation — without this, the vector distribution at
+    inference would drift from what the classifier was fit on.
+    """
+    return _im.normalize_command(body).lower()
 
 
 # --- Embedder abstraction (real adapter + injectable fake for tests) ---------
@@ -112,7 +126,7 @@ class SoftmaxRegression:
             os.makedirs(d, exist_ok=True)
         np.savez(
             path, W=self.W.astype(np.float32), b=self.b.astype(np.float32),
-            classes=np.array(self.classes, dtype=object),
+            classes=np.array(self.classes),           # unicode array, not object
             embedder_id=np.array(self.embedder_id),
             version=np.array(ARTIFACT_VERSION),
         )
@@ -122,7 +136,7 @@ class SoftmaxRegression:
 
     @classmethod
     def load(cls, path: str) -> "SoftmaxRegression":
-        with np.load(path, allow_pickle=True) as z:
+        with np.load(path, allow_pickle=False) as z:
             if int(z["version"]) != ARTIFACT_VERSION:
                 raise ValueError("intent model artifact version mismatch")
             classes = [str(c) for c in z["classes"].tolist()]
@@ -203,7 +217,7 @@ class EmbeddingPredictor:
                     return
             except Exception:   # noqa: BLE001 — stale/corrupt cache → retrain
                 pass
-        texts = [t for t, _ in self._seed]
+        texts = [prepare_text(t) for t, _ in self._seed]
         labels = [lbl for _, lbl in self._seed]
         X = emb.embed_many(texts)
         self._model = SoftmaxRegression.fit(X, labels, emb_id)
@@ -227,7 +241,9 @@ class EmbeddingPredictor:
             text = _im.normalize_command(body)
             if not text or self._model is None:
                 return _im._NONE
-            vec = self._get_embedder().embed_one(text)
+            # Embed the SAME transform used at train time (see prepare_text);
+            # the slot below is extracted from the cased `text`.
+            vec = self._get_embedder().embed_one(text.lower())
             label, prob = self._model.predict_one(vec)
             spec = LABEL_SPEC.get(label)
             if spec is None:                 # 'none' (abstain) or unknown label

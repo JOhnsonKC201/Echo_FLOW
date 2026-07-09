@@ -144,6 +144,23 @@ def test_predictor_abstains_on_plain_dictation(tmp_path):
     assert p.predict("the weather is beautiful this afternoon").handler == "none"
 
 
+@pytest.mark.parametrize("body,expected", [
+    ("  Launch Spotify.  ", "launch spotify"),
+    ("Can you please open GitHub.com?", "open github.com"),
+    ("PLAY SOME MUSIC", "play some music"),
+])
+def test_prepare_text_is_train_serve_transform(body, expected):
+    # The embedder must see the same transform at train and inference time.
+    assert ic.prepare_text(body) == expected
+
+
+def test_predictor_case_and_punctuation_insensitive(tmp_path):
+    # A live transcript with caps/punctuation must classify like the clean form.
+    p = _trained_predictor(tmp_path)
+    assert p.predict("Launch Spotify!").handler == p.predict("launch spotify").handler
+    assert p.predict("Launch Spotify!").slot == "Spotify"   # slot keeps original case
+
+
 @pytest.mark.parametrize("junk", ["", "   ", None])
 def test_predictor_never_raises_on_junk(tmp_path, junk):
     p = _trained_predictor(tmp_path)

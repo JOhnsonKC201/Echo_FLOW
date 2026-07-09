@@ -111,7 +111,7 @@ def do_train(args):
     labels = [l for _, l in data]
     emb = ic.RepoEmbedder()
     print(f"  embedding {len(texts)} utterances with {emb.name()} ...")
-    X = emb.embed_many(texts)
+    X = emb.embed_many([ic.prepare_text(t) for t in texts])
     clf = ic.SoftmaxRegression.fit(X, labels, emb.name())
     clf.save(args.out)
     # train accuracy as a sanity check
@@ -119,7 +119,7 @@ def do_train(args):
     acc = sum(p == y for p, y in zip(preds, labels)) / len(labels)
     print(f"  trained {len(clf.classes)} classes on {len(labels)} examples; "
           f"train accuracy {acc:.3f}")
-    print(f"  saved → {args.out}")
+    print(f"  saved -> {args.out}")
     return 0
 
 
@@ -129,7 +129,7 @@ def do_eval(args):
     labels = [l for _, l in data]
     emb = ic.RepoEmbedder()
     print(f"  embedding {len(texts)} utterances with {emb.name()} ...")
-    X = emb.embed_many(texts)
+    X = emb.embed_many([ic.prepare_text(t) for t in texts])
     tr, te = _stratified_split(labels, frac=args.holdout, seed=args.seed)
     clf = ic.SoftmaxRegression.fit(X[tr], [labels[i] for i in tr], emb.name(),
                                    classes=sorted(set(labels)))

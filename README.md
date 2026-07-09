@@ -345,6 +345,14 @@ have done without acting, and use `scripts/eval_intent.py` to tune
 `action_intent_min_conf` from data before trusting it. Toggle it (Off / On /
 Shadow) on the dashboard **Settings → Experimental** page.
 
+Two backends power that fallback (`action_intent_backend`): `keyword`
+(default — dependency-free verb-synonym rules) or `model` — a tiny local
+embedding + logistic-regression head that *generalizes* to phrasings no rule
+anticipated ("hush" → mute, "make a memo that…" → note). It reuses the same
+on-device sentence-transformers embedder as the RAG layer (nothing leaves the
+machine) and trains out-of-the-box from a shipped seed corpus; build or sharpen
+it with `python scripts/train_intent.py --train` (see `--eval` / `--probe`).
+
 **Safety model (non-negotiable):** the allowlist and URL-scheme checks are the
 *sole* authority on what executes. Nothing in Action Mode deletes, sends, or
 pays. Every attempt is logged to the `voice_actions` table.
