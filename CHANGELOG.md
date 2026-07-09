@@ -40,6 +40,25 @@ All notable changes are documented here. Format roughly follows
     without hand-editing `config.yaml`. The tri-state maps to real YAML types
     (`false` / `true` / `"shadow"`) — "off" writes a boolean, never the truthy
     string `"false"` — and the floor is validated to `0–1`.
+  - **Learned model backend** (`action_intent_backend: model`). Beyond the
+    keyword rules, a tiny embedding + logistic-regression head
+    (`src/intent_classifier.py`) generalizes to phrasings no rule anticipated —
+    *"hush"* → mute, *"make a memo that…"* → note, *"the thing I just copied"* →
+    clipboard — by embedding the utterance with the app's existing local
+    sentence-transformers model (`retrieval.embed`, 384-dim, CPU) and classifying
+    the intent. It emits only a handler + slot, so it flows through the same
+    `build_match` guards as everything else (an unconfigured app it proposes
+    still resolves to nothing). No new dependencies (numpy LR, ~13 classes), and
+    it trains out-of-the-box from a shipped seed corpus (`src/intent_seed.py`) —
+    a fresh install works with zero user data; the artifact is cached lazily to
+    `data/intent_model.npz`. `scripts/train_intent.py` (`--train` / `--eval` /
+    `--probe`) builds it, measures stratified-holdout accuracy (~0.83 on the
+    seed) to tune the model floor (`action_intent_model_min_conf`, default
+    `0.4` — the diffuse 13-class softmax sits lower than the keyword floor), and
+    can sharpen it by mining the user's own `voice_actions` history. Covered by
+    `tests/test_intent_classifier.py` (LR train/serialize, slot extraction,
+    predict/abstain/never-raise, backend selection, and the same
+    unconfigured-app-can't-launch safety proof, all with a fast fake embedder).
 - **Automated signed-release pipeline.** A new `release` GitHub Actions workflow
   (`.github/workflows/release.yml`) builds the daemon installer on a tagged
   push (`v*`): PyInstaller → Inno Setup → SHA256 → draft GitHub Release with the

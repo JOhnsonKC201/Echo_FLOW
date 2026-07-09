@@ -888,11 +888,17 @@ class App:
                 if match is None and im_mode:
                     try:
                         from . import intent_model as _im
-                        res = _im.infer(
-                            body, self.cfg, self.history,
-                            min_conf=exp_cfg.get("action_intent_min_conf",
-                                                 _im.DEFAULT_MIN_CONF),
-                        )
+                        # The two backends live on different confidence scales,
+                        # so each has its own floor (keyword ~0.75, model ~0.4).
+                        if str(exp_cfg.get("action_intent_backend",
+                                           "keyword")).strip().lower() == "model":
+                            floor = exp_cfg.get("action_intent_model_min_conf",
+                                                _im.DEFAULT_MODEL_MIN_CONF)
+                        else:
+                            floor = exp_cfg.get("action_intent_min_conf",
+                                                _im.DEFAULT_MIN_CONF)
+                        res = _im.infer(body, self.cfg, self.history,
+                                        min_conf=floor)
                     except Exception as e:   # never let the fallback break dictation
                         _log.debug("intent model error: %s", e)
                         res = None

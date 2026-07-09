@@ -50,6 +50,18 @@ def embed(text: str) -> np.ndarray:
     return vec.astype(np.float32)
 
 
+def embed_many(texts: "list[str]") -> np.ndarray:
+    """Embed a batch in one encode() call → (n, 384) L2-normalized float32.
+
+    Used by the intent-model trainer, where embedding a few hundred seed
+    utterances one-at-a-time would pay the per-call overhead repeatedly.
+    """
+    model = _get_model()
+    mat = model.encode(list(texts), normalize_embeddings=True,
+                       show_progress_bar=False)
+    return np.asarray(mat, dtype=np.float32)
+
+
 def to_blob(vec: np.ndarray) -> bytes:
     return vec.astype(np.float32).tobytes()
 

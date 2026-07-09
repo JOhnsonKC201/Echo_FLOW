@@ -241,7 +241,10 @@ experimental:
     documents: "%USERPROFILE%\\Documents"
     desktop: "%USERPROFILE%\\Desktop"
   action_intent_model: false       # regex-miss fallback for mis-phrased actions ("launch spotify"). false | true | shadow. 'shadow' logs the model's guess WITHOUT executing, so you can measure precision before trusting it. Every guess is re-validated through the same allowlist/URL guards as the regex path — the model can never fire anything the regex wouldn't.
-  action_intent_min_conf: 0.75     # confidence floor the intent model must clear before it may act (or be shadow-logged).
+  action_intent_min_conf: 0.75     # confidence floor for the 'keyword' backend (rule confidences are ~0.8–0.9). The 'model' backend uses action_intent_model_min_conf instead. Tune with scripts/eval_intent.py.
+  action_intent_backend: keyword   # which predictor: 'keyword' (dependency-free verb-synonym rules) or 'model' (learned embedding + logistic-regression head; generalizes to unseen phrasings, uses the local sentence-transformers embedder). Build the model with: python scripts/train_intent.py --train
+  action_intent_model_path: "data/intent_model.npz"  # where the trained 'model' backend artifact is cached.
+  action_intent_model_min_conf: 0.4  # confidence floor for the 'model' backend (a 13-class softmax; correct predictions cluster ~0.5, so this is lower than the keyword floor). Tune with: python scripts/train_intent.py --eval
 
 logging:
   level: "INFO"

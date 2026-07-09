@@ -28,12 +28,22 @@ record, not current state. Landed since:
   `KeywordPredictor`, and `scripts/eval_intent.py` (offline precision/recall +
   a CI `--check` gate — the MODEL-SHADOW measurement need, met offline).
 
-**Still open (future):** the real ML head — MODEL-HEAD (embedding + logistic
-regression reusing the repo embedder), MODEL-DATA (training set mined from
-`voice_actions`), MODEL-LATENCY tuning, and persisted MODEL-SHADOW rows
-(a `model_pred` column) if online agreement measurement is wanted on top of the
-offline harness. All of these plug into the existing spine via `set_predictor()`
-without touching a single guard.
+- **PR 6 ML head (this change):** `src/intent_classifier.py` — MODEL-HEAD
+  (embedding + numpy logistic-regression over `retrieval.embed`, ~13 fine-grained
+  intent classes), a shipped seed corpus (`src/intent_seed.py`) so it works with
+  zero user data, `scripts/train_intent.py` (`--train`/`--eval`/`--probe` + MODEL-DATA
+  history mining), MODEL-LATENCY (lazy load-once + the existing length pre-gate),
+  and `action_intent_backend: keyword|model` selection with a model-specific
+  floor. It plugs into the spine via `_predictor_for_cfg` and still flows every
+  prediction through `build_match` — no guard changes. ~0.83 stratified-holdout
+  accuracy on the seed; generalizes to unseen phrasings ("hush"→mute, "memo"→note).
+
+**Still open (future):** persisted MODEL-SHADOW rows (a `model_pred` column on
+`voice_actions`) for online agreement measurement on real user utterances, on
+top of the offline harness; a warm-load hook wiring `EmbeddingPredictor.warm()`
+into the background warmup thread; and enriching the seed corpus / mining path to
+push holdout accuracy higher. All plug into the existing spine without touching a
+single guard.
 
 ---
 

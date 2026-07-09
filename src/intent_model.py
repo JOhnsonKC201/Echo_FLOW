@@ -41,9 +41,13 @@ from . import voice_actions as _va
 MAX_BODY_CHARS = 80
 MAX_BODY_WORDS = 12
 
-# Default confidence floor; the caller overrides from
-# ``experimental.action_intent_min_conf``.
+# Default confidence floors. The keyword predictor emits hardcoded ~0.8–0.9
+# confidences, so it wants a high floor. The embedding model emits a diffuse
+# 13-class softmax (correct predictions cluster ~0.5), so it wants a much lower
+# floor — its `none` class does most of the abstaining; the floor is a secondary
+# guard. Empirically ~0.4 (see `scripts/train_intent.py --eval`).
 DEFAULT_MIN_CONF = 0.75
+DEFAULT_MODEL_MIN_CONF = 0.4
 
 
 @dataclass(frozen=True)
@@ -170,6 +174,17 @@ _FILLER = re.compile(
 _TRAILING = re.compile(r"[\s,]+(?:please|thanks|thank you|thank u|for me)\s*$", re.I)
 
 
+def normalize_command(body: str) -> str:
+    """Shared command-text normalization for every predictor: strip surrounding
+    whitespace + trailing sentence punctuation (an STT/cleanup period is common),
+    a leading politeness/filler run, and a trailing politeness word. Mirrors
+    voice_actions.classify()'s own trimming so the same transcript reaches both
+    the regex path and any predictor."""
+    b = (body or "").strip().rstrip(" .!?,")
+    b = _FILLER.sub("", b)
+    return _TRAILING.sub("", b).strip().rstrip(" .!?,")
+
+
 @dataclass
 class _Rule:
     """One heuristic: a pattern over the cleaned body → (handler, slot, conf).
@@ -244,13 +259,10 @@ class KeywordPredictor:
         self._rules = _rules()
 
     def predict(self, body: str) -> Prediction:
-        # Mirror classify()'s normalization (voice_actions.py) so the same
-        # transcript reaches both: trailing sentence punctuation (an STT/cleanup
-        # period is very common — "launch spotify.") and a trailing politeness
-        # word must not leak into the slot or defeat an anchored ($) rule.
-        b = (body or "").strip().rstrip(" .!?,")
-        b = _FILLER.sub("", b)
-        b = _TRAILING.sub("", b).strip().rstrip(" .!?,")
+        # Shared normalization (see normalize_command): trailing sentence
+        # punctuation ("launch spotify.") and a leading/trailing politeness run
+        # must not leak into the slot or defeat an anchored ($) rule.
+        b = normalize_command(body)
         if not b:
             return _NONE
         for rule in self._rules:
@@ -289,6 +301,22 @@ def set_predictor(predictor) -> None:
     _PREDICTOR = predictor
 
 
+def _predictor_for_cfg(cfg: dict):
+    """Choose the predictor backend from config: the keyword heuristic (default)
+    or the learned embedding model. A model-backend failure (missing deps, no
+    artifact, import error) falls back to the keyword predictor rather than
+    breaking the fallback entirely."""
+    exp = (cfg.get("experimental", {}) or {})
+    backend = str(exp.get("action_intent_backend", "keyword")).strip().lower()
+    if backend == "model":
+        try:
+            from . import intent_classifier as _ic
+            return _ic.get_model_predictor(exp.get("action_intent_model_path"))
+        except Exception:   # noqa: BLE001 — degrade to keyword, never crash
+            return get_predictor()
+    return get_predictor()
+
+
 # --- Public inference API ----------------------------------------------------
 
 def infer(body: str, cfg: dict, history=None, *,
@@ -305,7 +333,7 @@ def infer(body: str, cfg: dict, history=None, *,
     if not body or len(body) > MAX_BODY_CHARS or len(body.split()) > MAX_BODY_WORDS:
         return InferenceResult(_NONE, False, None)
 
-    p = predictor or get_predictor()
+    p = predictor or _predictor_for_cfg(cfg)
     try:
         pred = p.predict(body) or _NONE
     except Exception:   # noqa: BLE001 — a predictor must never break dictation
