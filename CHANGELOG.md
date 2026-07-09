@@ -35,6 +35,11 @@ All notable changes are documented here. Format roughly follows
     `tests/test_intent_model.py` (safety re-validation, recovery, abstain, floor,
     never-raises) and `tests/test_main_intent_model.py` (off-by-default, live
     recovery, shadow-does-not-execute, and *unconfigured-app-can't-launch*).
+  - **Dashboard control.** Settings → Experimental now surfaces the fallback as
+    an Off / On / Shadow select plus a confidence-floor field, so it is reachable
+    without hand-editing `config.yaml`. The tri-state maps to real YAML types
+    (`false` / `true` / `"shadow"`) — "off" writes a boolean, never the truthy
+    string `"false"` — and the floor is validated to `0–1`.
 - **Automated signed-release pipeline.** A new `release` GitHub Actions workflow
   (`.github/workflows/release.yml`) builds the daemon installer on a tagged
   push (`v*`): PyInstaller → Inno Setup → SHA256 → draft GitHub Release with the

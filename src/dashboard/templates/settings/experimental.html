@@ -54,6 +54,22 @@
           <input type="text" name="action_email_url" value="{{ values.action_email_url }}" placeholder="https://mail.google.com" autocomplete="off">
           <span class="set-field-hint">Opened by “{{ values.command_prefix }}, open email”. http/https/mailto only. Apps are edited in <code>config.yaml → action_apps</code>.</span>
         </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Phrasing fallback (intent model)</span>
+          <select name="action_intent_model">
+            <option value="off" {% if values.action_intent_model == 'off' %}selected{% endif %}>Off</option>
+            <option value="on" {% if values.action_intent_model == 'on' %}selected{% endif %}>On — recover mis-phrased actions</option>
+            <option value="shadow" {% if values.action_intent_model == 'shadow' %}selected{% endif %}>Shadow — log guesses without acting</option>
+          </select>
+          <span class="set-field-hint">Retries a missed command through a local model (e.g. “launch spotify”). Every guess is re-validated by the same allowlist/URL guards — it can’t fire anything the strict path wouldn’t.</span>
+        </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Fallback confidence floor</span>
+          <input type="number" name="action_intent_min_conf" value="{{ values.action_intent_min_conf }}" min="0" max="1" step="0.05" autocomplete="off">
+          <span class="set-field-hint">0–1. The model must clear this to act (default 0.75). Tune with <code>scripts/eval_intent.py</code>.</span>
+        </label>
       </div>
 
       <div class="set-actions">

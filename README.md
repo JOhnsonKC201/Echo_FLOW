@@ -342,7 +342,8 @@ intent model that recovers common synonym/filler phrasings — but every guess i
 re-validated through the *same* allowlist/URL guards, so it can never fire
 anything the strict path wouldn't. Set it to `shadow` to log what it *would*
 have done without acting, and use `scripts/eval_intent.py` to tune
-`action_intent_min_conf` from data before trusting it.
+`action_intent_min_conf` from data before trusting it. Toggle it (Off / On /
+Shadow) on the dashboard **Settings → Experimental** page.
 
 **Safety model (non-negotiable):** the allowlist and URL-scheme checks are the
 *sole* authority on what executes. Nothing in Action Mode deletes, sends, or

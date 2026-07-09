@@ -195,6 +195,68 @@ def test_experimental_save_rejects_bad_prefix(tmp_path, bad):
     assert "command%20prefix" in r.headers["Location"]
 
 
+# --- Experimental: intent-model fallback (tri-state select + conf floor) ------
+
+def _reparse(app_ref):
+    return yaml.safe_load(app_ref.cfg_path.read_text(encoding="utf-8"))
+
+
+def test_experimental_save_intent_model_on(tmp_path):
+    client, app_ref = _client(tmp_path)
+    r = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": "computer",
+        "action_intent_model": "on",
+        "action_intent_min_conf": "0.8",
+    })
+    assert r.status_code == 302
+    exp = _reparse(app_ref)["experimental"]
+    assert exp["action_intent_model"] is True
+    assert exp["action_intent_min_conf"] == 0.8
+
+
+def test_experimental_save_intent_model_shadow(tmp_path):
+    client, app_ref = _client(tmp_path)
+    r = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": "computer",
+        "action_intent_model": "shadow",
+    })
+    assert r.status_code == 302
+    assert _reparse(app_ref)["experimental"]["action_intent_model"] == "shadow"
+
+
+def test_experimental_save_intent_off_writes_real_bool(tmp_path):
+    # Critical: "off" must persist a YAML boolean false, NOT the string "false"
+    # (a non-empty string is truthy and would read as ON in main._do_dictation).
+    client, app_ref = _client(tmp_path)
+    r = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": "computer",
+        "action_intent_model": "off",
+    })
+    assert r.status_code == 302
+    assert _reparse(app_ref)["experimental"]["action_intent_model"] is False
+
+
+@pytest.mark.parametrize("bad_conf", ["1.5", "-0.1", "abc"])
+def test_experimental_save_rejects_bad_conf(tmp_path, bad_conf):
+    client, _ = _client(tmp_path)
+    r = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": "computer",
+        "action_intent_model": "on",
+        "action_intent_min_conf": bad_conf,
+    })
+    assert r.status_code == 302
+    assert "intent%20confidence" in r.headers["Location"]
+
+
+def test_experimental_get_renders_intent_controls(tmp_path):
+    client, _ = _client(tmp_path)
+    r = client.get("/settings/experimental", headers=HOST)
+    assert r.status_code == 200
+    assert b'name="action_intent_model"' in r.data
+    assert b'name="action_intent_min_conf"' in r.data
+    assert b"Shadow" in r.data
+
+
 # --- Privacy (PR-E: moved to top-level /privacy) ----------------------------
 
 def test_settings_privacy_redirects_to_top_level(tmp_path):

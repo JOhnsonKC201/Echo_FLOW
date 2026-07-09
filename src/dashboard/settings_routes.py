@@ -21,6 +21,21 @@ def _checkbox(form, name: str) -> bool:
     return form.get(name) == "1"
 
 
+def _intent_mode_str(val) -> str:
+    """Config value (False / True / 'shadow') → select option string."""
+    if val == "shadow":
+        return "shadow"
+    return "on" if val else "off"
+
+
+def _intent_conf(val) -> float:
+    """Config value → float, tolerating a malformed entry (mirrors the model)."""
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return 0.75
+
+
 def _save_scalars(app_ref, edits: list[tuple[str, Any]], log) -> list[str]:
     """Apply a list of (dotted_key, value) edits. Returns error messages (empty if all ok)."""
     errors: list[str] = []
@@ -237,6 +252,8 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "command_prefix": exp.get("command_prefix", "computer"),
             "action_mode": bool(exp.get("action_mode", False)),
             "action_email_url": exp.get("action_email_url", "https://mail.google.com"),
+            "action_intent_model": _intent_mode_str(exp.get("action_intent_model", False)),
+            "action_intent_min_conf": _intent_conf(exp.get("action_intent_min_conf", 0.75)),
         }, supported_commands=_cmds.list_supported(),
            supported_actions=_va.list_supported(cfg))
 
@@ -270,12 +287,32 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
                 "/settings/experimental?flash=email URL must be a safe "
                 "http/https/mailto address."
             )
+        # Intent-model fallback: tri-state select maps to a real YAML type
+        # (bool/str), never the string "false" — a truthy "false" would read as
+        # ON in main. Confidence floor is a bounded number.
+        im_choice = (f.get("action_intent_model", "off") or "off").strip().lower()
+        im_value = {"off": False, "on": True, "shadow": "shadow"}.get(im_choice, False)
+        raw_conf = (f.get("action_intent_min_conf", "") or "").strip()
+        try:
+            im_conf = float(raw_conf) if raw_conf else 0.75
+        except ValueError:
+            return redirect(
+                "/settings/experimental?flash=intent confidence must be a "
+                "number between 0 and 1."
+            )
+        if not (0.0 <= im_conf <= 1.0):
+            return redirect(
+                "/settings/experimental?flash=intent confidence must be "
+                "between 0 and 1."
+            )
         errs = _save_scalars(app_ref, [
             ("experimental.press_enter_command", _checkbox(f, "press_enter_command")),
             ("experimental.command_mode", _checkbox(f, "command_mode")),
             ("experimental.command_prefix", prefix),
             ("experimental.action_mode", _checkbox(f, "action_mode")),
             ("experimental.action_email_url", email_url),
+            ("experimental.action_intent_model", im_value),
+            ("experimental.action_intent_min_conf", im_conf),
         ], log)
         if errs:
             return redirect(
