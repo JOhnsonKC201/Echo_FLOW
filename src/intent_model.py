@@ -187,10 +187,18 @@ class _Rule:
 def _rules() -> "list[_Rule]":
     R = _Rule
     return [
+        # clipboard link — a specific "open … clipboard" form, so it must come
+        # BEFORE the generic open/launch rule (mirrors classify()'s ordering of
+        # specific "open …" phrases ahead of the _RE_OPEN catch-all).
+        R(re.compile(r"^open\s+(?:the\s+|my\s+)?clipboard(?:\s+(?:link|url))?$|^open\s+(?:the\s+)?(?:link|url)\s+(?:in|from)\s+(?:my\s+|the\s+)?clipboard$", re.I),
+          "open_clipboard_link", 0.80, slot_group=0),
         # open / launch an app OR a website. The "open" handler re-parses the
         # slot in build_match to decide app-vs-url, so the predictor just hands
-        # over the object (an unknown app resolves to nothing → abstains).
-        R(re.compile(r"^(?:launch|start(?:\s+up)?|fire\s+up|boot\s+up|load|open\s+up)\s+(.+)$", re.I),
+        # over the object (an unknown app resolves to nothing → abstains). Bare
+        # "open" is here for the filler-prefixed case ("can you please open X"):
+        # classify()'s _RE_OPEN only fires when the body STARTS with "open", so a
+        # leading-filler "open" reaches the model post-strip and must recover.
+        R(re.compile(r"^(?:launch|start(?:\s+up)?|fire\s+up|boot\s+up|load|open(?:\s+up)?)\s+(.+)$", re.I),
           "open", 0.90),
         # go / navigate to a site (URL only — "navigate to spotify" is not an app).
         R(re.compile(r"^(?:go\s+to|goto|navigate\s+to|take\s+me\s+to|visit|browse\s+to|pull\s+up|bring\s+up)\s+(.+)$", re.I),
@@ -223,9 +231,6 @@ def _rules() -> "list[_Rule]":
           "volume", 0.82, slot_group=0, fixed_slot="up"),
         R(re.compile(r"^(?:(?:turn|bring)\s+(?:it\s+|the\s+volume\s+|down\s+)?down(?:\s+the\s+volume)?|volume\s+down|lower\s+(?:the\s+)?volume|(?:make\s+it\s+)?(?:quieter|softer))\s*$", re.I),
           "volume", 0.82, slot_group=0, fixed_slot="down"),
-        # clipboard link synonyms.
-        R(re.compile(r"^open\s+(?:the\s+|my\s+)?clipboard(?:\s+(?:link|url))?$|^open\s+(?:the\s+)?(?:link|url)\s+(?:in|from)\s+(?:my\s+|the\s+)?clipboard$", re.I),
-          "open_clipboard_link", 0.80, slot_group=0),
     ]
 
 

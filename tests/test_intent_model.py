@@ -149,6 +149,14 @@ def test_predict_strips_leading_filler():
     assert p.handler == "open" and p.slot == "spotify"
 
 
+def test_predict_recovers_filler_prefixed_open():
+    # classify()'s _RE_OPEN only fires when the body starts with "open"; a
+    # leading filler defeats it, so the model must recover "… open <x>".
+    r = im.infer("can you please open github.com", _cfg(apps=APPS))
+    assert r.match is not None and r.match.name == "open_url"
+    assert r.match.args == {"url": "https://github.com"}
+
+
 def test_predict_strips_trailing_politeness():
     p = im.KeywordPredictor().predict("play some music please")
     assert p.handler == "media_key" and p.slot == "playpause"
