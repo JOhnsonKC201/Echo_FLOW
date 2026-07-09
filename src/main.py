@@ -878,6 +878,34 @@ class App:
             match = None
             if prefixed:
                 match = _va.classify(body, self.cfg)
+                # Regex miss on an explicit ("computer, …") command: optionally
+                # let the local intent model recover a mis-phrased action
+                # ("launch spotify"). Off by default; 'shadow' logs the guess
+                # without executing so precision can be measured first. A
+                # recovered match still flows through the same dispatch + guards
+                # as a regex hit — the model only ever proposes, never bypasses.
+                im_mode = exp_cfg.get("action_intent_model")
+                if match is None and im_mode:
+                    try:
+                        from . import intent_model as _im
+                        res = _im.infer(
+                            body, self.cfg, self.history,
+                            min_conf=exp_cfg.get("action_intent_min_conf",
+                                                 _im.DEFAULT_MIN_CONF),
+                        )
+                    except Exception as e:   # never let the fallback break dictation
+                        _log.debug("intent model error: %s", e)
+                        res = None
+                    if res is not None and res.match is not None:
+                        if im_mode == "shadow":
+                            shown = body if exp_cfg.get("action_log_verbose") else "<redacted>"
+                            _log.info(
+                                "intent shadow: %r → %s (conf=%.2f) [not executed]",
+                                shown, res.match.name, res.prediction.confidence)
+                        else:
+                            _log.info("intent model recovered %s (conf=%.2f)",
+                                      res.match.name, res.prediction.confidence)
+                            match = res.match
             elif not exp_cfg.get("action_require_prefix", True):
                 free_body = (raw or cleaned or "").strip()
                 # Try the LITERAL utterance first, then the same utterance with a

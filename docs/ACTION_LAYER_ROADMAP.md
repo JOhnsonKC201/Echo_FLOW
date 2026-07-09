@@ -7,6 +7,36 @@ and `config.yaml experimental:`. Spec of record: `ACTION_LAYER_SPEC.md`.
 
 ---
 
+## 0. Status (updated 2026-07-08)
+
+Most of this roadmap has shipped. Treat sections 1–3 as the *original* design
+record, not current state. Landed since:
+
+- **PR 2** handlers (`summarize_focused`, `draft_event`, `quick_note`) + the
+  `focused_document_path()` injector, plus SEC-1/2/4/5/7/8 hardening.
+- **PR 3** dashboard `/actions` panel (`src/dashboard/actions_view.py`) + SEC-3
+  arg redaction (`redact_args`) + `action_log_verbose`.
+- **PR 4** catalog: `media_key`, `volume`, `open_folder`, `open_clipboard_link`
+  (+ the `injector` field on `ActionContext`).
+- **PR 5 / DASH-2** as **Option B**: SQLite-backed `action_targets` merged over
+  config defaults (`user_targets()` + `history.set_action_target` etc.).
+- Prefix-free triggering (`resolves()`) beyond the original scope.
+- **PR 6 spine (this change):** `src/intent_model.py` — `build_match`
+  (MODEL-BUILD), `classify_with_model`/`infer` with a confidence floor + length
+  pre-gate (MODEL-WRAP), the `action_intent_model` flag incl. `shadow` value +
+  lazy import wiring in `main._do_dictation` (MODEL-FLAG), a dependency-free
+  `KeywordPredictor`, and `scripts/eval_intent.py` (offline precision/recall +
+  a CI `--check` gate — the MODEL-SHADOW measurement need, met offline).
+
+**Still open (future):** the real ML head — MODEL-HEAD (embedding + logistic
+regression reusing the repo embedder), MODEL-DATA (training set mined from
+`voice_actions`), MODEL-LATENCY tuning, and persisted MODEL-SHADOW rows
+(a `model_pred` column) if online agreement measurement is wanted on top of the
+offline harness. All of these plug into the existing spine via `set_predictor()`
+without touching a single guard.
+
+---
+
 ## 1. Executive Summary
 
 PR 1 shipped a genuinely conservative safe trio (`open_url`, `web_search`,

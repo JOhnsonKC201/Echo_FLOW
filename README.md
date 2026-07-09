@@ -335,6 +335,15 @@ Echo fires the keystroke from an **allowlist** instead of typing the words.
 — anything else just types normally, so plain dictation is never swallowed. A
 mis-heard wake word (`jarvis` → "Zalvis") is tolerated via fuzzy matching.
 
+**Phrasing fallback** (`action_intent_model`, off by default): the tables above
+are matched by strict patterns, so *"launch spotify"* or *"play some music"* miss
+by a word. Turn this on and a missed command is retried by a small **local**
+intent model that recovers common synonym/filler phrasings — but every guess is
+re-validated through the *same* allowlist/URL guards, so it can never fire
+anything the strict path wouldn't. Set it to `shadow` to log what it *would*
+have done without acting, and use `scripts/eval_intent.py` to tune
+`action_intent_min_conf` from data before trusting it.
+
 **Safety model (non-negotiable):** the allowlist and URL-scheme checks are the
 *sole* authority on what executes. Nothing in Action Mode deletes, sends, or
 pays. Every attempt is logged to the `voice_actions` table.

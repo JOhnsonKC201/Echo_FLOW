@@ -240,6 +240,8 @@ experimental:
     downloads: "%USERPROFILE%\\Downloads"
     documents: "%USERPROFILE%\\Documents"
     desktop: "%USERPROFILE%\\Desktop"
+  action_intent_model: false       # regex-miss fallback for mis-phrased actions ("launch spotify"). false | true | shadow. 'shadow' logs the model's guess WITHOUT executing, so you can measure precision before trusting it. Every guess is re-validated through the same allowlist/URL guards as the regex path — the model can never fire anything the regex wouldn't.
+  action_intent_min_conf: 0.75     # confidence floor the intent model must clear before it may act (or be shadow-logged).
 
 logging:
   level: "INFO"

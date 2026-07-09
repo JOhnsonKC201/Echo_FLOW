@@ -7,6 +7,34 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Local intent model — a regex-miss fallback for Action Mode**
+  (`src/intent_model.py`, opt-in, **off by default**). Action Mode classifies a
+  prefixed command with tight anchored regexes; that is high-precision but
+  brittle to phrasing (*"launch spotify"* instead of *"open spotify"*, *"play
+  some music"* instead of *"play music"*). When
+  `experimental.action_intent_model` is enabled, a miss on an explicit
+  (`"computer, …"`) command is retried through a local predictor that recovers
+  common verb-synonym and filler phrasings. It is built around one locked
+  safety invariant: **the model never fires a side effect the regex/allowlist
+  wouldn't.** The predictor proposes only a handler name + a slot string, which
+  is re-validated by `build_match()` through the *same* guards as the regex path
+  (`_domain_to_url` / `_is_safe_url` / the `action_apps`/`action_folders`
+  allowlists) — and it is *stricter* than the regex path, refusing an
+  unconfigured app/folder at construction time. Today's predictor is a
+  dependency-free keyword heuristic (no ML deps, no import cost); the module is
+  the load-once seam where an embedding + logistic-regression head can be
+  dropped in later via `set_predictor()`.
+  - A **`shadow`** value for the flag logs what the model *would* have fired
+    without executing it, so precision can be measured before the model is ever
+    trusted to act. A new confidence floor (`action_intent_min_conf`, default
+    `0.75`) and a cheap length pre-gate keep it conservative.
+  - **Offline eval harness** `scripts/eval_intent.py`: scores the predictor on a
+    labeled fixture set (precision / recall / F1 + a `min_conf` sweep and
+    confusion of misses), and a `--check` gate that fails CI if precision or
+    recall regress — the empirical basis for the `0.75` default. Covered by
+    `tests/test_intent_model.py` (safety re-validation, recovery, abstain, floor,
+    never-raises) and `tests/test_main_intent_model.py` (off-by-default, live
+    recovery, shadow-does-not-execute, and *unconfigured-app-can't-launch*).
 - **Automated signed-release pipeline.** A new `release` GitHub Actions workflow
   (`.github/workflows/release.yml`) builds the daemon installer on a tagged
   push (`v*`): PyInstaller → Inno Setup → SHA256 → draft GitHub Release with the
