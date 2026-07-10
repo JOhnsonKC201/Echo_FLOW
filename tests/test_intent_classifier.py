@@ -233,3 +233,34 @@ def test_backend_model_failure_falls_back_to_keyword(monkeypatch):
     monkeypatch.setattr(ic, "get_model_predictor", boom)
     cfg = {"experimental": {"action_intent_backend": "model"}}
     assert isinstance(im._predictor_for_cfg(cfg), im.KeywordPredictor)
+
+
+# --- warm-thread concurrency (MODEL-SHADOW warmup) ----------------------------
+
+def test_ensure_ready_is_single_flight_across_threads(tmp_path):
+    """warm_in_background races the first live predict into _ensure_ready; the
+    seed fit must happen exactly ONCE and the artifact write must be atomic
+    (no partial/tmp files left for a concurrent load to trip on)."""
+    import threading
+    import time
+
+    class SlowCountingEmbedder(FakeEmbedder):
+        def __init__(self):
+            super().__init__()
+            self.fits = 0
+
+        def embed_many(self, texts):
+            self.fits += 1
+            time.sleep(0.05)          # widen the race window
+            return super().embed_many(texts)
+
+    emb = SlowCountingEmbedder()
+    p = ic.EmbeddingPredictor(embedder=emb, artifact_path=str(tmp_path / "m.npz"))
+    threads = [threading.Thread(target=p.warm) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert emb.fits == 1
+    # Exactly the finished artifact on disk — no orphaned tmp files.
+    assert [f.name for f in tmp_path.iterdir()] == ["m.npz"]

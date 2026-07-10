@@ -28,6 +28,7 @@ Design choices that keep it local-first and dependency-free:
 from __future__ import annotations
 
 import os
+import threading
 
 import numpy as np
 
@@ -124,15 +125,24 @@ class SoftmaxRegression:
         d = os.path.dirname(path)
         if d:
             os.makedirs(d, exist_ok=True)
-        np.savez(
-            path, W=self.W.astype(np.float32), b=self.b.astype(np.float32),
-            classes=np.array(self.classes),           # unicode array, not object
-            embedder_id=np.array(self.embedder_id),
-            version=np.array(ARTIFACT_VERSION),
-        )
-        # np.savez appends .npz; normalize so callers find the file at `path`.
-        if not os.path.exists(path) and os.path.exists(path + ".npz"):
-            os.replace(path + ".npz", path)
+        # Write-then-rename so a concurrent reader never sees a partial file.
+        # The tmp name ends in .npz so np.savez doesn't append another suffix;
+        # the pid keeps concurrent writers (app + train script) apart.
+        tmp = f"{path}.{os.getpid()}.tmp.npz"
+        try:
+            np.savez(
+                tmp, W=self.W.astype(np.float32), b=self.b.astype(np.float32),
+                classes=np.array(self.classes),       # unicode array, not object
+                embedder_id=np.array(self.embedder_id),
+                version=np.array(ARTIFACT_VERSION),
+            )
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):    # savez/replace failed part-way
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
 
     @classmethod
     def load(cls, path: str) -> "SoftmaxRegression":
@@ -196,6 +206,7 @@ class EmbeddingPredictor:
         self._seed = seed
         self._model: "SoftmaxRegression | None" = None
         self._ready = False
+        self._load_lock = threading.Lock()
 
     def _get_embedder(self):
         if self._embedder is None:
@@ -203,30 +214,37 @@ class EmbeddingPredictor:
         return self._embedder
 
     def _ensure_ready(self) -> None:
+        # Double-checked: warm_in_background and the first live predict can
+        # reach here concurrently; the seed fit + artifact write must be
+        # single-flight or the second thread refits (wasted CPU) and both
+        # write the cache at once.
         if self._ready:
             return
-        emb = self._get_embedder()
-        emb_id = emb.name()
-        # Reuse a cached artifact only if it was built with the same embedder.
-        if self._path and os.path.isfile(self._path):
-            try:
-                clf = SoftmaxRegression.load(self._path)
-                if clf.embedder_id == emb_id:
-                    self._model = clf
-                    self._ready = True
-                    return
-            except Exception:   # noqa: BLE001 — stale/corrupt cache → retrain
-                pass
-        texts = [prepare_text(t) for t, _ in self._seed]
-        labels = [lbl for _, lbl in self._seed]
-        X = emb.embed_many(texts)
-        self._model = SoftmaxRegression.fit(X, labels, emb_id)
-        if self._path:
-            try:
-                self._model.save(self._path)
-            except Exception:   # noqa: BLE001 — caching is best-effort
-                pass
-        self._ready = True
+        with self._load_lock:
+            if self._ready:
+                return
+            emb = self._get_embedder()
+            emb_id = emb.name()
+            # Reuse a cached artifact only if it was built with the same embedder.
+            if self._path and os.path.isfile(self._path):
+                try:
+                    clf = SoftmaxRegression.load(self._path)
+                    if clf.embedder_id == emb_id:
+                        self._model = clf
+                        self._ready = True
+                        return
+                except Exception:   # noqa: BLE001 — stale/corrupt cache → retrain
+                    pass
+            texts = [prepare_text(t) for t, _ in self._seed]
+            labels = [lbl for _, lbl in self._seed]
+            X = emb.embed_many(texts)
+            self._model = SoftmaxRegression.fit(X, labels, emb_id)
+            if self._path:
+                try:
+                    self._model.save(self._path)
+                except Exception:   # noqa: BLE001 — caching is best-effort
+                    pass
+            self._ready = True
 
     def warm(self) -> None:
         """Force the embedder + model to load now (e.g. from a warmup thread)."""
