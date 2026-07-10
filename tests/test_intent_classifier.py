@@ -208,7 +208,11 @@ def test_model_cannot_launch_unconfigured_app(tmp_path):
 
 
 def test_model_slotless_intent_resolves(tmp_path):
-    r = im.infer("crank the tunes", _cfg(),
+    # "crank it up" not "crank the tunes": under the BOW fake embedder "tunes"
+    # shares no tokens with the volume class, so it abstains — only the real
+    # embedder generalizes it (covered by scripts/train_intent.py --eval). The
+    # point here is the slotless intent → fixed-slot ActionMatch path.
+    r = im.infer("crank it up", _cfg(),
                  predictor=_trained_predictor(tmp_path), min_conf=0.3)
     assert r.match is not None and r.match.name == "volume"
     assert r.match.args == {"dir": "up"}

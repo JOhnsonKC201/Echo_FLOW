@@ -58,6 +58,18 @@ SEED: "list[tuple[str, str]]" = [
     ("open up the notes app", "open"),
     ("get me to stackoverflow.com", "open"),
     ("start the music player", "open"),
+    ("visit nytimes.com", "open"),
+    ("visit the python docs site", "open"),
+    ("navigate to my dashboard", "open"),
+    ("navigate to youtube.com", "open"),
+    ("take me to amazon.com", "open"),
+    ("pull up the file explorer", "open"),
+    ("pull up slack", "open"),
+    ("bring up the settings", "open"),
+    ("browse to hacker news", "open"),
+    ("open the task manager", "open"),
+    ("launch the code editor", "open"),
+    ("fire up the vpn", "open"),
 
     # --- web search ---------------------------------------------------------
     ("search the web for pizza", "web_search"),
@@ -72,6 +84,18 @@ SEED: "list[tuple[str, str]]" = [
     ("find the nearest coffee shop", "web_search"),
     ("search for cat videos", "web_search"),
     ("google what time it is in tokyo", "web_search"),
+    ("look up the exchange rate for euros", "web_search"),
+    ("look up how to change a tire", "web_search"),
+    ("look up flights to denver", "web_search"),
+    ("search for a sushi place downtown", "web_search"),
+    ("search the web for laptop reviews", "web_search"),
+    ("search for the score of the game last night", "web_search"),
+    ("google the capital of australia", "web_search"),
+    ("google how tall the eiffel tower is", "web_search"),
+    ("find me a hotel in chicago", "web_search"),
+    ("find reviews for that new movie", "web_search"),
+    ("look up the phone number for the pharmacy", "web_search"),
+    ("search for beginner guitar lessons", "web_search"),
 
     # --- quick note ---------------------------------------------------------
     ("take a note that the build is green", "quick_note"),
@@ -86,6 +110,20 @@ SEED: "list[tuple[str, str]]" = [
     ("quick note the printer is out of toner", "quick_note"),
     ("jot this down the wifi password is guest", "quick_note"),
     ("take down that we ship on friday", "quick_note"),
+    ("note to self check the oven before leaving", "quick_note"),
+    ("note to self follow up with the vendor", "quick_note"),
+    ("note down the parking spot is on level three", "quick_note"),
+    ("jot down the flight lands at seven", "quick_note"),
+    ("jot down that sarah prefers email", "quick_note"),
+    ("quick note the demo laptop needs charging", "quick_note"),
+    ("quick note ask about the invoice", "quick_note"),
+    ("write down that the key is under the mat", "quick_note"),
+    ("make a note that the api rate limit is one hundred", "quick_note"),
+    ("make a note to renew the domain", "quick_note"),
+    ("add a note that the deploy is postponed", "quick_note"),
+    ("take a note the conference room is double booked", "quick_note"),
+    ("remember to send the follow up email", "quick_note"),
+    ("remember that the password expires monday", "quick_note"),
 
     # --- draft calendar event ----------------------------------------------
     ("create an event lunch with sam tomorrow", "draft_event"),
@@ -98,6 +136,14 @@ SEED: "list[tuple[str, str]]" = [
     ("add an event birthday party on saturday", "draft_event"),
     ("book a meeting for two pm", "draft_event"),
     ("put the product demo on my calendar for friday", "draft_event"),
+    ("schedule a one on one with anna next tuesday", "draft_event"),
+    ("schedule the sprint planning for wednesday morning", "draft_event"),
+    ("create a calendar event standup at nine thirty", "draft_event"),
+    ("add a meeting with legal on thursday", "draft_event"),
+    ("set up an interview for friday afternoon", "draft_event"),
+    ("book a haircut appointment for saturday", "draft_event"),
+    ("make an event movie night on friday", "draft_event"),
+    ("put lunch with the team on the calendar", "draft_event"),
 
     # --- summarize the focused document (slotless) --------------------------
     ("summarize this", "summarize"),
@@ -110,6 +156,14 @@ SEED: "list[tuple[str, str]]" = [
     ("condense this for me", "summarize"),
     ("what does this document say", "summarize"),
     ("break down this document for me", "summarize"),
+    ("give me the highlights of this document", "summarize"),
+    ("give me the short version of this", "summarize"),
+    ("boil this down for me", "summarize"),
+    ("recap this page for me", "summarize"),
+    ("give me a rundown of this file", "summarize"),
+    ("summarize what i am looking at", "summarize"),
+    ("condense this document into a few lines", "summarize"),
+    ("what are the key points of this document", "summarize"),
 
     # --- media: play / pause (slotless) -------------------------------------
     ("play", "media_playpause"),
@@ -122,6 +176,12 @@ SEED: "list[tuple[str, str]]" = [
     ("hit play", "media_playpause"),
     ("play something", "media_playpause"),
     ("resume the song", "media_playpause"),
+    ("resume", "media_playpause"),
+    ("resume the music", "media_playpause"),
+    ("pause the song", "media_playpause"),
+    ("pause playback", "media_playpause"),
+    ("stop the music for a second", "media_playpause"),
+    ("start the music again", "media_playpause"),
 
     # --- media: next --------------------------------------------------------
     ("next track", "media_next"),
@@ -133,6 +193,12 @@ SEED: "list[tuple[str, str]]" = [
     ("go to the next track", "media_next"),
     ("next song please", "media_next"),
     ("skip forward", "media_next"),
+    ("skip ahead", "media_next"),
+    ("skip to the next track", "media_next"),
+    ("next one", "media_next"),
+    ("on to the next song", "media_next"),
+    ("play the next one", "media_next"),
+    ("change the song", "media_next"),
 
     # --- media: previous ----------------------------------------------------
     ("previous track", "media_prev"),
@@ -143,6 +209,13 @@ SEED: "list[tuple[str, str]]" = [
     ("go back one song", "media_prev"),
     ("the song before this one", "media_prev"),
     ("previous", "media_prev"),
+    ("previous one", "media_prev"),
+    ("go back to the last song", "media_prev"),
+    ("back one track", "media_prev"),
+    ("replay the previous track", "media_prev"),
+    ("play the last song again", "media_prev"),
+    ("rewind to the previous song", "media_prev"),
+    ("go back a track", "media_prev"),
 
     # --- mute ---------------------------------------------------------------
     ("mute", "mute"),
@@ -153,6 +226,12 @@ SEED: "list[tuple[str, str]]" = [
     ("mute the volume", "mute"),
     ("turn off the sound", "mute"),
     ("silence the audio", "mute"),
+    ("unmute the sound", "mute"),
+    ("unmute it", "mute"),
+    ("kill the sound", "mute"),
+    ("sound off", "mute"),
+    ("shut the sound off", "mute"),
+    ("turn the sound back on", "mute"),
 
     # --- volume up ----------------------------------------------------------
     ("volume up", "volume_up"),
@@ -165,6 +244,12 @@ SEED: "list[tuple[str, str]]" = [
     ("pump up the volume", "volume_up"),
     ("increase the volume", "volume_up"),
     ("crank the tunes", "volume_up"),
+    ("turn the sound up", "volume_up"),
+    ("turn it up a bit", "volume_up"),
+    ("bump the volume up", "volume_up"),
+    ("a little louder please", "volume_up"),
+    ("boost the volume", "volume_up"),
+    ("can you make it a bit louder", "volume_up"),
 
     # --- volume down --------------------------------------------------------
     ("volume down", "volume_down"),
@@ -177,6 +262,12 @@ SEED: "list[tuple[str, str]]" = [
     ("reduce the volume", "volume_down"),
     ("bring the volume down", "volume_down"),
     ("it is too loud turn it down", "volume_down"),
+    ("turn the sound down", "volume_down"),
+    ("bring it down a notch", "volume_down"),
+    ("a little quieter please", "volume_down"),
+    ("drop the volume", "volume_down"),
+    ("that is too loud lower it", "volume_down"),
+    ("can you make it a bit quieter", "volume_down"),
 
     # --- clipboard link (slotless) ------------------------------------------
     ("open the clipboard link", "clipboard"),
@@ -186,6 +277,11 @@ SEED: "list[tuple[str, str]]" = [
     ("open whatever is in my clipboard", "clipboard"),
     ("open the copied link", "clipboard"),
     ("go to the link i copied", "clipboard"),
+    ("open what i just copied", "clipboard"),
+    ("open the address i copied", "clipboard"),
+    ("go to the copied url", "clipboard"),
+    ("open the link from the clipboard", "clipboard"),
+    ("open my clipboard", "clipboard"),
 
     # --- none: plain dictation (must abstain) -------------------------------
     ("the meeting went really well today", "none"),
@@ -215,6 +311,21 @@ SEED: "list[tuple[str, str]]" = [
     ("she noted that the deadline had moved", "none"),
     ("find your own path in this world", "none"),
     ("turn the page when you are ready", "none"),
+    ("i noted a big improvement in the numbers", "none"),
+    ("the meeting notes are in the shared drive", "none"),
+    ("self care is something to remember every day", "none"),
+    ("we searched everywhere for the car keys", "none"),
+    ("i have been looking up at the stars all night", "none"),
+    ("the store opens at nine tomorrow", "none"),
+    ("visiting my grandmother this weekend was lovely", "none"),
+    ("the launch was delayed by two weeks", "none"),
+    ("the next chapter of the book is my favorite", "none"),
+    ("i paused for a moment before answering", "none"),
+    ("trading volume was up three percent today", "none"),
+    ("the schedule is packed this week", "none"),
+    ("my appointment ran long this morning", "none"),
+    ("in summary the quarter went really well", "none"),
+    ("the silence in the library was calming", "none"),
 ]
 
 

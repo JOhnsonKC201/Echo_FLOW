@@ -38,8 +38,9 @@ from .intent_seed import LABEL_SPEC, SEED
 # Bump when the artifact format, the embed-input transform, or seed semantics
 # change so a stale cache on disk is ignored (fails the version check → retrain)
 # rather than mis-loaded. v2: embed input goes through prepare_text (train/serve
-# consistency) instead of raw seed text.
-ARTIFACT_VERSION = 2
+# consistency) instead of raw seed text. v3: enriched seed corpus (the cache
+# does not fingerprint the seed, so a seed change must bump this).
+ARTIFACT_VERSION = 3
 DEFAULT_ARTIFACT_PATH = os.path.join("data", "intent_model.npz")
 
 
