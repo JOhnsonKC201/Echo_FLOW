@@ -84,6 +84,24 @@ def test_action_mode_on_fires_and_suppresses_paste(temp_db, monkeypatch):
     assert len(rows) == 1
     assert rows[0]["handler"] == "web_search"
     assert rows[0]["ok"] is True
+    # SEC-3: without verbose logging, neither the args NOR the label may carry
+    # the query text at rest (the label used to re-leak what redact_args hid).
+    assert "cats" not in (rows[0]["args"] or "")
+    assert rows[0]["label"] == "Search the web"
+
+
+def test_action_log_verbose_keeps_full_label(temp_db, monkeypatch):
+    history, _path = temp_db
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: True)
+    monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
+
+    cfg = _base_cfg(command_mode=False, action_mode=True,
+                    command_prefix="computer", action_log_verbose=True)
+    app = _make_app(cfg, "computer search the web for cats", history=history)
+    app._do_dictation(_audio())
+
+    rows = history.recent_actions()
+    assert rows and "cats" in rows[0]["label"]   # opt-in verbose keeps it
 
 
 def test_plain_dictation_never_triggers_action(monkeypatch):

@@ -38,11 +38,22 @@ record, not current state. Landed since:
   prediction through `build_match` — no guard changes. ~0.83 stratified-holdout
   accuracy on the seed; generalizes to unseen phrasings ("hush"→mute, "memo"→note).
 
-**Still open (future):** persisted MODEL-SHADOW rows (a `model_pred` column on
-`voice_actions`) for online agreement measurement on real user utterances, on
-top of the offline harness; a warm-load hook wiring `EmbeddingPredictor.warm()`
-into the background warmup thread; and enriching the seed corpus / mining path to
-push holdout accuracy higher. All plug into the existing spine without touching a
+- **PR 7 MODEL-SHADOW online (this change):** shadow mode now *persists* its
+  measurements instead of only logging them. A nullable `model_pred` JSON
+  column on `voice_actions` (additive migration) records, per real utterance:
+  agreement with the regex on hits (`agree`/`args_match`, scored post-dispatch
+  so the action never waits on the model; prefix-free hits are covered too),
+  the would-have-fired guess on misses (sentinel `handler='intent_shadow'`,
+  never executed), and provenance on live recoveries (`recovered: true`). Privacy-safe by construction — the
+  record carries handler ids / confidence / booleans, never slot text; slot
+  agreement is pre-computed as `args_match`. `history.intent_agreement_stats()`
+  aggregates the three buckets and `/actions` renders the summary + shadow
+  rows. Also: `redact_label` closes the SEC-3 gap where the logged label
+  re-leaked query/URL/event text, and `intent_model.warm_in_background` wires
+  `EmbeddingPredictor.warm()` into app init (MODEL-LATENCY, online half).
+
+**Still open (future):** enriching the seed corpus / mining path to push
+holdout accuracy higher. Plugs into the existing spine without touching a
 single guard.
 
 ---

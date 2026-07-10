@@ -1,6 +1,7 @@
 """SQLite log of every dictation: raw + cleaned + context."""
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -210,6 +211,10 @@ class History:
                 "CREATE INDEX IF NOT EXISTS idx_cmdlog_ts ON command_log(ts)"
             )
             # Action Mode log (Phase 14 — voice_actions dispatch site appends here).
+            # model_pred (MODEL-SHADOW) is the intent model's JSON record for the
+            # utterance — agreement with the regex on hits, the would-have-fired
+            # guess on misses (handler = 'intent_shadow'), provenance on live
+            # recoveries. NULL on plain regex rows.
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS voice_actions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,9 +224,15 @@ class History:
                     args TEXT,
                     label TEXT,
                     ok INTEGER NOT NULL DEFAULT 1,
-                    error TEXT
+                    error TEXT,
+                    model_pred TEXT
                 )
             """)
+            va_cols = [r[1] for r in self.conn.execute(
+                "PRAGMA table_info(voice_actions)").fetchall()]
+            if "model_pred" not in va_cols:
+                self.conn.execute(
+                    "ALTER TABLE voice_actions ADD COLUMN model_pred TEXT")
             self.conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_vactions_ts ON voice_actions(ts)"
             )
@@ -375,29 +386,72 @@ class History:
 
     def log_action(self, *, body: str, handler: str, args_json: str | None = None,
                    label: str | None = None, ok: bool = True,
-                   error: str | None = None) -> int:
+                   error: str | None = None,
+                   model_pred: str | None = None) -> int:
         """Append a row to voice_actions (Phase 14). Best-effort — caller
-        swallows errors, mirroring log_command."""
+        swallows errors, mirroring log_command. ``model_pred`` is the intent
+        model's JSON record for this utterance (MODEL-SHADOW), or None."""
         cur = self.conn.execute(
-            "INSERT INTO voice_actions(ts, body, handler, args, label, ok, error) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO voice_actions(ts, body, handler, args, label, ok, error, "
+            "model_pred) VALUES (?,?,?,?,?,?,?,?)",
             (time.time(), body or "", handler, args_json, label,
-             1 if ok else 0, error),
+             1 if ok else 0, error, model_pred),
         )
         self.conn.commit()
         return cur.lastrowid or 0
 
     def recent_actions(self, limit: int = 50) -> list[dict]:
         rows = self.conn.execute(
-            "SELECT id, ts, body, handler, args, label, ok, error "
+            "SELECT id, ts, body, handler, args, label, ok, error, model_pred "
             "FROM voice_actions ORDER BY id DESC LIMIT ?",
             (int(limit),),
         ).fetchall()
         return [
             {"id": r[0], "ts": r[1], "body": r[2], "handler": r[3],
-             "args": r[4], "label": r[5], "ok": bool(r[6]), "error": r[7]}
+             "args": r[4], "label": r[5], "ok": bool(r[6]), "error": r[7],
+             "model_pred": r[8]}
             for r in rows
         ]
+
+    def intent_agreement_stats(self, days: int = 30) -> dict:
+        """MODEL-SHADOW: aggregate the persisted intent-model records over the
+        window into the three online measurements:
+
+          hits      — executed regex commands the model also scored in shadow
+                      mode: how often it agreed on the action (and the args).
+          shadow    — regex misses where the model made a gated guess: how many
+                      would actually have fired (vs. refused by the allowlist).
+          recovered — live-mode executions the model (not the regex) produced,
+                      and how many of those succeeded.
+
+        Malformed records are skipped, never raised."""
+        cutoff = time.time() - max(0, int(days)) * 86400
+        hits = {"n": 0, "agree": 0, "args_match": 0}
+        shadow = {"n": 0, "resolved": 0}
+        recovered = {"n": 0, "ok": 0}
+        rows = self.conn.execute(
+            "SELECT handler, ok, model_pred FROM voice_actions "
+            "WHERE model_pred IS NOT NULL AND ts >= ?", (cutoff,),
+        ).fetchall()
+        for handler, ok, raw in rows:
+            try:
+                rec = json.loads(raw)
+                if not isinstance(rec, dict):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            if handler == "intent_shadow":
+                shadow["n"] += 1
+                shadow["resolved"] += 1 if rec.get("resolved") else 0
+            elif rec.get("recovered"):
+                recovered["n"] += 1
+                recovered["ok"] += 1 if ok else 0
+            elif "agree" in rec:
+                hits["n"] += 1
+                hits["agree"] += 1 if rec.get("agree") else 0
+                hits["args_match"] += 1 if rec.get("args_match") else 0
+        return {"days": int(days), "hits": hits, "shadow": shadow,
+                "recovered": recovered}
 
     # --- Action Mode user targets (dashboard-managed app/folder shortcuts) ----
 

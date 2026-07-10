@@ -6,6 +6,7 @@ dispatch site. Mirrors commands_view.page_data.
 """
 from __future__ import annotations
 
+import json
 import time
 
 
@@ -68,9 +69,33 @@ def page_data(cfg: dict, history) -> dict:
                         "%b %d  %H:%M:%S", time.localtime(float(ts)))
                 except Exception:
                     row["ts_human"] = ""
+                # MODEL-SHADOW enrichment: parse the persisted prediction so the
+                # template can render shadow rows ("would have fired X") and the
+                # agreement marker on executed rows without touching JSON.
+                row["is_shadow"] = row.get("handler") == "intent_shadow"
+                model = None
+                if row.get("model_pred"):
+                    try:
+                        parsed = json.loads(row["model_pred"])
+                        if isinstance(parsed, dict):
+                            model = parsed
+                    except (TypeError, ValueError):
+                        model = None
+                row["model"] = model
                 recent.append(row)
         except Exception:
             recent = []
+
+    # MODEL-SHADOW summary: online agreement/recovery stats while the intent
+    # model is enabled (shadow or live). None hides the block entirely.
+    intent = None
+    im_mode = exp.get("action_intent_model")
+    if im_mode and history is not None and getattr(history, "conn", None) is not None:
+        try:
+            intent = {"mode": "shadow" if im_mode == "shadow" else "on",
+                      **history.intent_agreement_stats()}
+        except Exception:
+            intent = None
 
     return {
         "enabled": enabled,
@@ -81,4 +106,5 @@ def page_data(cfg: dict, history) -> dict:
         "folders": folders,
         "supported": _va.list_supported(cfg),
         "recent": recent,
+        "intent": intent,
     }
