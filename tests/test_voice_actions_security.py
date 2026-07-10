@@ -79,3 +79,38 @@ def test_redact_note_body():
 def test_redact_passes_through_open_app():
     r = va.redact_args("open_app", {"app": "spotify"})
     assert r == {"app": "spotify"}
+
+
+# --- redact_label (SEC-3 companion) ------------------------------------------
+# The human label can re-leak exactly what redact_args just removed ("Search
+# the web for "my secret"") — the log site must run it through redact_label
+# whenever verbose logging is off.
+
+def test_redact_label_web_search_drops_query():
+    lbl = va.redact_label("web_search", "Search the web for “my secret plans”",
+                          {"query": "my secret plans"})
+    assert "secret" not in lbl
+    assert lbl == "Search the web"
+
+
+def test_redact_label_open_url_host_only():
+    lbl = va.redact_label("open_url", "Open https://example.com/secret?token=abc",
+                          {"url": "https://example.com/secret?token=abc"})
+    assert lbl == "Open https://example.com"
+
+
+def test_redact_label_draft_event_drops_details():
+    lbl = va.redact_label("draft_event", "Draft event: dentist appointment",
+                          {"details": "dentist appointment"})
+    assert "dentist" not in lbl
+    assert lbl == "Draft event"
+
+
+def test_redact_label_quick_note_stays_generic():
+    assert va.redact_label("quick_note", "Take a note", {"body": "x"}) == "Take a note"
+
+
+def test_redact_label_passes_through_safe_handlers():
+    # App/folder names are allowlisted config keys, not free content.
+    assert va.redact_label("open_app", "Open spotify", {"app": "spotify"}) == "Open spotify"
+    assert va.redact_label("media_key", "Play / pause", {"key": "playpause"}) == "Play / pause"

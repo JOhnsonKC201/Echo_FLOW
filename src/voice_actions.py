@@ -727,6 +727,24 @@ def redact_args(name: str, args: dict) -> dict:
     return a
 
 
+def redact_label(name: str, label: str | None, args: dict) -> str | None:
+    """SEC-3 companion: the human label re-leaks exactly what redact_args just
+    removed ("Search the web for “my secret”"). Used at the same log site, under
+    the same verbose opt-out, so neither field carries free content at rest.
+    App/folder names pass through — they are allowlisted config keys, not free
+    text — as do the fixed labels (media, volume, summarize, clipboard)."""
+    if name == "web_search":
+        return "Search the web"
+    if name == "quick_note":
+        return "Take a note"
+    if name == "draft_event":
+        return "Draft event"
+    if name == "open_url":
+        url = redact_args(name, args or {}).get("url", "")
+        return f"Open {url}" if url else "Open a link"
+    return label
+
+
 def list_supported(cfg: dict) -> list[str]:
     """For the dashboard's experimental panel."""
     labels = [
