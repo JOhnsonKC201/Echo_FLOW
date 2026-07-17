@@ -11,6 +11,8 @@ ActionMatch that build_match — the same allowlist/URL guards as the regex path
 from __future__ import annotations
 
 import re
+import threading
+import time
 import zlib
 
 import numpy as np
@@ -92,6 +94,148 @@ def test_softmax_regression_save_load_roundtrip(tmp_path):
     assert loaded.embedder_id == "fake-emb"
     for vec in ([1.0, 0], [0, 1.0]):
         assert loaded.predict_one(np.array(vec))[0] == clf.predict_one(np.array(vec))[0]
+
+
+# --- seed fingerprint: the artifact cache self-invalidates on a seed change --
+
+class _CountingEmbedder(FakeEmbedder):
+    """FakeEmbedder that counts fit-time embedding passes, so a test can tell
+    whether the predictor reused the cached artifact or refit from the corpus.
+    (`embed_many` is only called on the fit path; `predict` uses `embed_one`.)"""
+
+    def __init__(self, dim: int = 128) -> None:
+        super().__init__(dim)
+        self.fits = 0
+
+    def embed_many(self, texts):
+        self.fits += 1
+        return super().embed_many(texts)
+
+
+_SEED_A = [("open spotify", "open"), ("launch spotify", "open"),
+           ("play music", "media_playpause"), ("pause music", "media_playpause"),
+           ("this is plain dictation", "none"), ("hello there friend", "none")]
+
+
+def test_seed_fingerprint_is_stable_across_calls():
+    # Must not use hash(): PYTHONHASHSEED randomization would make a cached
+    # artifact look stale on every restart.
+    assert ic.seed_fingerprint(_SEED_A) == ic.seed_fingerprint(list(_SEED_A))
+
+
+@pytest.mark.parametrize("mutate,why", [
+    (lambda s: s + [("crank the tunes", "volume_up")], "example added"),
+    (lambda s: [(t, "none" if t == "open spotify" else l) for t, l in s], "relabeled"),
+    (lambda s: [(t.replace("spotify", "notepad"), l) for t, l in s], "retexted"),
+    (lambda s: list(reversed(s)), "reordered (the fit is order-dependent)"),
+])
+def test_seed_fingerprint_changes_when_corpus_changes(mutate, why):
+    assert ic.seed_fingerprint(mutate(list(_SEED_A))) != ic.seed_fingerprint(_SEED_A), why
+
+
+def test_artifact_roundtrip_preserves_seed_id(tmp_path):
+    X = np.array([[1, 0], [0, 1]], dtype=np.float64)
+    clf = ic.SoftmaxRegression.fit(X, ["x", "y"], "fake-emb", seed_id="deadbeef")
+    path = str(tmp_path / "m.npz")
+    clf.save(path)
+    assert ic.SoftmaxRegression.load(path).seed_id == "deadbeef"
+
+
+def test_predictor_reuses_cache_when_seed_unchanged(tmp_path):
+    path = str(tmp_path / "m.npz")
+    first = _CountingEmbedder()
+    ic.EmbeddingPredictor(embedder=first, artifact_path=path,
+                          seed=_SEED_A)._ensure_ready()
+    assert first.fits == 1
+
+    second = _CountingEmbedder()
+    ic.EmbeddingPredictor(embedder=second, artifact_path=path,
+                          seed=_SEED_A)._ensure_ready()
+    assert second.fits == 0, "an unchanged seed must reuse the cached artifact"
+
+
+def test_predictor_refits_when_seed_changed(tmp_path):
+    path = str(tmp_path / "m.npz")
+    ic.EmbeddingPredictor(embedder=_CountingEmbedder(), artifact_path=path,
+                          seed=_SEED_A)._ensure_ready()
+
+    changed = list(_SEED_A) + [("fire up spotify", "open")]
+    emb = _CountingEmbedder()
+    ic.EmbeddingPredictor(embedder=emb, artifact_path=path,
+                          seed=changed)._ensure_ready()
+    assert emb.fits == 1, "a changed seed must invalidate the cached artifact"
+    # and the refit must restamp the cache, so the NEXT start reuses it
+    assert ic.SoftmaxRegression.load(path).seed_id == ic.seed_fingerprint(changed)
+
+
+def test_predictor_refits_when_embedder_changed(tmp_path):
+    # The pre-existing embedder guard must still hold alongside the seed guard.
+    path = str(tmp_path / "m.npz")
+    ic.EmbeddingPredictor(embedder=_CountingEmbedder(), artifact_path=path,
+                          seed=_SEED_A)._ensure_ready()
+
+    class _OtherEmbedder(_CountingEmbedder):
+        def name(self) -> str:
+            return "fake-bow-v2"
+
+    emb = _OtherEmbedder()
+    ic.EmbeddingPredictor(embedder=emb, artifact_path=path,
+                          seed=_SEED_A)._ensure_ready()
+    assert emb.fits == 1, "a changed embedder must invalidate the cached artifact"
+
+
+# --- process-wide single-flight ----------------------------------------------
+# warm_in_background() (App.__init__) races the first live dictation into
+# get_model_predictor(). Its check-and-construct must be atomic: two instances
+# each have their OWN _load_lock, so per-instance single-flight guarantees
+# nothing, and both would fit and save to the same artifact path at once.
+
+def test_get_model_predictor_is_single_instance_under_race(tmp_path, monkeypatch):
+    path = str(tmp_path / "m.npz")
+    real_init = ic.EmbeddingPredictor.__init__
+
+    def slow_init(self, *a, **k):
+        time.sleep(0.05)        # widen the real few-bytecode window
+        real_init(self, *a, **k)
+
+    monkeypatch.setattr(ic.EmbeddingPredictor, "__init__", slow_init)
+
+    got = []
+    threads = [threading.Thread(target=lambda: got.append(
+        ic.get_model_predictor(path))) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len({id(g) for g in got}) == 1, "the getter constructed >1 predictor"
+
+
+def test_concurrent_saves_do_not_destroy_the_artifact(tmp_path):
+    # The temp name was disambiguated only by os.getpid(), which is identical
+    # for two threads in one process: they wrote the same temp file, and the
+    # cleanup in `finally` deleted the file the other was about to rename in.
+    path = str(tmp_path / "m.npz")
+    X = np.random.default_rng(0).random((40, 16))
+    clf = ic.SoftmaxRegression.fit(X, ["a", "b"] * 20, "emb", seed_id="s")
+
+    errors = []
+
+    def saver():
+        try:
+            for _ in range(25):
+                clf.save(path)
+        except Exception as e:        # noqa: BLE001 — surface it in the assert
+            errors.append(repr(e))
+
+    threads = [threading.Thread(target=saver) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    assert ic.SoftmaxRegression.load(path).seed_id == "s"   # not torn or missing
 
 
 # --- slot extraction ---------------------------------------------------------
