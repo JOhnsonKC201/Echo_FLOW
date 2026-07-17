@@ -76,9 +76,49 @@ def test_redact_note_body():
     assert "milk" not in r["body"]
 
 
+_APP_CFG = {"experimental": {"action_apps": {"spotify": "spotify.exe"}}}
+_FOLDER_CFG = {"experimental": {"action_folders": {"downloads": "C:/x/Downloads"}}}
+
+
 def test_redact_passes_through_open_app():
-    r = va.redact_args("open_app", {"app": "spotify"})
+    # A name that IS a configured target is a config key the user chose, not
+    # spoken content — it stays readable on the dashboard.
+    r = va.redact_args("open_app", {"app": "spotify"}, _APP_CFG)
     assert r == {"app": "spotify"}
+
+
+# An app/folder slot is only an allowlist key once it PROVABLY matches one.
+# classify()'s `^open (.+)$` catch-all puts arbitrary speech in args["app"] and
+# defers the allowlist to dispatch, so an unconfigured name is still free text
+# and must not reach the log/DB verbatim.
+
+def test_redact_args_redacts_unconfigured_app_name():
+    r = va.redact_args("open_app", {"app": "my divorce lawyer meeting notes"},
+                       _APP_CFG)
+    assert "divorce" not in str(r)
+
+
+def test_redact_label_redacts_unconfigured_app_name():
+    m = va.classify("open my divorce lawyer meeting notes for the affair case",
+                    _APP_CFG)
+    assert m.name == "open_app"          # the catch-all really does fire
+    lbl = va.redact_label(m.name, m.label, m.args, _APP_CFG)
+    assert "divorce" not in (lbl or "")
+
+
+def test_redact_redacts_unconfigured_folder_name():
+    m = va.classify("open the my 2019 tax audit documents folder", _FOLDER_CFG)
+    assert m.name == "open_folder"
+    assert "tax" not in (va.redact_label(m.name, m.label, m.args, _FOLDER_CFG) or "")
+    assert "tax" not in str(va.redact_args(m.name, m.args, _FOLDER_CFG))
+
+
+def test_redact_open_target_without_cfg_is_failsafe():
+    # Without a cfg we cannot prove the name is a config key. A caller that
+    # forgets to pass one must get the SAFE behavior, never the leak.
+    assert "spotify" not in str(va.redact_args("open_app", {"app": "spotify"}))
+    assert "spotify" not in (va.redact_label("open_app", "Open spotify",
+                                             {"app": "spotify"}) or "")
 
 
 # --- redact_label (SEC-3 companion) ------------------------------------------
@@ -111,6 +151,8 @@ def test_redact_label_quick_note_stays_generic():
 
 
 def test_redact_label_passes_through_safe_handlers():
-    # App/folder names are allowlisted config keys, not free content.
-    assert va.redact_label("open_app", "Open spotify", {"app": "spotify"}) == "Open spotify"
+    # A CONFIGURED app name is an allowlist key, not free content; the fixed
+    # labels (media/volume/summarize/clipboard) carry no slot at all.
+    assert va.redact_label("open_app", "Open spotify", {"app": "spotify"},
+                           _APP_CFG) == "Open spotify"
     assert va.redact_label("media_key", "Play / pause", {"key": "playpause"}) == "Play / pause"

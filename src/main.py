@@ -931,7 +931,8 @@ class App:
                                     label = (res.match.label if verbose
                                              else _va.redact_label(
                                                  res.match.name, res.match.label,
-                                                 res.match.args))
+                                                 res.match.args, self.cfg,
+                                                 self.history))
                                 self.history.log_action(
                                     body=(body if verbose
                                           else "<redacted len=%d>" % len(body or "")),
@@ -990,7 +991,8 @@ class App:
                             # URLs → host) unless verbose logging is opted in.
                             args_for_log = (
                                 match.args if verbose
-                                else _va.redact_args(match.name, match.args)
+                                else _va.redact_args(match.name, match.args,
+                                                     self.cfg, self.history)
                             )
                             # `body` is the full spoken utterance — redact it too
                             # unless verbose, so the raw transcription doesn't land
@@ -1005,7 +1007,8 @@ class App:
                             label_for_log = (
                                 match.label if verbose
                                 else _va.redact_label(match.name, match.label,
-                                                      match.args)
+                                                      match.args, self.cfg,
+                                                      self.history)
                             )
                             self.history.log_action(
                                 body=body_for_log, handler=match.name,

@@ -709,11 +709,35 @@ def resolves(match: ActionMatch, cfg: dict, history=None) -> bool:
     return False
 
 
-def redact_args(name: str, args: dict) -> dict:
+def _is_configured_target(kind: str, value, cfg: dict | None, history=None) -> bool:
+    """True only when a spoken app/folder name PROVABLY matches a configured
+    target, so redaction can tell an allowlist key from free speech.
+
+    This distinction is load-bearing: ``classify``'s ``^open (.+)$`` catch-all
+    puts whatever was said into ``args["app"]`` and leaves the allowlist check
+    to dispatch, so an unconfigured name is an arbitrary sentence, not a config
+    key. Fail-safe by design — without a cfg we cannot prove anything, so the
+    caller gets redaction rather than a leak.
+    """
+    if cfg is None:
+        return False
+    try:
+        return str(value or "").strip().lower() in user_targets(kind, cfg, history)
+    except Exception:   # noqa: BLE001 — never let a lookup failure un-redact
+        return False
+
+
+def redact_args(name: str, args: dict, cfg: dict | None = None,
+                history=None) -> dict:
     """SEC-3: minimize sensitive fields before they hit the voice_actions log.
     Queries / note bodies / event details become length placeholders; URLs are
     reduced to scheme+host. Used at the dispatch log site unless the user opts
-    into verbose logging."""
+    into verbose logging.
+
+    An app/folder name survives only when ``cfg`` proves it is a configured
+    target (see :func:`_is_configured_target`); an unrecognized one is spoken
+    content and gets the same placeholder treatment.
+    """
     a = dict(args or {})
     if name == "web_search" and "query" in a:
         a["query"] = "<redacted len=%d>" % len(str(a["query"]))
@@ -724,15 +748,27 @@ def redact_args(name: str, args: dict) -> dict:
         a["body"] = "<redacted len=%d>" % len(str(a["body"]))
     elif name == "draft_event" and "details" in a:
         a["details"] = "<redacted len=%d>" % len(str(a["details"]))
+    elif name == "open_app" and "app" in a:
+        if not _is_configured_target("app", a["app"], cfg, history):
+            a["app"] = "<redacted len=%d>" % len(str(a["app"]))
+    elif name == "open_folder" and "folder" in a:
+        if not _is_configured_target("folder", a["folder"], cfg, history):
+            a["folder"] = "<redacted len=%d>" % len(str(a["folder"]))
     return a
 
 
-def redact_label(name: str, label: str | None, args: dict) -> str | None:
+def redact_label(name: str, label: str | None, args: dict,
+                 cfg: dict | None = None, history=None) -> str | None:
     """SEC-3 companion: the human label re-leaks exactly what redact_args just
     removed ("Search the web for “my secret”"). Used at the same log site, under
     the same verbose opt-out, so neither field carries free content at rest.
-    App/folder names pass through — they are allowlisted config keys, not free
-    text — as do the fixed labels (media, volume, summarize, clipboard)."""
+
+    A CONFIGURED app/folder name passes through — that is an allowlist key the
+    user chose, and "Open Spotify" is what makes the dashboard readable. An
+    unconfigured one is whatever the user happened to say after "open" and is
+    replaced with a generic label. The fixed labels (media, volume, summarize,
+    clipboard) carry no slot and always pass through.
+    """
     if name == "web_search":
         return "Search the web"
     if name == "quick_note":
@@ -742,6 +778,13 @@ def redact_label(name: str, label: str | None, args: dict) -> str | None:
     if name == "open_url":
         url = redact_args(name, args or {}).get("url", "")
         return f"Open {url}" if url else "Open a link"
+    if name == "open_app":
+        app = (args or {}).get("app", "")
+        return label if _is_configured_target("app", app, cfg, history) else "Open an app"
+    if name == "open_folder":
+        folder = (args or {}).get("folder", "")
+        return (label if _is_configured_target("folder", folder, cfg, history)
+                else "Open a folder")
     return label
 
 

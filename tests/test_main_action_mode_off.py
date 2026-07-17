@@ -90,6 +90,31 @@ def test_action_mode_on_fires_and_suppresses_paste(temp_db, monkeypatch):
     assert rows[0]["label"] == "Search the web"
 
 
+def test_unconfigured_open_target_is_redacted_in_db(temp_db, monkeypatch):
+    """SEC-3: an unconfigured "open X" is arbitrary speech, not an allowlist key.
+
+    classify()'s `^open (.+)$` catch-all puts whatever was said into
+    args["app"] and leaves the allowlist to dispatch, so redaction cannot treat
+    the name as a safe config key until it PROVES it is one — otherwise the
+    whole sentence lands in voice_actions and on the /actions dashboard.
+
+    (Note the app log is deliberately not asserted on here: main logs every raw
+    and cleaned transcript at INFO by design, so wispr.log holds the utterance
+    regardless. The DB/dashboard is the surface SEC-3 redaction is about.)
+    """
+    history, _path = temp_db
+    monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
+
+    cfg = _base_cfg(command_mode=False, action_mode=True, command_prefix="computer")
+    app = _make_app(cfg, "computer open my divorce lawyer notes", history=history)
+    app._do_dictation(_audio())
+
+    rows = history.recent_actions()
+    assert rows and rows[0]["handler"] == "open_app"
+    assert "divorce" not in (rows[0]["label"] or "")
+    assert "divorce" not in (rows[0]["args"] or "")
+
+
 def test_action_log_verbose_keeps_full_label(temp_db, monkeypatch):
     history, _path = temp_db
     monkeypatch.setattr("webbrowser.open", lambda u, **k: True)
