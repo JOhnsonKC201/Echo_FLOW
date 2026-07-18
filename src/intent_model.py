@@ -30,6 +30,7 @@ fire. See ``scripts/eval_intent.py`` for the offline precision/recall harness.
 from __future__ import annotations
 
 import re
+import threading
 from dataclasses import dataclass, field
 
 from . import voice_actions as _va
@@ -301,13 +302,30 @@ def set_predictor(predictor) -> None:
     _PREDICTOR = predictor
 
 
+def backend_for_cfg(exp: dict) -> str:
+    """The configured predictor backend, normalized: 'model' or 'keyword'
+    (anything unrecognized degrades to 'keyword', matching _predictor_for_cfg)."""
+    b = str((exp or {}).get("action_intent_backend", "keyword")).strip().lower()
+    return b if b == "model" else "keyword"
+
+
+def floor_for_cfg(exp: dict) -> float:
+    """The confidence floor for the configured backend. The two backends live
+    on different confidence scales (keyword rules emit ~0.8–0.9 hardcoded; the
+    13-class softmax is diffuse), so each has its own config key + default."""
+    exp = exp or {}
+    if backend_for_cfg(exp) == "model":
+        return exp.get("action_intent_model_min_conf", DEFAULT_MODEL_MIN_CONF)
+    return exp.get("action_intent_min_conf", DEFAULT_MIN_CONF)
+
+
 def _predictor_for_cfg(cfg: dict):
     """Choose the predictor backend from config: the keyword heuristic (default)
     or the learned embedding model. A model-backend failure (missing deps, no
     artifact, import error) falls back to the keyword predictor rather than
     breaking the fallback entirely."""
     exp = (cfg.get("experimental", {}) or {})
-    backend = str(exp.get("action_intent_backend", "keyword")).strip().lower()
+    backend = backend_for_cfg(exp)
     if backend == "model":
         try:
             from . import intent_classifier as _ic
@@ -363,3 +381,65 @@ def classify_with_model(body: str, cfg: dict, history=None, *,
     re-validated prediction resolves to, or ``None`` (→ today's regex-only
     behavior). Mirrors the shape of ``voice_actions.classify``."""
     return infer(body, cfg, history, min_conf=min_conf, predictor=predictor).match
+
+
+# --- MODEL-SHADOW: persisted online measurement -------------------------------
+
+def agreement_record(res: InferenceResult, backend: str,
+                     regex_match: "_va.ActionMatch | None" = None, *,
+                     recovered: bool = False) -> dict:
+    """The compact JSON-able record persisted to ``voice_actions.model_pred``.
+
+    Privacy-safe by construction: it carries handler ids, a confidence, and
+    comparison BOOLEANS — never the slot text (queries, note bodies, URLs).
+    Slot-level agreement is pre-computed here as ``args_match`` so nothing
+    sensitive needs storing to measure it later.
+
+      regex_match given   → shadow-on-hit compare (``agree``/``args_match``)
+      recovered=True      → live execution the model (not the regex) produced
+      neither             → a shadow guess on a regex miss
+    """
+    rec: dict = {
+        "backend": backend,
+        "handler": res.prediction.handler,
+        "conf": round(float(res.prediction.confidence), 4),
+        "gated": bool(res.gated),
+        "resolved": res.match is not None,
+    }
+    if res.match is not None:
+        rec["action"] = res.match.name
+    if recovered:
+        rec["recovered"] = True
+    if regex_match is not None:
+        rec["agree"] = (res.match is not None
+                        and res.match.name == regex_match.name)
+        rec["args_match"] = (res.match is not None
+                             and res.match.name == regex_match.name
+                             and res.match.args == regex_match.args)
+    return rec
+
+
+def warm_in_background(cfg: dict) -> "threading.Thread | None":
+    """Pre-load the embedding backend off the hot path (roadmap MODEL-SHADOW).
+
+    When the intent model is enabled with ``action_intent_backend: model``, the
+    first regex miss would otherwise pay the sentence-transformers cold start
+    (seconds). Called once at app init; returns the started daemon thread, or
+    ``None`` when there is nothing to warm (feature off / keyword backend,
+    which has no load cost)."""
+    exp = ((cfg or {}).get("experimental", {}) or {})
+    if not exp.get("action_intent_model") or backend_for_cfg(exp) != "model":
+        return None
+
+    def _warm() -> None:
+        try:
+            p = _predictor_for_cfg(cfg)
+            warm = getattr(p, "warm", None)
+            if callable(warm):
+                warm()
+        except Exception:   # noqa: BLE001 — warmup must never crash the app
+            pass
+
+    t = threading.Thread(target=_warm, daemon=True, name="intent-model-warm")
+    t.start()
+    return t

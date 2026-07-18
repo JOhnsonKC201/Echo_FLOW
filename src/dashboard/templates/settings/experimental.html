@@ -60,9 +60,9 @@
           <select name="action_intent_model">
             <option value="off" {% if values.action_intent_model == 'off' %}selected{% endif %}>Off</option>
             <option value="on" {% if values.action_intent_model == 'on' %}selected{% endif %}>On — recover mis-phrased actions</option>
-            <option value="shadow" {% if values.action_intent_model == 'shadow' %}selected{% endif %}>Shadow — log guesses without acting</option>
+            <option value="shadow" {% if values.action_intent_model == 'shadow' %}selected{% endif %}>Shadow — measure guesses without acting</option>
           </select>
-          <span class="set-field-hint">Retries a missed command through a local model (e.g. “launch spotify”). Every guess is re-validated by the same allowlist/URL guards — it can’t fire anything the strict path wouldn’t.</span>
+          <span class="set-field-hint">Retries a missed command through a local model (e.g. “launch spotify”). Every guess is re-validated by the same allowlist/URL guards — it can’t fire anything the strict path wouldn’t. Shadow measurements show on the <a href="/actions">Actions</a> page.</span>
         </label>
 
         <label class="set-field">

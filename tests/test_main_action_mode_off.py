@@ -84,6 +84,49 @@ def test_action_mode_on_fires_and_suppresses_paste(temp_db, monkeypatch):
     assert len(rows) == 1
     assert rows[0]["handler"] == "web_search"
     assert rows[0]["ok"] is True
+    # SEC-3: without verbose logging, neither the args NOR the label may carry
+    # the query text at rest (the label used to re-leak what redact_args hid).
+    assert "cats" not in (rows[0]["args"] or "")
+    assert rows[0]["label"] == "Search the web"
+
+
+def test_unconfigured_open_target_is_redacted_in_db(temp_db, monkeypatch):
+    """SEC-3: an unconfigured "open X" is arbitrary speech, not an allowlist key.
+
+    classify()'s `^open (.+)$` catch-all puts whatever was said into
+    args["app"] and leaves the allowlist to dispatch, so redaction cannot treat
+    the name as a safe config key until it PROVES it is one — otherwise the
+    whole sentence lands in voice_actions and on the /actions dashboard.
+
+    (Note the app log is deliberately not asserted on here: main logs every raw
+    and cleaned transcript at INFO by design, so wispr.log holds the utterance
+    regardless. The DB/dashboard is the surface SEC-3 redaction is about.)
+    """
+    history, _path = temp_db
+    monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
+
+    cfg = _base_cfg(command_mode=False, action_mode=True, command_prefix="computer")
+    app = _make_app(cfg, "computer open my divorce lawyer notes", history=history)
+    app._do_dictation(_audio())
+
+    rows = history.recent_actions()
+    assert rows and rows[0]["handler"] == "open_app"
+    assert "divorce" not in (rows[0]["label"] or "")
+    assert "divorce" not in (rows[0]["args"] or "")
+
+
+def test_action_log_verbose_keeps_full_label(temp_db, monkeypatch):
+    history, _path = temp_db
+    monkeypatch.setattr("webbrowser.open", lambda u, **k: True)
+    monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
+
+    cfg = _base_cfg(command_mode=False, action_mode=True,
+                    command_prefix="computer", action_log_verbose=True)
+    app = _make_app(cfg, "computer search the web for cats", history=history)
+    app._do_dictation(_audio())
+
+    rows = history.recent_actions()
+    assert rows and "cats" in rows[0]["label"]   # opt-in verbose keeps it
 
 
 def test_plain_dictation_never_triggers_action(monkeypatch):

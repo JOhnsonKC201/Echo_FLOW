@@ -27,19 +27,48 @@ Design choices that keep it local-first and dependency-free:
 """
 from __future__ import annotations
 
+import hashlib
 import os
+import threading
+import time
+import uuid
 
 import numpy as np
 
 from . import intent_model as _im
 from .intent_seed import LABEL_SPEC, SEED
 
-# Bump when the artifact format, the embed-input transform, or seed semantics
-# change so a stale cache on disk is ignored (fails the version check → retrain)
-# rather than mis-loaded. v2: embed input goes through prepare_text (train/serve
-# consistency) instead of raw seed text.
-ARTIFACT_VERSION = 2
+# Bump when the artifact FORMAT or the embed-input transform changes, so a stale
+# cache on disk is ignored (fails the version check → retrain) rather than
+# mis-loaded. v2: embed input goes through prepare_text (train/serve
+# consistency) instead of raw seed text. v3: enriched seed corpus. v4: the
+# artifact carries a `seed_id` (see seed_fingerprint) — a corpus edit now
+# invalidates the cache on its own, so this no longer tracks seed changes.
+ARTIFACT_VERSION = 4
 DEFAULT_ARTIFACT_PATH = os.path.join("data", "intent_model.npz")
+
+
+def seed_fingerprint(seed: "list[tuple[str, str]]") -> str:
+    """A stable content hash of a training corpus, stamped into the artifact.
+
+    The cache used to be guarded only by ``ARTIFACT_VERSION``, which a human had
+    to remember to bump whenever the seed changed. Forgetting was silent and
+    permanent: every install with a cached ``intent_model.npz`` would keep
+    serving a classifier fit on the OLD corpus, so a corpus improvement shipped
+    to nobody. Fingerprinting the corpus makes that self-correcting.
+
+    Order-sensitive, because the fit is: gradient descent walks the rows in
+    order, so a reordered corpus is a different model. Uses sha256 rather than
+    ``hash()``, whose per-process randomization would make a valid cache look
+    stale on every restart.
+    """
+    h = hashlib.sha256()
+    for text, label in seed:
+        h.update(text.encode("utf-8"))
+        h.update(b"\x1f")           # unit separator: keeps ("ab","c") ≠ ("a","bc")
+        h.update(label.encode("utf-8"))
+        h.update(b"\x1e")           # record separator
+    return h.hexdigest()[:16]
 
 
 def prepare_text(body: str) -> str:
@@ -81,20 +110,45 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
     return e / e.sum(axis=-1, keepdims=True)
 
 
+def _replace_with_retry(tmp: str, path: str, attempts: int = 10) -> None:
+    """``os.replace``, retried briefly on a transient Windows denial.
+
+    POSIX ``rename()`` succeeds regardless of open handles, which is what the
+    write-then-rename pattern assumes. Windows instead raises
+    ``PermissionError`` (WinError 5) while the destination is momentarily open —
+    a reader inside ``load()``'s ``np.load`` context, or another writer's
+    replace in flight. This is an app that runs on Windows and whose own docs
+    recommend retraining (`scripts/train_intent.py`) while it is running, so the
+    condition is reachable and transient: back off briefly rather than fail.
+    """
+    for attempt in range(attempts):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+
+
 class SoftmaxRegression:
     """A tiny multinomial logistic regression over fixed embeddings."""
 
     def __init__(self, classes: "list[str]", W: np.ndarray, b: np.ndarray,
-                 embedder_id: str) -> None:
+                 embedder_id: str, seed_id: str = "") -> None:
         self.classes = list(classes)
         self.W = W                      # (C, d)
         self.b = b                      # (C,)
         self.embedder_id = embedder_id
+        # Which shipped-corpus revision this was fit against (see
+        # seed_fingerprint). "" = unknown provenance → treated as stale.
+        self.seed_id = seed_id
 
     @classmethod
     def fit(cls, X: np.ndarray, labels: "list[str]", embedder_id: str, *,
             epochs: int = 600, lr: float = 5.0, l2: float = 1e-3,
-            classes: "list[str] | None" = None) -> "SoftmaxRegression":
+            classes: "list[str] | None" = None,
+            seed_id: str = "") -> "SoftmaxRegression":
         X = np.asarray(X, dtype=np.float64)
         n, d = X.shape
         classes = list(classes) if classes else sorted(set(labels))
@@ -112,7 +166,7 @@ class SoftmaxRegression:
             gB = diff.mean(axis=0)              # (C,)
             W -= lr * gW
             b -= lr * gB
-        return cls(classes, W, b, embedder_id)
+        return cls(classes, W, b, embedder_id, seed_id)
 
     def predict_one(self, vec: np.ndarray) -> "tuple[str, float]":
         logits = self.W @ np.asarray(vec, dtype=np.float64) + self.b
@@ -124,15 +178,29 @@ class SoftmaxRegression:
         d = os.path.dirname(path)
         if d:
             os.makedirs(d, exist_ok=True)
-        np.savez(
-            path, W=self.W.astype(np.float32), b=self.b.astype(np.float32),
-            classes=np.array(self.classes),           # unicode array, not object
-            embedder_id=np.array(self.embedder_id),
-            version=np.array(ARTIFACT_VERSION),
-        )
-        # np.savez appends .npz; normalize so callers find the file at `path`.
-        if not os.path.exists(path) and os.path.exists(path + ".npz"):
-            os.replace(path + ".npz", path)
+        # Write-then-rename so a concurrent reader never sees a partial file.
+        # The tmp name ends in .npz so np.savez doesn't append another suffix.
+        # It must be unique per WRITER, not per process: the pid alone is
+        # identical for two threads in one app (warm_in_background racing the
+        # first dictation), so they wrote the same temp file and the loser's
+        # `finally` cleanup deleted the file the winner had just renamed in —
+        # leaving no artifact at all. uuid4 covers threads and processes alike.
+        tmp = f"{path}.{os.getpid()}.{uuid.uuid4().hex}.tmp.npz"
+        try:
+            np.savez(
+                tmp, W=self.W.astype(np.float32), b=self.b.astype(np.float32),
+                classes=np.array(self.classes),       # unicode array, not object
+                embedder_id=np.array(self.embedder_id),
+                seed_id=np.array(self.seed_id),
+                version=np.array(ARTIFACT_VERSION),
+            )
+            _replace_with_retry(tmp, path)
+        finally:
+            if os.path.exists(tmp):    # savez/replace failed part-way
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
 
     @classmethod
     def load(cls, path: str) -> "SoftmaxRegression":
@@ -141,7 +209,8 @@ class SoftmaxRegression:
                 raise ValueError("intent model artifact version mismatch")
             classes = [str(c) for c in z["classes"].tolist()]
             return cls(classes, z["W"].astype(np.float64),
-                       z["b"].astype(np.float64), str(z["embedder_id"]))
+                       z["b"].astype(np.float64), str(z["embedder_id"]),
+                       str(z["seed_id"]))
 
 
 # --- Slot extraction for slotted intents -------------------------------------
@@ -196,6 +265,7 @@ class EmbeddingPredictor:
         self._seed = seed
         self._model: "SoftmaxRegression | None" = None
         self._ready = False
+        self._load_lock = threading.Lock()
 
     def _get_embedder(self):
         if self._embedder is None:
@@ -203,30 +273,40 @@ class EmbeddingPredictor:
         return self._embedder
 
     def _ensure_ready(self) -> None:
+        # Double-checked: warm_in_background and the first live predict can
+        # reach here concurrently; the seed fit + artifact write must be
+        # single-flight or the second thread refits (wasted CPU) and both
+        # write the cache at once.
         if self._ready:
             return
-        emb = self._get_embedder()
-        emb_id = emb.name()
-        # Reuse a cached artifact only if it was built with the same embedder.
-        if self._path and os.path.isfile(self._path):
-            try:
-                clf = SoftmaxRegression.load(self._path)
-                if clf.embedder_id == emb_id:
-                    self._model = clf
-                    self._ready = True
-                    return
-            except Exception:   # noqa: BLE001 — stale/corrupt cache → retrain
-                pass
-        texts = [prepare_text(t) for t, _ in self._seed]
-        labels = [lbl for _, lbl in self._seed]
-        X = emb.embed_many(texts)
-        self._model = SoftmaxRegression.fit(X, labels, emb_id)
-        if self._path:
-            try:
-                self._model.save(self._path)
-            except Exception:   # noqa: BLE001 — caching is best-effort
-                pass
-        self._ready = True
+        with self._load_lock:
+            if self._ready:
+                return
+            emb = self._get_embedder()
+            emb_id = emb.name()
+            seed_id = seed_fingerprint(self._seed)
+            # Reuse a cached artifact only if it was built with the same embedder
+            # AND against the same corpus revision. Without the seed check, an
+            # edited corpus would keep serving the previously-cached model.
+            if self._path and os.path.isfile(self._path):
+                try:
+                    clf = SoftmaxRegression.load(self._path)
+                    if clf.embedder_id == emb_id and clf.seed_id == seed_id:
+                        self._model = clf
+                        self._ready = True
+                        return
+                except Exception:   # noqa: BLE001 — stale/corrupt cache → retrain
+                    pass
+            texts = [prepare_text(t) for t, _ in self._seed]
+            labels = [lbl for _, lbl in self._seed]
+            X = emb.embed_many(texts)
+            self._model = SoftmaxRegression.fit(X, labels, emb_id, seed_id=seed_id)
+            if self._path:
+                try:
+                    self._model.save(self._path)
+                except Exception:   # noqa: BLE001 — caching is best-effort
+                    pass
+            self._ready = True
 
     def warm(self) -> None:
         """Force the embedder + model to load now (e.g. from a warmup thread)."""
@@ -264,18 +344,27 @@ class EmbeddingPredictor:
 
 _MODEL_PREDICTOR: "EmbeddingPredictor | None" = None
 _MODEL_PATH: "str | None" = None
+_GET_LOCK = threading.Lock()
 
 
 def get_model_predictor(artifact_path: "str | None" = None) -> EmbeddingPredictor:
     """Return the process-wide EmbeddingPredictor, constructing (not loading) it
     once per artifact path. The heavy embedder/model load happens lazily on the
-    first ``predict``."""
+    first ``predict``.
+
+    The check-and-construct is locked because ``warm_in_background`` races the
+    first live dictation into here. Two instances would each get their own
+    ``_load_lock``, so EmbeddingPredictor's single-flight would guarantee
+    nothing across them: both would fit the seed and write the same artifact
+    concurrently.
+    """
     global _MODEL_PREDICTOR, _MODEL_PATH
     path = artifact_path or DEFAULT_ARTIFACT_PATH
-    if _MODEL_PREDICTOR is None or _MODEL_PATH != path:
-        _MODEL_PREDICTOR = EmbeddingPredictor(artifact_path=path)
-        _MODEL_PATH = path
-    return _MODEL_PREDICTOR
+    with _GET_LOCK:
+        if _MODEL_PREDICTOR is None or _MODEL_PATH != path:
+            _MODEL_PREDICTOR = EmbeddingPredictor(artifact_path=path)
+            _MODEL_PATH = path
+        return _MODEL_PREDICTOR
 
 
 def reset_model_predictor() -> None:

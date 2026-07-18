@@ -108,6 +108,26 @@
 
 <div class="card">
   <h2>Recent actions <span class="muted small num">{{ data.recent|length }}</span></h2>
+  {% if data.intent %}
+    <div class="muted small" style="margin: 4px 0 10px;">
+      Intent model ({{ data.intent.mode }}, last {{ data.intent.days }} days):
+      {%- if data.intent.hits.n %}
+        agreed with the regex on <span class="num">{{ data.intent.hits.agree }}/{{ data.intent.hits.n }}</span> commands
+        (<span class="num">{{ data.intent.hits.args_match }}</span> exact)
+        {%- if data.intent.shadow.n or data.intent.recovered.n %};{% endif %}
+      {%- endif %}
+      {%- if data.intent.shadow.n %}
+        would have recovered <span class="num">{{ data.intent.shadow.resolved }}/{{ data.intent.shadow.n }}</span> missed commands
+        {%- if data.intent.recovered.n %};{% endif %}
+      {%- endif %}
+      {%- if data.intent.recovered.n %}
+        recovered live: <span class="num">{{ data.intent.recovered.ok }}/{{ data.intent.recovered.n }}</span> ok
+      {%- endif %}
+      {%- if not (data.intent.hits.n or data.intent.shadow.n or data.intent.recovered.n) %}
+        no measurements yet — speak a few prefixed commands to collect them
+      {%- endif %}.
+    </div>
+  {% endif %}
   {% if data.recent %}
     <table class="kv-table">
       <thead>
@@ -119,13 +139,29 @@
             <td class="num">{{ r.ts_human }}</td>
             <td>{{ r.body }}</td>
             <td>
-              <code>{{ r.handler }}</code>
+              {% if r.is_shadow %}
+                <code>{{ (r.model.action if r.model else none) or (r.model.handler if r.model else '?') }}</code>
+                <span class="pill">shadow</span>
+              {% else %}
+                <code>{{ r.handler }}</code>
+              {% endif %}
               {% if r.label %}<span class="muted small">({{ r.label }})</span>{% endif %}
             </td>
             <td>
-              {% if r.ok %}<span style="color: var(--accent);">✓</span>{% else %}<span style="color: var(--danger);">✕</span>{% endif %}
+              {% if r.is_shadow %}<span class="muted">—</span>
+              {% elif r.ok %}<span style="color: var(--accent);">✓</span>
+              {% else %}<span style="color: var(--danger);">✕</span>{% endif %}
             </td>
-            <td class="muted small">{% if not r.ok and r.error %}{{ r.error }}{% else %}{{ r.args }}{% endif %}</td>
+            <td class="muted small">
+              {%- if r.is_shadow and r.model -%}
+                {{ 'would fire' if r.model.resolved else 'target not configured' }} · conf {{ '%.2f'|format(r.model.conf) }}
+              {%- elif not r.ok and r.error -%}
+                {{ r.error }}
+              {%- else -%}
+                {{ r.args }}
+                {%- if r.model and 'agree' in r.model %} · model {{ 'agrees' if r.model.agree else 'disagrees' }}{% endif -%}
+              {%- endif -%}
+            </td>
           </tr>
         {% endfor %}
       </tbody>

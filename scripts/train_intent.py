@@ -112,7 +112,14 @@ def do_train(args):
     emb = ic.RepoEmbedder()
     print(f"  embedding {len(texts)} utterances with {emb.name()} ...")
     X = emb.embed_many([ic.prepare_text(t) for t in texts])
-    clf = ic.SoftmaxRegression.fit(X, labels, emb.name())
+    # Stamp the SHIPPED corpus revision, not `data`: with --augment the dataset
+    # also carries mined history, but the app validates the cache against its own
+    # SEED. Fingerprinting `data` would make every augmented artifact look stale
+    # and get silently refit from the bare seed, throwing the mining away. This
+    # records "built against this seed revision (possibly plus extra data)", so a
+    # real seed change still invalidates it.
+    clf = ic.SoftmaxRegression.fit(X, labels, emb.name(),
+                                   seed_id=ic.seed_fingerprint(SEED))
     clf.save(args.out)
     # train accuracy as a sanity check
     preds = [clf.predict_one(X[i])[0] for i in range(len(texts))]

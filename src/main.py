@@ -314,6 +314,14 @@ class App:
                 ),
             )
             threading.Thread(target=self.retriever.warm, daemon=True).start()
+        # Pre-load the intent-model embedding head (only when the feature is on
+        # with the model backend) so the first regex-miss recovery doesn't pay
+        # the sentence-transformers cold start. No-op otherwise.
+        try:
+            from . import intent_model as _intent
+            _intent.warm_in_background(cfg)
+        except Exception as e:
+            _log.debug("intent model warmup skipped: %s", e)
         self.learner = Learner(
             hc["db_path"],
             LearningConfig(
@@ -875,43 +883,64 @@ class App:
             # through and is typed normally, so plain dictation is never eaten.
             body = _va.strip_prefix(cmd_text, prefix)
             prefixed = bool(body)   # empty body (bare "jarvis,") is not a command
+            verbose = exp_cfg.get("action_log_verbose")
+            im_mode = exp_cfg.get("action_intent_model")
             match = None
+            # MODEL-SHADOW: the intent model's JSON record for this utterance,
+            # persisted alongside the action row (or as an intent_shadow row on
+            # a miss) so agreement can be measured online. None = model not run.
+            model_pred_json = None
             if prefixed:
                 match = _va.classify(body, self.cfg)
                 # Regex miss on an explicit ("computer, …") command: optionally
                 # let the local intent model recover a mis-phrased action
-                # ("launch spotify"). Off by default; 'shadow' logs the guess
-                # without executing so precision can be measured first. A
+                # ("launch spotify"). Off by default; 'shadow' persists the
+                # guess without executing so precision can be measured first. A
                 # recovered match still flows through the same dispatch + guards
                 # as a regex hit — the model only ever proposes, never bypasses.
-                im_mode = exp_cfg.get("action_intent_model")
                 if match is None and im_mode:
+                    res = None
                     try:
                         from . import intent_model as _im
-                        # The two backends live on different confidence scales,
-                        # so each has its own floor (keyword ~0.75, model ~0.4).
-                        if str(exp_cfg.get("action_intent_backend",
-                                           "keyword")).strip().lower() == "model":
-                            floor = exp_cfg.get("action_intent_model_min_conf",
-                                                _im.DEFAULT_MODEL_MIN_CONF)
-                        else:
-                            floor = exp_cfg.get("action_intent_min_conf",
-                                                _im.DEFAULT_MIN_CONF)
                         res = _im.infer(body, self.cfg, self.history,
-                                        min_conf=floor)
+                                        min_conf=_im.floor_for_cfg(exp_cfg))
                     except Exception as e:   # never let the fallback break dictation
                         _log.debug("intent model error: %s", e)
-                        res = None
-                    if res is not None and res.match is not None:
-                        if im_mode == "shadow":
-                            shown = body if exp_cfg.get("action_log_verbose") else "<redacted>"
+                    if res is not None and res.match is not None and im_mode != "shadow":
+                        _log.info("intent model recovered %s (conf=%.2f)",
+                                  res.match.name, res.prediction.confidence)
+                        match = res.match
+                        model_pred_json = json.dumps(_im.agreement_record(
+                            res, _im.backend_for_cfg(exp_cfg), recovered=True))
+                    # gated ⇒ a non-abstain prediction (infer() never gates "none")
+                    elif im_mode == "shadow" and res is not None and res.gated:
+                        if res.match is not None:
+                            shown = body if verbose else "<redacted>"
                             _log.info(
                                 "intent shadow: %r → %s (conf=%.2f) [not executed]",
                                 shown, res.match.name, res.prediction.confidence)
-                        else:
-                            _log.info("intent model recovered %s (conf=%.2f)",
-                                      res.match.name, res.prediction.confidence)
-                            match = res.match
+                        # Persist the would-have-fired guess (resolved or refused
+                        # by the allowlist) under the intent_shadow sentinel —
+                        # never executed, only measured.
+                        if self.history is not None:
+                            try:
+                                rec = _im.agreement_record(
+                                    res, _im.backend_for_cfg(exp_cfg))
+                                label = None
+                                if res.match is not None:
+                                    label = (res.match.label if verbose
+                                             else _va.redact_label(
+                                                 res.match.name, res.match.label,
+                                                 res.match.args, self.cfg,
+                                                 self.history))
+                                self.history.log_action(
+                                    body=(body if verbose
+                                          else "<redacted len=%d>" % len(body or "")),
+                                    handler="intent_shadow", args_json=None,
+                                    label=label, ok=True, error=None,
+                                    model_pred=json.dumps(rec))
+                            except Exception as e:
+                                _log.warning("shadow log_action failed: %s", e)
             elif not exp_cfg.get("action_require_prefix", True):
                 free_body = (raw or cleaned or "").strip()
                 # Try the LITERAL utterance first, then the same utterance with a
@@ -942,14 +971,28 @@ class App:
                     ok, msg = _va.dispatch(match, ctx)
                     _log.info("voice action: %s (%s) ok=%s", match.label, match.name, ok)
                     wnotify.notify("Echo Flow", msg, "info" if ok else "warning")
+                    # MODEL-SHADOW on a regex hit: score the model on the same
+                    # utterance and store its agreement on this executed row.
+                    # Runs AFTER dispatch so the action never waits on it; the
+                    # regex result is the ground truth the model is graded on.
+                    if im_mode == "shadow" and model_pred_json is None:
+                        try:
+                            from . import intent_model as _im
+                            res = _im.infer(body, self.cfg, self.history,
+                                            min_conf=_im.floor_for_cfg(exp_cfg))
+                            model_pred_json = json.dumps(_im.agreement_record(
+                                res, _im.backend_for_cfg(exp_cfg),
+                                regex_match=match))
+                        except Exception as e:
+                            _log.debug("intent shadow compare failed: %s", e)
                     if self.history is not None:
                         try:
                             # SEC-3: redact sensitive args (queries, note bodies,
                             # URLs → host) unless verbose logging is opted in.
-                            verbose = exp_cfg.get("action_log_verbose")
                             args_for_log = (
                                 match.args if verbose
-                                else _va.redact_args(match.name, match.args)
+                                else _va.redact_args(match.name, match.args,
+                                                     self.cfg, self.history)
                             )
                             # `body` is the full spoken utterance — redact it too
                             # unless verbose, so the raw transcription doesn't land
@@ -958,11 +1001,21 @@ class App:
                                 body if verbose
                                 else "<redacted len=%d>" % len(body or "")
                             )
+                            # The label re-leaks what redact_args removes
+                            # ("Search the web for “…”"), so it gets the same
+                            # verbose gate (the toast above keeps the full text).
+                            label_for_log = (
+                                match.label if verbose
+                                else _va.redact_label(match.name, match.label,
+                                                      match.args, self.cfg,
+                                                      self.history)
+                            )
                             self.history.log_action(
                                 body=body_for_log, handler=match.name,
                                 args_json=json.dumps(args_for_log),
-                                label=match.label, ok=ok,
+                                label=label_for_log, ok=ok,
                                 error=None if ok else msg,
+                                model_pred=model_pred_json,
                             )
                         except Exception as e:
                             _log.warning("log_action failed: %s", e)

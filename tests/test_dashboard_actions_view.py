@@ -67,6 +67,80 @@ def test_page_data_picks_up_recent_actions(tmp_path):
 def test_page_data_no_history_safe(tmp_path):
     data = actions_view.page_data({"experimental": {"action_mode": True}}, None)
     assert data["recent"] == []
+    assert data["intent"] is None
+
+
+# --- MODEL-SHADOW: intent stats + shadow rows on the page ---------------------
+
+def _shadow_fixture(tmp_path):
+    import json
+    cfg = {"experimental": {"action_mode": True, "command_prefix": "computer",
+                            "action_intent_model": "shadow"}}
+    h = History(str(tmp_path / "h.db"))
+    # An executed regex hit the model agreed with…
+    h.log_action(body="<redacted len=16>", handler="open_url",
+                 args_json='{"url": "https://github.com"}',
+                 label="Open https://github.com", ok=True,
+                 model_pred=json.dumps(
+                     {"backend": "keyword", "handler": "open_url", "conf": 0.88,
+                      "gated": True, "resolved": True, "action": "open_url",
+                      "agree": True, "args_match": True}))
+    # …and a regex miss the model would have recovered (not executed).
+    h.log_action(body="<redacted len=23>", handler="intent_shadow",
+                 args_json=None, label=None, ok=True,
+                 model_pred=json.dumps(
+                     {"backend": "keyword", "handler": "open_url", "conf": 0.88,
+                      "gated": True, "resolved": True, "action": "open_url"}))
+    return cfg, h
+
+
+def test_page_data_intent_stats_in_shadow_mode(tmp_path):
+    cfg, h = _shadow_fixture(tmp_path)
+    data = actions_view.page_data(cfg, h)
+    assert data["intent"]["mode"] == "shadow"
+    assert data["intent"]["hits"] == {"n": 1, "agree": 1, "args_match": 1}
+    assert data["intent"]["shadow"] == {"n": 1, "resolved": 1}
+    # Recent rows are enriched for the template: parsed prediction + shadow flag.
+    by_handler = {r["handler"]: r for r in data["recent"]}
+    shadow_row = by_handler["intent_shadow"]
+    assert shadow_row["is_shadow"] is True
+    assert shadow_row["model"]["action"] == "open_url"
+    hit_row = by_handler["open_url"]
+    assert hit_row["is_shadow"] is False
+    assert hit_row["model"]["agree"] is True
+
+
+def test_page_data_intent_none_when_model_off(tmp_path):
+    cfg = {"experimental": {"action_mode": True}}
+    h = History(str(tmp_path / "h.db"))
+    assert actions_view.page_data(cfg, h)["intent"] is None
+
+
+def test_page_data_tolerates_malformed_model_pred(tmp_path):
+    cfg = {"experimental": {"action_mode": True, "action_intent_model": True}}
+    h = History(str(tmp_path / "h.db"))
+    h.log_action(body="x", handler="open_app", args_json=None,
+                 model_pred="{not json")
+    data = actions_view.page_data(cfg, h)
+    assert data["recent"][0]["model"] is None    # parse failure → no enrichment
+
+
+def test_actions_page_renders_shadow_row_and_stats(tmp_path):
+    client, app_ref = _client(tmp_path)
+    exp = app_ref.cfg.setdefault("experimental", {})
+    exp["action_mode"] = True
+    exp["action_intent_model"] = "shadow"
+    import json as _json
+    app_ref.history.log_action(
+        body="<redacted len=23>", handler="intent_shadow", args_json=None,
+        label=None, ok=True,
+        model_pred=_json.dumps({"backend": "keyword", "handler": "open_url",
+                                "conf": 0.88, "gated": True, "resolved": True,
+                                "action": "open_url"}))
+    r = client.get("/actions", headers=HOST)
+    assert r.status_code == 200
+    assert b">shadow<" in r.data          # the not-executed pill
+    assert b"Intent model" in r.data      # the agreement summary line
 
 
 # --- Route -------------------------------------------------------------------
