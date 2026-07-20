@@ -254,6 +254,10 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "action_email_url": exp.get("action_email_url", "https://mail.google.com"),
             "action_intent_model": _intent_mode_str(exp.get("action_intent_model", False)),
             "action_intent_min_conf": _intent_conf(exp.get("action_intent_min_conf", 0.75)),
+            "humanize": _intent_mode_str(exp.get("humanize", False)),
+            "humanize_use_cloud": bool(exp.get("humanize_use_cloud", False)),
+            "humanize_log_verbose": bool(exp.get("humanize_log_verbose", False)),
+            "humanize_min_sim": _intent_conf(exp.get("humanize_min_sim", 0.85)),
         }, supported_commands=_cmds.list_supported(),
            supported_actions=_va.list_supported(cfg))
 
@@ -305,6 +309,23 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
                 "/settings/experimental?flash=intent confidence must be "
                 "between 0 and 1."
             )
+        # "My Voice" humanize: same tri-state → real YAML type mapping, plus a
+        # bounded similarity floor (0–1).
+        hz_choice = (f.get("humanize", "off") or "off").strip().lower()
+        hz_value = {"off": False, "on": True, "shadow": "shadow"}.get(hz_choice, False)
+        raw_sim = (f.get("humanize_min_sim", "") or "").strip()
+        try:
+            hz_sim = float(raw_sim) if raw_sim else 0.85
+        except ValueError:
+            return redirect(
+                "/settings/experimental?flash=voice similarity floor must be a "
+                "number between 0 and 1."
+            )
+        if not (0.0 <= hz_sim <= 1.0):
+            return redirect(
+                "/settings/experimental?flash=voice similarity floor must be "
+                "between 0 and 1."
+            )
         errs = _save_scalars(app_ref, [
             ("experimental.press_enter_command", _checkbox(f, "press_enter_command")),
             ("experimental.command_mode", _checkbox(f, "command_mode")),
@@ -313,6 +334,10 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             ("experimental.action_email_url", email_url),
             ("experimental.action_intent_model", im_value),
             ("experimental.action_intent_min_conf", im_conf),
+            ("experimental.humanize", hz_value),
+            ("experimental.humanize_use_cloud", _checkbox(f, "humanize_use_cloud")),
+            ("experimental.humanize_log_verbose", _checkbox(f, "humanize_log_verbose")),
+            ("experimental.humanize_min_sim", hz_sim),
         ], log)
         if errs:
             return redirect(

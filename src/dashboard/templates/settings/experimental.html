@@ -70,6 +70,34 @@
           <input type="number" name="action_intent_min_conf" value="{{ values.action_intent_min_conf }}" min="0" max="1" step="0.05" autocomplete="off">
           <span class="set-field-hint">0–1. The model must clear this to act (default 0.75). Tune with <code>scripts/eval_intent.py</code>.</span>
         </label>
+
+        <label class="set-field">
+          <span class="set-field-label">My Voice (humanize)</span>
+          <select name="humanize">
+            <option value="off" {% if values.humanize == 'off' %}selected{% endif %}>Off</option>
+            <option value="on" {% if values.humanize == 'on' %}selected{% endif %}>On — rewrite dictation in my voice</option>
+            <option value="shadow" {% if values.humanize == 'shadow' %}selected{% endif %}>Shadow — preview without changing my text</option>
+          </select>
+          <span class="set-field-hint">After cleanup, rewrites the text in your own writing voice. Light-touch: meaning is preserved and the rewrite is dropped if it drifts. Seed it by pasting samples on the <a href="/myvoice">My Voice</a> page, where shadow previews also show.</span>
+        </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Voice meaning floor</span>
+          <input type="number" name="humanize_min_sim" value="{{ values.humanize_min_sim }}" min="0" max="1" step="0.05" autocomplete="off">
+          <span class="set-field-hint">0–1. Keep the rewrite only if it stays at least this similar in meaning to the cleaned text (default 0.85). Higher = safer meaning, less voice.</span>
+        </label>
+
+        <label class="set-field set-field-checkbox">
+          <input type="checkbox" name="humanize_use_cloud" value="1" {% if values.humanize_use_cloud %}checked{% endif %}>
+          <span class="set-field-label">Use a cloud model for My Voice</span>
+          <span class="set-field-hint">Stronger mimicry via Groq/Anthropic. Also requires <code>cleanup.allow_cloud_cleanup</code>; otherwise it stays fully local and nothing leaves your machine.</span>
+        </label>
+
+        <label class="set-field set-field-checkbox">
+          <input type="checkbox" name="humanize_log_verbose" value="1" {% if values.humanize_log_verbose %}checked{% endif %}>
+          <span class="set-field-label">Verbose My Voice logs</span>
+          <span class="set-field-hint">Write the full rewritten text to the log files. Off by default, which redacts prose to a length placeholder. (The My Voice review page always shows the real text.)</span>
+        </label>
       </div>
 
       <div class="set-actions">

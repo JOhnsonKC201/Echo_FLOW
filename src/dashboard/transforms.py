@@ -47,6 +47,20 @@ BUILTINS = [
         ),
         "hotkey": None,
     },
+    # "My Voice" is SPECIAL: unlike the static transforms above, main.py
+    # intercepts it by name and runs the live humanize pass (Cleaner.humanize)
+    # over the CLEANED text using the user's voice profile — so it reflects
+    # freshly-pasted samples and runs after cleanup, not as a raw override.
+    # This prompt is documentation + a schema-valid non-empty fallback.
+    {
+        "name": "My Voice",
+        "system_prompt": (
+            "Rewrite this in my own writing voice, using my writing samples as "
+            "the reference. Keep the meaning exactly the same. Output only the "
+            "rewritten text."
+        ),
+        "hotkey": None,
+    },
 ]
 
 

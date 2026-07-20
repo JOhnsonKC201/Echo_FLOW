@@ -23,6 +23,15 @@ def test_seed_builtins_idempotent(tmp_path):
     assert "Polish" in names and "Prompt Engineer" in names
 
 
+def test_my_voice_builtin_seeds_and_is_protected(tmp_path):
+    h = _h(tmp_path)
+    tf.seed_builtins(h.conn)
+    mv = next((t for t in tf.list_transforms(h.conn) if t["name"] == "My Voice"), None)
+    assert mv is not None and mv["builtin"] is True
+    with pytest.raises(ValueError):
+        tf.delete_transform(h.conn, mv["id"])
+
+
 def test_add_custom_transform(tmp_path):
     h = _h(tmp_path)
     tid = tf.add_transform(h.conn, name="Casual chat", system_prompt="Be brief.")
