@@ -26,6 +26,28 @@
 </div>
 
 <div class="card">
+  <h2>Try it</h2>
+  <div class="muted small" style="margin-bottom: 8px;">
+    Paste a sentence and see how My Voice would rewrite it — using your current samples.
+    Nothing is saved or dictated.
+  </div>
+  <form method="post" action="/myvoice/preview">
+    <textarea name="preview_text" rows="3" placeholder="Type or paste a sentence to preview…">{{ preview_input }}</textarea>
+    <div style="margin-top: 8px;"><button type="submit" class="primary">Preview my voice</button></div>
+  </form>
+  {% if preview_ran %}
+    {% if preview_result %}
+      <div class="muted small" style="margin-top: 10px;">In your voice:</div>
+      <div style="white-space: pre-wrap; margin-top: 4px;">{{ preview_result }}</div>
+    {% elif not has_profile %}
+      <div class="muted small" style="margin-top: 10px;">Add a writing sample below first, then try again.</div>
+    {% else %}
+      <div class="muted small" style="margin-top: 10px;">No confident rewrite — kept as-is (already in your voice, or too different to change safely). Make sure Ollama is running.</div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>Add a writing sample</h2>
   <div class="muted small" style="margin-bottom: 8px;">
     Paste a paragraph or two you actually wrote — an email, a message, a note. A few good

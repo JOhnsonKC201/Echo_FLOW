@@ -25,17 +25,18 @@ def _h(tmp_path):
 
 
 class _App:
-    def __init__(self, history, humanize="shadow"):
+    def __init__(self, history, humanize="shadow", cleaner=None):
         self.cfg = {"dashboard": {"host": "127.0.0.1", "port": 8766},
                     "experimental": {"humanize": humanize}}
         self.history = history
         self.retriever = None
+        self.cleaner = cleaner
 
 
-def _client(tmp_path, humanize="shadow"):
+def _client(tmp_path, humanize="shadow", cleaner=None):
     from src.dashboard.app import make_app
     h = _h(tmp_path)
-    app_ref = _App(h, humanize)
+    app_ref = _App(h, humanize, cleaner)
     return make_app(app_ref).test_client(), app_ref, h
 
 
@@ -97,3 +98,38 @@ def test_myvoice_renders_profile_preview(tmp_path):
     r = client.get("/myvoice", headers=HDR)
     assert b"What Echo Flow learned" in r.data
     assert b"a distinctive phrase I always use" in r.data
+
+
+def test_myvoice_preview_shows_result(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize.return_value = "the sentence, in my own voice"
+    client, _, h = _client(tmp_path, cleaner=cleaner)
+    vs.add_sample(h.conn, "how I write, sample text")
+    r = client.post("/myvoice/preview", headers=HDR,
+                    data={"preview_text": "make this sound like me"})
+    assert b"In your voice:" in r.data
+    assert b"the sentence, in my own voice" in r.data
+    # humanize was called with the pasted text
+    assert cleaner.humanize.call_args.args[0] == "make this sound like me"
+
+
+def test_myvoice_preview_without_profile_hints(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    client, _, _ = _client(tmp_path, cleaner=cleaner)     # no samples
+    r = client.post("/myvoice/preview", headers=HDR,
+                    data={"preview_text": "anything"})
+    assert b"Add a writing sample below first" in r.data
+    cleaner.humanize.assert_not_called()                  # skipped: empty profile
+
+
+def test_myvoice_preview_declined_rewrite(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize.return_value = None                   # guard declined
+    client, _, h = _client(tmp_path, cleaner=cleaner)
+    vs.add_sample(h.conn, "sample")
+    r = client.post("/myvoice/preview", headers=HDR,
+                    data={"preview_text": "already fine"})
+    assert b"No confident rewrite" in r.data

@@ -583,7 +583,8 @@ def make_app(app_ref, bound_port: int | None = None):
 
     # ---- My Voice (humanize samples + shadow review) -----------------------
 
-    def _myvoice_render(flash=""):
+    def _myvoice_render(flash="", preview_input="", preview_result=None,
+                        preview_ran=False):
         from . import voice_samples as _vs
         from .. import voice_profile as _vp
         samples, shadow_rows, stats = [], [], {}
@@ -603,7 +604,9 @@ def make_app(app_ref, bound_port: int | None = None):
             theme=dcfg.get("theme", "dark"),
             samples=samples, shadow_rows=shadow_rows, stats=stats,
             humanize_mode=_vp.humanize_mode_for_cfg(exp),
-            profile_preview=profile_preview,
+            profile_preview=profile_preview, has_profile=bool(profile_preview),
+            preview_input=preview_input, preview_result=preview_result,
+            preview_ran=preview_ran,
             flash=flash,
         )
 
@@ -611,6 +614,33 @@ def make_app(app_ref, bound_port: int | None = None):
     def myvoice():
         from flask import request as _req
         return _myvoice_render(flash=_req.args.get("flash", ""))
+
+    @flask_app.post("/myvoice/preview")
+    def myvoice_preview():
+        # Run the humanize pass on a sample sentence so the user can SEE their
+        # voice applied without dictating. Never changes anything; a None result
+        # means the guards declined (no confident, on-meaning rewrite).
+        from .. import voice_profile as _vp
+        from flask import request as _req
+        text = (_req.form.get("preview_text", "") or "").strip()
+        cleaner = getattr(app_ref, "cleaner", None)
+        history = getattr(app_ref, "history", None)
+        result = None
+        if text and cleaner is not None and history is not None:
+            try:
+                profile = _vp.build(history, getattr(app_ref, "retriever", None))
+                if profile:
+                    exp = app_ref.cfg.get("experimental", {}) or {}
+                    use_cloud = (bool(exp.get("humanize_use_cloud")) and bool(
+                        (app_ref.cfg.get("cleanup", {}) or {}).get("allow_cloud_cleanup")))
+                    result = cleaner.humanize(
+                        text, voice_profile=profile, use_cloud=use_cloud,
+                        retriever=getattr(app_ref, "retriever", None),
+                        min_sim=float(exp.get("humanize_min_sim", 0.85)))
+            except Exception as e:
+                _log.warning("myvoice preview failed: %s", e)
+        return _myvoice_render(preview_input=text, preview_result=result,
+                               preview_ran=bool(text))
 
     def _myvoice_conn():
         history = getattr(app_ref, "history", None)
