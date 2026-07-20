@@ -52,6 +52,33 @@ def test_bridge_state_lan_warns():
     assert out["state"] == "lan" and out["warn"] is True
 
 
+def test_humanize_state_local_by_default():
+    assert priv.humanize_state({})["cloud"] is False
+    # on but no cloud opt-in → still local, no egress flag
+    st = priv.humanize_state({"experimental": {"humanize": "on"}})
+    assert st["enabled"] is True and st["cloud"] is False and st["warn"] is False
+
+
+def test_humanize_state_cloud_requires_both_flags():
+    cfg = {"experimental": {"humanize": "on", "humanize_use_cloud": True},
+           "cleanup": {"allow_cloud_cleanup": True}}
+    st = priv.humanize_state(cfg)
+    assert st["cloud"] is True and st["warn"] is True
+    assert "Groq" in st["endpoint"]
+    # missing allow_cloud_cleanup → no egress even with humanize_use_cloud
+    cfg2 = {"experimental": {"humanize": "on", "humanize_use_cloud": True}}
+    assert priv.humanize_state(cfg2)["cloud"] is False
+
+
+def test_ledger_flags_humanize_cloud_egress(tmp_path):
+    cfg = {"experimental": {"humanize": "on", "humanize_use_cloud": True},
+           "cleanup": {"allow_cloud_cleanup": True}}
+    out = priv.ledger(cfg, tmp_path / "m.db", tmp_path / "c.yaml", tmp_path)
+    assert out["humanize"]["cloud"] is True
+    assert "My Voice" in out["egress_provenance"]
+    assert out["egress_30d"] == 0        # still zero measured; note explains opt-in
+
+
 def test_humanize_bytes_thresholds():
     assert priv.humanize_bytes(0) == "0 B"
     assert priv.humanize_bytes(500) == "500 B"

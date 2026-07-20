@@ -245,6 +245,10 @@ experimental:
   action_intent_backend: keyword   # which predictor: 'keyword' (dependency-free verb-synonym rules) or 'model' (learned embedding + logistic-regression head; generalizes to unseen phrasings, uses the local sentence-transformers embedder). Build the model with: python scripts/train_intent.py --train
   action_intent_model_path: "data/intent_model.npz"  # where the trained 'model' backend artifact is cached.
   action_intent_model_min_conf: 0.4  # confidence floor for the 'model' backend (a 13-class softmax; correct predictions cluster ~0.5, so this is lower than the keyword floor). Tune with: python scripts/train_intent.py --eval
+  humanize: false              # "My Voice" — after cleanup, rewrite the text in YOUR writing voice. false | true | shadow. 'shadow' logs what it WOULD produce (dashboard → My Voice) without changing the pasted text, so you can review precision before trusting 'true'. Seed your voice by pasting writing samples on the My Voice page. Light-touch: preserves meaning exactly, and is dropped if it drifts. Off by default.
+  humanize_use_cloud: false    # use a cloud model (Groq/Anthropic) for stronger voice mimicry. ALSO requires cleanup.allow_cloud_cleanup; otherwise the rewrite stays on the local Ollama model and nothing leaves the machine.
+  humanize_log_verbose: false  # log the humanize pass's full text to the rotating log files; default redacts prose to a length placeholder. The dashboard review always shows the real text — this only governs log files.
+  humanize_min_sim: 0.85       # meaning-preservation floor: keep the rewrite only if it stays at least this cosine-similar to the cleaned text. Higher = stricter (safer meaning, less voice).
 
 logging:
   level: "INFO"

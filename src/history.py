@@ -334,6 +334,39 @@ class History:
                 self.conn.execute(stmt)
             except Exception:
                 pass
+        # Step 6: "My Voice" humanize feature (2026-07-20).
+        # voice_samples — user-pasted writing samples that seed the humanize
+        # pass's voice profile. A dashboard-managed collection, like
+        # user_snippets; CRUD lives in src/dashboard/voice_samples.py.
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS voice_samples (
+                id INTEGER PRIMARY KEY,
+                content TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'pasted',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                char_len INTEGER NOT NULL,
+                added_at REAL NOT NULL
+            )
+        """)
+        # humanize_shadow — what the humanize pass WOULD have produced when
+        # experimental.humanize == 'shadow', logged without changing the pasted
+        # text so precision can be reviewed before trusting it. Stored plaintext
+        # (the review UI needs the real text); log-file redaction is separate.
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS humanize_shadow (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts REAL NOT NULL,
+                dictation_id INTEGER,
+                style TEXT,
+                cleaned_text TEXT NOT NULL,
+                humanized_text TEXT NOT NULL,
+                similarity REAL,
+                reviewed INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_humanize_shadow_ts ON humanize_shadow(ts)"
+        )
         self.conn.commit()
         # All single-threaded setup above is done on the raw connection. Now
         # wrap it so every subsequent access — from daemon threads AND the
@@ -452,6 +485,58 @@ class History:
                 hits["args_match"] += 1 if rec.get("args_match") else 0
         return {"days": int(days), "hits": hits, "shadow": shadow,
                 "recovered": recovered}
+
+    # --- "My Voice" humanize shadow (dashboard-reviewed measurement) ----------
+
+    def log_humanize_shadow(self, *, cleaned_text: str, humanized_text: str,
+                            style: str | None = None,
+                            dictation_id: int | None = None,
+                            similarity: float | None = None) -> int:
+        """Append what the humanize pass WOULD have produced (shadow mode).
+        Best-effort — the caller swallows errors, mirroring log_action."""
+        cur = self.conn.execute(
+            "INSERT INTO humanize_shadow(ts, dictation_id, style, cleaned_text, "
+            "humanized_text, similarity, reviewed) VALUES (?,?,?,?,?,?,0)",
+            (time.time(), dictation_id, style, cleaned_text or "",
+             humanized_text or "", similarity),
+        )
+        self.conn.commit()
+        return cur.lastrowid or 0
+
+    def recent_humanize_shadow(self, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT id, ts, dictation_id, style, cleaned_text, humanized_text, "
+            "similarity, reviewed FROM humanize_shadow ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [
+            {"id": r[0], "ts": r[1], "dictation_id": r[2], "style": r[3],
+             "cleaned_text": r[4], "humanized_text": r[5], "similarity": r[6],
+             "reviewed": bool(r[7])}
+            for r in rows
+        ]
+
+    def humanize_shadow_stats(self, days: int = 30) -> dict:
+        """Aggregate the shadow window: how many the meaning-guard would have
+        ACCEPTED (a real change that stayed on-meaning) vs. how many produced no
+        change, plus the average similarity — the online-precision signal the
+        dashboard shows before the user trusts 'on'. Never raises."""
+        cutoff = time.time() - max(0, int(days)) * 86400
+        rows = self.conn.execute(
+            "SELECT cleaned_text, humanized_text, similarity FROM humanize_shadow "
+            "WHERE ts >= ?", (cutoff,),
+        ).fetchall()
+        n = changed = 0
+        sims: list[float] = []
+        for cleaned, humanized, sim in rows:
+            n += 1
+            if (humanized or "") != (cleaned or ""):
+                changed += 1
+            if sim is not None:
+                sims.append(float(sim))
+        avg_sim = round(sum(sims) / len(sims), 4) if sims else None
+        return {"days": int(days), "n": n, "changed": changed,
+                "avg_similarity": avg_sim}
 
     # --- Action Mode user targets (dashboard-managed app/folder shortcuts) ----
 

@@ -53,6 +53,7 @@ SECTIONS = [
     ("snippets", "Snippets", "/snippets", "snippets.html"),
     ("style", "Style", "/style", "style.html"),
     ("transforms", "Transforms", "/transforms", "transforms.html"),
+    ("myvoice", "My Voice", "/myvoice", "myvoice.html"),
     ("commands", "Commands", "/commands", "commands.html"),
     ("actions", "Actions", "/actions", "actions.html"),
     ("scratchpad", "Scratchpad", "/scratchpad", "scratchpad_list.html"),
@@ -579,6 +580,130 @@ def make_app(app_ref, bound_port: int | None = None):
         msg = (f"Imported {r['added']} new, updated {r['updated']}, "
                f"skipped {r['invalid']} malformed.")
         return redirect("/snippets?flash=" + _qp(msg))
+
+    # ---- My Voice (humanize samples + shadow review) -----------------------
+
+    def _myvoice_render(flash="", preview_input="", preview_result=None,
+                        preview_ran=False):
+        from . import voice_samples as _vs
+        from .. import voice_profile as _vp
+        samples, shadow_rows, stats = [], [], {}
+        history = getattr(app_ref, "history", None)
+        profile_preview = ""
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                samples = _vs.list_samples(history.conn)
+                shadow_rows = history.recent_humanize_shadow(25)
+                stats = history.humanize_shadow_stats(30)
+                profile_preview = _vp.build(history, getattr(app_ref, "retriever", None))
+            except Exception as e:
+                _log.warning("myvoice render failed: %s", e)
+        exp = (app_ref.cfg.get("experimental", {}) or {})
+        return render_template(
+            "myvoice.html", sections=SECTIONS, active="myvoice",
+            theme=dcfg.get("theme", "dark"),
+            samples=samples, shadow_rows=shadow_rows, stats=stats,
+            humanize_mode=_vp.humanize_mode_for_cfg(exp),
+            profile_preview=profile_preview, has_profile=bool(profile_preview),
+            preview_input=preview_input, preview_result=preview_result,
+            preview_ran=preview_ran,
+            flash=flash,
+        )
+
+    @flask_app.get("/myvoice")
+    def myvoice():
+        from flask import request as _req
+        return _myvoice_render(flash=_req.args.get("flash", ""))
+
+    @flask_app.post("/myvoice/preview")
+    def myvoice_preview():
+        # Run the humanize pass on a sample sentence so the user can SEE their
+        # voice applied without dictating. Never changes anything; a None result
+        # means the guards declined (no confident, on-meaning rewrite).
+        from .. import voice_profile as _vp
+        from flask import request as _req
+        text = (_req.form.get("preview_text", "") or "").strip()
+        cleaner = getattr(app_ref, "cleaner", None)
+        history = getattr(app_ref, "history", None)
+        result = None
+        if text and cleaner is not None and history is not None:
+            try:
+                profile = _vp.build(history, getattr(app_ref, "retriever", None))
+                if profile:
+                    exp = app_ref.cfg.get("experimental", {}) or {}
+                    use_cloud = (bool(exp.get("humanize_use_cloud")) and bool(
+                        (app_ref.cfg.get("cleanup", {}) or {}).get("allow_cloud_cleanup")))
+                    result = cleaner.humanize(
+                        text, voice_profile=profile, use_cloud=use_cloud,
+                        retriever=getattr(app_ref, "retriever", None),
+                        min_sim=float(exp.get("humanize_min_sim", 0.85)))
+            except Exception as e:
+                _log.warning("myvoice preview failed: %s", e)
+        return _myvoice_render(preview_input=text, preview_result=result,
+                               preview_ran=bool(text))
+
+    def _myvoice_conn():
+        history = getattr(app_ref, "history", None)
+        if history is None or getattr(history, "conn", None) is None:
+            return None
+        return history.conn
+
+    @flask_app.post("/myvoice/add")
+    def myvoice_add():
+        from . import voice_samples as _vs
+        from .. import voice_profile as _vp
+        from flask import request as _req, redirect
+        conn = _myvoice_conn()
+        if conn is None:
+            return redirect("/myvoice?flash=History disabled — cannot save.")
+        try:
+            _vs.add_sample(conn, _req.form.get("content", ""))
+            _vp.invalidate()
+            return redirect("/myvoice?flash=" + _qp("Sample added."))
+        except ValueError as e:
+            return redirect("/myvoice?flash=" + _qp(str(e)))
+
+    @flask_app.post("/myvoice/delete")
+    def myvoice_delete():
+        from . import voice_samples as _vs
+        from .. import voice_profile as _vp
+        from flask import request as _req, redirect
+        conn = _myvoice_conn()
+        sid = _form_int(_req.form)
+        if conn is None or sid <= 0:
+            return redirect("/myvoice?flash=Nothing to remove.")
+        _vs.delete_sample(conn, sid)
+        _vp.invalidate()
+        return redirect("/myvoice?flash=Sample removed.")
+
+    @flask_app.post("/myvoice/toggle")
+    def myvoice_toggle():
+        from . import voice_samples as _vs
+        from .. import voice_profile as _vp
+        from flask import request as _req, redirect
+        conn = _myvoice_conn()
+        sid = _form_int(_req.form)
+        if conn is None or sid <= 0:
+            return redirect("/myvoice?flash=Nothing to change.")
+        _vs.set_enabled(conn, sid, _req.form.get("enabled") == "1")
+        _vp.invalidate()
+        return redirect("/myvoice?flash=Updated.")
+
+    @flask_app.post("/myvoice/import")
+    def myvoice_import():
+        from . import voice_samples as _vs
+        from .. import voice_profile as _vp
+        from flask import request as _req, redirect
+        conn = _myvoice_conn()
+        if conn is None:
+            return redirect("/myvoice?flash=History disabled — cannot import.")
+        raw = _req.form.get("bulk", "")
+        if not raw.strip():
+            return redirect("/myvoice?flash=Nothing to import — paste some writing first.")
+        r = _vs.bulk_import(conn, raw)
+        _vp.invalidate()
+        return redirect("/myvoice?flash=" + _qp(
+            f"Imported {r['added']} sample(s), skipped {r['invalid']} too-long."))
 
     @flask_app.get("/search")
     def search_page():

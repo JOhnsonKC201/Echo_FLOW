@@ -40,6 +40,7 @@ from .history import History
 from .hotkey import HotkeyListener
 from .learn import Learner, LearningConfig, PatternMiner
 from .retrieval import Retriever, RetrievalConfig
+from . import voice_profile
 from . import phase as phase_mod
 from . import grade as grade_mod
 from . import tags as tags_mod
@@ -714,13 +715,21 @@ class App:
         # prompt for this dictation only, then auto-disarms. Doesn't fire
         # when use_prompt is active (PE mode takes precedence).
         system_prompt_override = None
+        self._armed_humanize = False
         armed = getattr(self, "_armed_transform", None)
         if armed and not use_prompt:
-            system_prompt_override = armed["system_prompt"]
-            console.print(f"[magenta]✨ Transform armed: {armed['name']}[/magenta]")
+            if armed.get("builtin") and armed.get("name") == "My Voice":
+                # "My Voice" is special: it does NOT override cleanup. Cleanup
+                # runs normally (with RAG), then the humanize seam below rewrites
+                # the cleaned text in the user's voice — one-shot, this dictation.
+                self._armed_humanize = True
+                console.print("[magenta]✨ Transform armed: My Voice[/magenta]")
+            else:
+                system_prompt_override = armed["system_prompt"]
+                console.print(f"[magenta]✨ Transform armed: {armed['name']}[/magenta]")
+                # RAG augmentation makes no sense for an arbitrary transform.
+                augmentation = ""
             self._armed_transform = None
-            # RAG augmentation makes no sense for an arbitrary transform.
-            augmentation = ""
         # Pipeline lock: shared with mobile HTTP bridge to prevent concurrent
         # Whisper/Ollama hits on a single model instance.
         with self._pipeline_lock:
@@ -761,6 +770,37 @@ class App:
                                 _log.info("verify: pass-2 %.1f did not beat %.1f; kept pass-1", q2, q1)
                 except Exception as e:
                     _log.warning("verify-and-improve loop failed: %s", e)
+            # "My Voice" humanize pass: rewrite the cleaned text in the user's
+            # own writing voice. 'on'/forced runs HERE on the hot path (before
+            # paste, inside the pipeline lock so the humanize LLM call serializes
+            # with cleanup); 'shadow' runs off the hot path below. Gated like
+            # verify-improve: skips PE mode, armed non-My-Voice overrides, and
+            # ineligible styles (code/prompt).
+            exp_cfg = self.cfg.get("experimental", {}) or {}
+            hz_mode = voice_profile.humanize_mode_for_cfg(exp_cfg)
+            hz_force = getattr(self, "_armed_humanize", False)
+            self._armed_humanize = False   # one-shot: consume the armed My Voice
+            hz_gate = (not use_prompt and system_prompt_override is None
+                       and style in voice_profile.HUMANIZE_STYLES
+                       and self.history is not None)
+            if hz_gate and (hz_force or (hz_mode == "on" and not polish_skipped)):
+                try:
+                    profile = voice_profile.build(self.history, self.retriever, style)
+                    if profile:
+                        use_cloud = (bool(exp_cfg.get("humanize_use_cloud"))
+                                     and bool(self.cfg.get("cleanup", {})
+                                              .get("allow_cloud_cleanup")))
+                        hz = self.cleaner.humanize(
+                            cleaned, voice_profile=profile, raw=raw,
+                            use_cloud=use_cloud, style=style,
+                            retriever=self.retriever,
+                            min_sim=float(exp_cfg.get("humanize_min_sim", 0.85)))
+                        if hz and hz != cleaned:
+                            _log.info("humanize: rewrote in user's voice (%d→%d chars)",
+                                      len(cleaned), len(hz))
+                            cleaned = hz
+                except Exception as e:
+                    _log.warning("humanize pass failed: %s", e)
         t2 = time.perf_counter()
         # Cache immediately so Ctrl+Shift+Win re-paste sees this dictation
         # even before the async DB write commits.
@@ -807,6 +847,42 @@ class App:
                     except Exception as e:
                         _log.warning("ab shadow failed: %s", e)
                 threading.Thread(target=_shadow, daemon=True).start()
+        # "My Voice" shadow: compute what the humanize pass WOULD produce and log
+        # it (without changing the pasted text) so precision can be reviewed
+        # before trusting 'on'. Off the hot path, like the A/B test above.
+        if (hz_mode == "shadow" and self.history and not use_prompt
+                and not polish_skipped
+                and style in voice_profile.HUMANIZE_STYLES):
+            _hz_cleaned = cleaned
+            def _humanize_shadow():
+                try:
+                    profile = voice_profile.build(self.history, self.retriever, style)
+                    if not profile:
+                        return
+                    use_cloud = (bool(exp_cfg.get("humanize_use_cloud"))
+                                 and bool(self.cfg.get("cleanup", {})
+                                          .get("allow_cloud_cleanup")))
+                    hz = self.cleaner.humanize(
+                        _hz_cleaned, voice_profile=profile, raw=raw,
+                        use_cloud=use_cloud, style=style, retriever=self.retriever,
+                        min_sim=float(exp_cfg.get("humanize_min_sim", 0.85)))
+                    if not hz or hz == _hz_cleaned:
+                        return
+                    sim = self.cleaner._voice_similarity(_hz_cleaned, hz, self.retriever)
+                    self.history.log_humanize_shadow(
+                        cleaned_text=_hz_cleaned, humanized_text=hz,
+                        style=style, similarity=sim)
+                    # SEC-3: prose stays out of the log files unless opted in.
+                    if exp_cfg.get("humanize_log_verbose"):
+                        _log.info("humanize shadow: %r → %r (sim=%s)",
+                                  _hz_cleaned, hz, sim)
+                    else:
+                        _log.info("humanize shadow: <redacted len=%d> → "
+                                  "<redacted len=%d> (sim=%s)", len(_hz_cleaned),
+                                  len(hz), sim if sim is None else round(sim, 3))
+                except Exception as e:
+                    _log.warning("humanize shadow failed: %s", e)
+            threading.Thread(target=_humanize_shadow, daemon=True).start()
         learn_marker = ""
         if augmentation:
             learn_marker = " [+RAG]" if "SEMANTICALLY" in augmentation else " [+learning]"

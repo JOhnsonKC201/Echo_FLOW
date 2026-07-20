@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}My Voice — Echo Flow{% endblock %}
+{% block content %}
+<h1 class="welcome">My Voice</h1>
+<div class="muted small" style="margin-bottom: 14px;">
+  Teach Echo Flow your writing voice. When “My Voice” is on, it rewrites cleaned dictation
+  to sound like you — light-touch, meaning preserved, and dropped if it drifts. Everything
+  stays on your machine unless you opt into cloud in Settings.
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<div class="card" style="border-left: 3px solid var(--accent, #3eaf6f);">
+  <h2>Status</h2>
+  <div class="muted" style="line-height: 1.7;">
+    My Voice is
+    {% if humanize_mode == 'on' %}<strong>on</strong> — dictation is rewritten in your voice.
+    {% elif humanize_mode == 'shadow' %}<strong>in shadow</strong> — previews are logged below without changing your text.
+    {% else %}<strong>off</strong>. Turn it on (or shadow) in <a href="/settings/experimental">Settings → Experimental</a>.
+    {% endif %}
+    {% if stats and stats.n %}
+      <br>Last 30 days (shadow): {{ stats.changed }} of {{ stats.n }} dictations would have changed,
+      average meaning similarity {{ stats.avg_similarity if stats.avg_similarity is not none else '—' }}.
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Try it</h2>
+  <div class="muted small" style="margin-bottom: 8px;">
+    Paste a sentence and see how My Voice would rewrite it — using your current samples.
+    Nothing is saved or dictated.
+  </div>
+  <form method="post" action="/myvoice/preview">
+    <textarea name="preview_text" rows="3" placeholder="Type or paste a sentence to preview…">{{ preview_input }}</textarea>
+    <div style="margin-top: 8px;"><button type="submit" class="primary">Preview my voice</button></div>
+  </form>
+  {% if preview_ran %}
+    {% if preview_result %}
+      <div class="muted small" style="margin-top: 10px;">In your voice:</div>
+      <div style="white-space: pre-wrap; margin-top: 4px;">{{ preview_result }}</div>
+    {% elif not has_profile %}
+      <div class="muted small" style="margin-top: 10px;">Add a writing sample below first, then try again.</div>
+    {% else %}
+      <div class="muted small" style="margin-top: 10px;">No confident rewrite — kept as-is (already in your voice, or too different to change safely). Make sure Ollama is running.</div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Add a writing sample</h2>
+  <div class="muted small" style="margin-bottom: 8px;">
+    Paste a paragraph or two you actually wrote — an email, a message, a note. A few good
+    samples matter more than many. Your dictations you’ve approved or corrected are used too.
+  </div>
+  <form method="post" action="/myvoice/add">
+    <textarea name="content" rows="5" maxlength="8000" required
+      placeholder="Paste something you wrote, in your own words…"></textarea>
+    <div style="margin-top: 8px;"><button type="submit" class="primary">Add sample</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Your samples <span class="muted small">{{ samples|length }} total</span></h2>
+  {% if samples %}
+    <table class="kv-table">
+      <thead><tr><th>Sample</th><th style="width: 90px;">Used</th><th style="width: 80px;"></th></tr></thead>
+      <tbody>
+        {% for s in samples %}
+          <tr>
+            <td style="white-space: pre-wrap;">{{ s.content }}</td>
+            <td>
+              <form method="post" action="/myvoice/toggle" class="inline">
+                <input type="hidden" name="id" value="{{ s.id }}">
+                <input type="hidden" name="enabled" value="{{ '0' if s.enabled else '1' }}">
+                <button type="submit" class="link-action">{{ 'On' if s.enabled else 'Off' }}</button>
+              </form>
+            </td>
+            <td class="row-actions">
+              <form method="post" action="/myvoice/delete" class="inline">
+                <input type="hidden" name="id" value="{{ s.id }}">
+                <button type="submit" class="link-danger" title="Remove"
+                  onclick="return confirm('Remove this sample?');">✕</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted small">No samples yet. Add one above or bulk-import below.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Bulk import</h2>
+  <div class="muted small" style="margin-bottom: 8px;">
+    Paste several samples separated by a blank line — one paragraph block per sample.
+  </div>
+  <form method="post" action="/myvoice/import">
+    <textarea name="bulk" rows="6"
+      placeholder="First sample…&#10;&#10;Second sample, after a blank line…"></textarea>
+    <div style="margin-top: 8px;"><button type="submit" class="primary">Import</button></div>
+  </form>
+</div>
+
+{% if profile_preview %}
+<div class="card">
+  <details>
+    <summary style="cursor: pointer;"><strong>What Echo Flow learned</strong> <span class="muted small">— the voice reference it uses</span></summary>
+    <pre style="white-space: pre-wrap; margin-top: 10px;" class="muted small">{{ profile_preview }}</pre>
+  </details>
+</div>
+{% endif %}
+
+{% if shadow_rows %}
+<div class="card">
+  <h2>Shadow preview <span class="muted small">what My Voice would have written</span></h2>
+  <table class="kv-table">
+    <thead><tr><th>Cleaned</th><th>In your voice</th><th style="width: 90px;">Similarity</th></tr></thead>
+    <tbody>
+      {% for r in shadow_rows %}
+        <tr>
+          <td style="white-space: pre-wrap;">{{ r.cleaned_text }}</td>
+          <td style="white-space: pre-wrap;">{{ r.humanized_text }}</td>
+          <td>{{ '%.2f'|format(r.similarity) if r.similarity is not none else '—' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

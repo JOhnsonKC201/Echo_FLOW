@@ -257,6 +257,49 @@ def test_experimental_get_renders_intent_controls(tmp_path):
     assert b"Shadow" in r.data
 
 
+# --- My Voice (humanize) tri-state ------------------------------------------
+
+def test_humanize_save_tristate(tmp_path):
+    client, app_ref = _client(tmp_path)
+    for choice, expected in [("on", True), ("shadow", "shadow"), ("off", False)]:
+        r = client.post("/settings/experimental/save", headers=HOST, data={
+            "command_prefix": "computer", "humanize": choice,
+        })
+        assert r.status_code == 302
+        val = _reparse(app_ref)["experimental"]["humanize"]
+        assert val == expected
+        # "off" must be a real YAML bool, never the truthy string "false".
+        if choice == "off":
+            assert val is False
+
+
+def test_humanize_save_extras_and_bounds(tmp_path):
+    client, app_ref = _client(tmp_path)
+    r = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": "computer", "humanize": "on",
+        "humanize_use_cloud": "1", "humanize_log_verbose": "1",
+        "humanize_min_sim": "0.7",
+    })
+    assert r.status_code == 302
+    exp = _reparse(app_ref)["experimental"]
+    assert exp["humanize_use_cloud"] is True
+    assert exp["humanize_log_verbose"] is True
+    assert exp["humanize_min_sim"] == 0.7
+    # out-of-range similarity is rejected
+    r2 = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": "computer", "humanize_min_sim": "1.9",
+    })
+    assert "similarity" in r2.headers["Location"]
+
+
+def test_experimental_get_renders_humanize_controls(tmp_path):
+    client, _ = _client(tmp_path)
+    r = client.get("/settings/experimental", headers=HOST)
+    assert b'name="humanize"' in r.data
+    assert b'name="humanize_min_sim"' in r.data
+    assert b'name="humanize_use_cloud"' in r.data
+
+
 # --- Privacy (PR-E: moved to top-level /privacy) ----------------------------
 
 def test_settings_privacy_redirects_to_top_level(tmp_path):

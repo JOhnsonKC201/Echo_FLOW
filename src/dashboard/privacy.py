@@ -61,6 +61,30 @@ def update_check_state(cfg: dict) -> dict:
     }
 
 
+def humanize_state(cfg: dict) -> dict:
+    """Describe the "My Voice" humanize pass's outbound behavior.
+
+    Humanize runs on the local Ollama model by default. It only sends text
+    off-machine when it is enabled (on/shadow) AND humanize_use_cloud is set AND
+    cleanup.allow_cloud_cleanup is on — in which case the CLEANED text (never
+    audio) may reach Groq/Anthropic. Surfaced so the ledger never understates
+    egress.
+
+    Returns {"enabled": bool, "cloud": bool, "endpoint": str | None, "warn": bool}.
+    """
+    exp = (cfg or {}).get("experimental", {}) or {}
+    mode = exp.get("humanize", False)
+    on = bool(mode) or mode == "shadow"
+    cloud = (on and bool(exp.get("humanize_use_cloud"))
+             and bool((cfg.get("cleanup", {}) or {}).get("allow_cloud_cleanup")))
+    return {
+        "enabled": on,
+        "cloud": cloud,
+        "endpoint": "Groq / Anthropic (cleaned text)" if cloud else None,
+        "warn": cloud,
+    }
+
+
 def dir_size_bytes(path: Path) -> int:
     """Recursive size of a directory in bytes. Returns 0 if missing."""
     if not path.exists():
@@ -96,12 +120,18 @@ def ledger(cfg: dict, history_db: Path, cfg_path: Path, data_dir: Path) -> dict:
     except OSError:
         last_cfg_write = None
     upd = update_check_state(cfg)
+    hz = humanize_state(cfg)
+    exceptions = []
     if upd["enabled"]:
+        exceptions.append(
+            "the startup update check contacts api.github.com once per launch")
+    if hz["cloud"]:
+        exceptions.append(
+            "My Voice (humanize) sends the CLEANED text to Groq/Anthropic when it rewrites")
+    if exceptions:
         egress_note = (
-            "One opt-in exception is ACTIVE: the startup update check contacts "
-            "api.github.com once per launch to compare versions. No telemetry, "
-            "history, or identifiers are sent. Disable with "
-            "update.check_on_startup: false."
+            "Opt-in exception(s) ACTIVE: " + "; ".join(exceptions) + ". No audio, "
+            "telemetry, or identifiers are sent otherwise."
         )
     else:
         egress_note = (
@@ -110,6 +140,7 @@ def ledger(cfg: dict, history_db: Path, cfg_path: Path, data_dir: Path) -> dict:
             "no cloud sync. Verify with `netstat -an`."
         )
     return {
+        "humanize": hz,
         # The Big Truth — architectural, not measured. If you want to verify,
         # run Wireshark or `netstat -an | findstr ESTABLISHED` and confirm
         # Echo Flow's PID only talks to 127.0.0.1 (plus api.github.com once at
