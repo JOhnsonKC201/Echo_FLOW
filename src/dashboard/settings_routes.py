@@ -258,6 +258,9 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "humanize_use_cloud": bool(exp.get("humanize_use_cloud", False)),
             "humanize_log_verbose": bool(exp.get("humanize_log_verbose", False)),
             "humanize_min_sim": _intent_conf(exp.get("humanize_min_sim", 0.85)),
+            "humanize_text_model": exp.get("humanize_text_model", "") or "",
+            "humanize_text_min_sim": _intent_conf(
+                exp.get("humanize_text_min_sim", 0.65)),
         }, supported_commands=_cmds.list_supported(),
            supported_actions=_va.list_supported(cfg))
 
@@ -326,6 +329,28 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
                 "/settings/experimental?flash=voice similarity floor must be "
                 "between 0 and 1."
             )
+        # The paste-in humanizer (My Voice → Humanize) carries its own model and
+        # meaning floor, independent of the dictation pass above: it rewrites
+        # text the user didn't write, which legitimately changes far more.
+        hz_model = (f.get("humanize_text_model", "") or "").strip()
+        if len(hz_model) > 100 or any(c.isspace() for c in hz_model):
+            return redirect(
+                "/settings/experimental?flash=humanizer model must be a single "
+                "Ollama model name, e.g. qwen2.5:7b-instruct."
+            )
+        raw_tsim = (f.get("humanize_text_min_sim", "") or "").strip()
+        try:
+            hz_tsim = float(raw_tsim) if raw_tsim else 0.65
+        except ValueError:
+            return redirect(
+                "/settings/experimental?flash=humanizer meaning floor must be a "
+                "number between 0 and 1."
+            )
+        if not (0.0 <= hz_tsim <= 1.0):
+            return redirect(
+                "/settings/experimental?flash=humanizer meaning floor must be "
+                "between 0 and 1."
+            )
         errs = _save_scalars(app_ref, [
             ("experimental.press_enter_command", _checkbox(f, "press_enter_command")),
             ("experimental.command_mode", _checkbox(f, "command_mode")),
@@ -338,6 +363,8 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             ("experimental.humanize_use_cloud", _checkbox(f, "humanize_use_cloud")),
             ("experimental.humanize_log_verbose", _checkbox(f, "humanize_log_verbose")),
             ("experimental.humanize_min_sim", hz_sim),
+            ("experimental.humanize_text_model", hz_model),
+            ("experimental.humanize_text_min_sim", hz_tsim),
         ], log)
         if errs:
             return redirect(

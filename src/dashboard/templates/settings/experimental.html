@@ -93,6 +93,18 @@
           <span class="set-field-hint">Stronger mimicry via Groq/Anthropic. Also requires <code>cleanup.allow_cloud_cleanup</code>; otherwise it stays fully local and nothing leaves your machine.</span>
         </label>
 
+        <label class="set-field">
+          <span class="set-field-label">Humanizer model</span>
+          <input type="text" name="humanize_text_model" value="{{ values.humanize_text_model }}" placeholder="(same as the cleanup model)" autocomplete="off" spellcheck="false">
+          <span class="set-field-hint">Ollama model used by <a href="/myvoice">My Voice → Humanize</a> when you paste text in. Blank uses the cleanup model, which is kept small to leave VRAM for Whisper; this pass runs on a button press, so a larger local model is an option here. Run <code>ollama list</code> to see yours.</span>
+        </label>
+
+        <label class="set-field">
+          <span class="set-field-label">Humanizer meaning floor</span>
+          <input type="number" name="humanize_text_min_sim" value="{{ values.humanize_text_min_sim }}" min="0" max="1" step="0.05" autocomplete="off">
+          <span class="set-field-hint">0–1, default 0.65. Applies to pasted text only. Lower than the dictation floor above because rewriting AI-written prose legitimately changes far more wording. Raise it if rewrites drift from your meaning.</span>
+        </label>
+
         <label class="set-field set-field-checkbox">
           <input type="checkbox" name="humanize_log_verbose" value="1" {% if values.humanize_log_verbose %}checked{% endif %}>
           <span class="set-field-label">Verbose My Voice logs</span>

@@ -7,6 +7,53 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Humanize — paste AI-written text, get it back in your voice**
+  (`Cleaner.humanize_text`, dashboard → **My Voice → Humanize**). The existing
+  My Voice pass nudges *dictation* the user effectively already wrote, so it
+  forbids restructuring and rejects anything larger than a light touch. Pasted
+  AI prose is the opposite problem: real rewriting is the deliverable. Stripping
+  LLM vocabulary is by definition deleting words, which drops token overlap to
+  ~0.15 — far under the light-touch pass's 0.35/0.85 floors — so it declined
+  every genuine de-AI rewrite and reported only "No confident rewrite". This is
+  a separate method with its own prompt and guards; the dictation path is
+  untouched.
+
+  The design points came out of measuring the real local model, not from theory:
+  - **A paragraph at a time.** Handed a whole document, `qwen2.5:3b` merges
+    paragraphs. Rewriting each one separately preserves structure
+    *structurally* rather than by a post-hoc check, keeps each request inside a
+    small model's attention, and lets one bad paragraph degrade to the user's
+    original text instead of failing the whole paste. A partial result is
+    reported as partial rather than passed off as complete.
+  - **Numbers are checked exactly, in both directions.** The benchmark caught
+    the model turning *"caught 14 regressions before release"* into *"shows how
+    solid the process is"* — fluent, semantically close, and no longer true.
+    Dropping a fact falsifies a document as surely as inventing one.
+  - **Voice-profile regurgitation is rejected.** Given writing samples as a
+    style reference, a small model may reproduce their *subject matter*,
+    confusing "write like this" with "write this". Detected per sentence, since
+    partial contamination survives a document-level comparison. A purely
+    *leading* echo is trimmed rather than thrown away.
+  - **Prompt ordering is load-bearing.** With the profile appended last, the
+    model treated it as text to continue and prefixed rewrites with the samples
+    verbatim. The profile is now delimited and the hard rules come last.
+  - **Reasoning models are handled.** A thinking model (qwen3.5, deepseek-r1)
+    spends its token budget on `thinking` and returns empty `content`, which
+    reads downstream as a dead provider; this path sends `think: false`.
+
+  Measured over a fixed benchmark of AI-written passages on the default 3B
+  model: 80% accepted, 76% of AI tells removed, every number preserved on
+  accepted rewrites, zero profile contamination. Refusals are explained
+  specifically ("Is Ollama running?", "drifted from what your text actually
+  said") instead of one catch-all, and the result ships with a word-level diff
+  (`src/dashboard/textdiff.py`) so the edit can be checked before it is copied.
+
+  New `experimental` keys: `humanize_text_model` (blank = the cleanup model;
+  this pass runs on a button press, so a larger local model is an option),
+  `humanize_text_timeout_sec`, `humanize_text_min_sim`, and
+  `humanize_text_max_chars`. The model and meaning floor are editable in
+  **Settings → Experimental**.
+
 - **Local intent model — a regex-miss fallback for Action Mode**
   (`src/intent_model.py`, opt-in, **off by default**). Action Mode classifies a
   prefixed command with tight anchored regexes; that is high-precision but
@@ -87,6 +134,11 @@ All notable changes are documented here. Format roughly follows
   egress and names the endpoint. Fully covered by `tests/test_update_check.py`.
 
 ### Changed
+- The My Voice page's "Try it" box is now the **Humanize** workspace. It
+  previously previewed the light-touch dictation pass, which is not what the
+  page is used for; the shadow-preview table already answers "should I trust
+  this for dictation?" with real data. `POST /myvoice/preview` is removed along
+  with it rather than left as an unreachable endpoint.
 - Installer version is now single-sourced. Both `.iss` scripts honor an
   `iscc /DMyAppVersion=<ver>` override (CI passes the tag); the hardcoded
   `#define` is now just a local-build fallback. Fixed the stale repo URL in

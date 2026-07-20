@@ -307,3 +307,52 @@ def test_settings_privacy_redirects_to_top_level(tmp_path):
     r = client.get("/settings/privacy", headers=HOST, follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["Location"].endswith("/privacy")
+
+
+def test_humanizer_paste_in_knobs_save(tmp_path):
+    """The paste-in humanizer carries its own model and meaning floor, separate
+    from the dictation pass — those are for different jobs."""
+    client, app_ref = _client(tmp_path)
+    r = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": "computer", "humanize": "off",
+        "humanize_text_model": "qwen2.5:7b-instruct",
+        "humanize_text_min_sim": "0.5",
+    })
+    assert r.status_code == 302
+    exp = _reparse(app_ref)["experimental"]
+    assert exp["humanize_text_model"] == "qwen2.5:7b-instruct"
+    assert exp["humanize_text_min_sim"] == 0.5
+
+
+def test_humanizer_model_rejects_a_command_string(tmp_path):
+    """The value reaches an HTTP payload, not a shell — but a name with spaces
+    is a mistake worth catching at the boundary rather than at call time."""
+    client, app_ref = _client(tmp_path)
+    r = client.post("/settings/experimental/save", headers=HOST, data={
+        "command_prefix": "computer", "humanize": "off",
+        "humanize_text_model": "qwen2.5 && rm -rf /",
+    })
+    assert r.status_code == 302
+    assert "flash=" in r.headers["Location"]
+    assert not _reparse(app_ref)["experimental"].get("humanize_text_model")
+
+
+def test_humanizer_meaning_floor_is_bounded(tmp_path):
+    client, app_ref = _client(tmp_path)
+    before = _reparse(app_ref)["experimental"].get("humanize_text_min_sim")
+    for bad in ["2.5", "-1", "not-a-number"]:
+        r = client.post("/settings/experimental/save", headers=HOST, data={
+            "command_prefix": "computer", "humanize": "off",
+            "humanize_text_min_sim": bad,
+        })
+        assert "flash=" in r.headers["Location"], bad
+        # Rejected outright — the stored floor is left exactly as it was.
+        assert _reparse(app_ref)["experimental"].get(
+            "humanize_text_min_sim") == before, bad
+
+
+def test_experimental_get_renders_paste_in_humanizer_controls(tmp_path):
+    client, _ = _client(tmp_path)
+    r = client.get("/settings/experimental", headers=HOST)
+    assert b'name="humanize_text_model"' in r.data
+    assert b'name="humanize_text_min_sim"' in r.data

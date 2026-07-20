@@ -25,29 +25,90 @@
   </div>
 </div>
 
-<div class="card">
-  <h2>Try it</h2>
-  <div class="muted small" style="margin-bottom: 8px;">
-    Paste a sentence and see how My Voice would rewrite it — using your current samples.
-    Nothing is saved or dictated.
+<div class="card" style="border-left: 3px solid var(--accent, #3eaf6f);">
+  <h2>Humanize</h2>
+  <div class="muted small" style="margin-bottom: 10px;">
+    Paste AI-written text and get it back the way <em>you</em> would have written it —
+    AI tells stripped, facts and paragraphs untouched. Nothing is saved or dictated.
   </div>
-  <form method="post" action="/myvoice/preview">
-    <textarea name="preview_text" rows="3" placeholder="Type or paste a sentence to preview…">{{ preview_input }}</textarea>
-    <div style="margin-top: 8px;"><button type="submit" class="primary">Preview my voice</button></div>
+
+  {% if samples|length == 0 %}
+    <div class="muted small" style="margin-bottom: 10px; padding: 10px 12px;
+         border-left: 3px solid var(--warn, #d1a54a); background: rgba(209,165,74,0.08);">
+      <strong>Add a writing sample first.</strong> With no samples, Echo Flow is guessing
+      your voice from dictations alone — the rewrite will be generic. Two or three
+      paragraphs you actually wrote make the difference.
+      <a href="#add-sample">Add one below ↓</a>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/myvoice/humanize">
+    <textarea name="hz_text" rows="10" required
+      placeholder="Paste the AI-written paragraph(s) here…">{{ hz_input }}</textarea>
+    <div style="margin-top: 8px;">
+      <button type="submit" class="primary">Rewrite in my voice</button>
+      <span class="muted small" style="margin-left: 10px;">up to {{ hz_max_chars }} characters</span>
+    </div>
   </form>
-  {% if preview_ran %}
-    {% if preview_result %}
-      <div class="muted small" style="margin-top: 10px;">In your voice:</div>
-      <div style="white-space: pre-wrap; margin-top: 4px;">{{ preview_result }}</div>
-    {% elif not has_profile %}
-      <div class="muted small" style="margin-top: 10px;">Add a writing sample below first, then try again.</div>
+
+  {% if hz_ran %}
+    {% if hz_result %}
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border, #333);">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+          <strong>In your voice</strong>
+          <button type="button" class="link-action" onclick="hzCopy(this)">Copy</button>
+        </div>
+        <div id="hz-output" style="white-space: pre-wrap; line-height: 1.6;">{{ hz_result }}</div>
+        {% if hz_reason == 'partial' %}
+          <div class="muted small" style="margin-top: 10px;">
+            Some paragraphs are unchanged — their rewrites didn’t pass the meaning
+            and structure checks, so your original text was kept for those.
+          </div>
+        {% endif %}
+
+        <details style="margin-top: 14px;">
+          <summary class="muted small" style="cursor: pointer;">
+            What changed <span class="muted">— {{ '%.0f'|format(hz_changed * 100) }}% of the words</span>
+          </summary>
+          <div style="white-space: pre-wrap; line-height: 1.7; margin-top: 8px;">
+            {%- for op, chunk in hz_diff -%}
+              {%- if op == 'equal' -%}{{ chunk }}
+              {%- elif op == 'delete' -%}<del style="background: rgba(200,80,80,0.16); text-decoration: line-through; opacity: .75;">{{ chunk }}</del>
+              {%- else -%}<ins style="background: rgba(62,175,111,0.20); text-decoration: none;">{{ chunk }}</ins>
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
+        </details>
+      </div>
     {% else %}
-      <div class="muted small" style="margin-top: 10px;">No confident rewrite — kept as-is (already in your voice, or too different to change safely). Make sure Ollama is running.</div>
+      <div class="muted small" style="margin-top: 12px;">
+        {% if hz_reason == 'no_profile' %}
+          Nothing to match yet — add a writing sample below, then try again.
+        {% elif hz_reason == 'too_long' %}
+          That paste is over the {{ hz_max_chars }}-character limit. Try it in smaller pieces.
+        {% elif hz_reason == 'provider_down' %}
+          Couldn’t reach the local model. Is Ollama running? (<code>ollama serve</code>)
+        {% elif hz_reason == 'meaning_drift' %}
+          Rejected — the rewrite drifted from what your text actually said, so it was
+          discarded rather than handed back. Try a shorter passage.
+        {% elif hz_reason == 'bad_shape' %}
+          Rejected — the model didn’t return a clean rewrite (it changed the structure,
+          padded it out, or echoed your writing samples back). Your text was left alone.
+          Dense or technical passages are the usual cause; a shorter passage often works,
+          and a stronger <a href="/settings/experimental">humanizer model</a> helps most.
+        {% elif hz_reason == 'unchanged' %}
+          That already reads like you — left exactly as it was.
+        {% elif hz_reason == 'empty' %}
+          Paste some text first.
+        {% else %}
+          No rewrite this time. Make sure Ollama is running and try again.
+        {% endif %}
+      </div>
     {% endif %}
   {% endif %}
 </div>
 
-<div class="card">
+<div class="card" id="add-sample">
   <h2>Add a writing sample</h2>
   <div class="muted small" style="margin-bottom: 8px;">
     Paste a paragraph or two you actually wrote — an email, a message, a note. A few good
@@ -130,4 +191,32 @@
   </table>
 </div>
 {% endif %}
+
+<script>
+// Copy the humanized output. Falls back to a hidden textarea + execCommand
+// because navigator.clipboard is unavailable on insecure origins, and the
+// dashboard is served over plain http on localhost.
+function hzCopy(btn) {
+  var el = document.getElementById('hz-output');
+  if (!el) return;
+  var text = el.innerText;
+  var done = function () {
+    var was = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(function () { btn.textContent = was; }, 1500);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done, function () {});
+    return;
+  }
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) {}
+  document.body.removeChild(ta);
+}
+</script>
 {% endblock %}
