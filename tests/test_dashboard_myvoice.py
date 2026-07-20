@@ -1,11 +1,23 @@
 """/myvoice dashboard page — sample CRUD + shadow review rendering."""
 from __future__ import annotations
 
+import pytest
+
 from src.history import History
 from src.dashboard import voice_samples as vs
+from src import voice_profile as vp
 
 
 HDR = {"Host": "127.0.0.1:8766"}
+
+
+@pytest.fixture(autouse=True)
+def _clear_profile_cache():
+    # voice_profile caches the profile in module-level state; clear it around
+    # each test so a sample added directly (not via the route) is seen.
+    vp.invalidate()
+    yield
+    vp.invalidate()
 
 
 def _h(tmp_path):
@@ -77,3 +89,11 @@ def test_myvoice_in_sidebar(tmp_path):
     client, _, _ = _client(tmp_path)
     r = client.get("/myvoice", headers=HDR)
     assert b'href="/myvoice"' in r.data
+
+
+def test_myvoice_renders_profile_preview(tmp_path):
+    client, _, h = _client(tmp_path)
+    vs.add_sample(h.conn, "a distinctive phrase I always use")
+    r = client.get("/myvoice", headers=HDR)
+    assert b"What Echo Flow learned" in r.data
+    assert b"a distinctive phrase I always use" in r.data

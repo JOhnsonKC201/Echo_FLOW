@@ -131,6 +131,27 @@ def test_forced_my_voice_routes_and_disarms(tmp_path):
     assert app._armed_transform is None
 
 
+def test_on_threads_min_sim_and_local_by_default(tmp_path):
+    app = _make_app(_cfg(humanize=True, humanize_min_sim=0.7,
+                         humanize_use_cloud=True), History(str(tmp_path / "h.db")))
+    # cloud requested but allow_cloud_cleanup is absent → must stay local.
+    app.cfg["cleanup"] = {"allow_cloud_cleanup": False}
+    app.cleaner.humanize.return_value = "voiced"
+    app._do_dictation(_audio())
+    kw = app.cleaner.humanize.call_args.kwargs
+    assert kw["min_sim"] == 0.7
+    assert kw["use_cloud"] is False        # both flags required for cloud
+
+
+def test_on_cloud_when_both_flags_set(tmp_path):
+    app = _make_app(_cfg(humanize=True, humanize_use_cloud=True),
+                    History(str(tmp_path / "h.db")))
+    app.cfg["cleanup"] = {"allow_cloud_cleanup": True}
+    app.cleaner.humanize.return_value = "voiced"
+    app._do_dictation(_audio())
+    assert app.cleaner.humanize.call_args.kwargs["use_cloud"] is True
+
+
 def test_shadow_logs_without_changing_paste(tmp_path):
     h = History(str(tmp_path / "h.db"))
     app = _make_app(_cfg(humanize="shadow"), h)

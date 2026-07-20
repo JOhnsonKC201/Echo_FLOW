@@ -138,6 +138,19 @@ def test_profile_dedupes_and_caps(tmp_path):
     assert len(exemplar_lines) <= vp.MAX_EXEMPLARS
 
 
+@pytest.mark.parametrize("value,expected", [
+    (False, "off"), (True, "on"), ("shadow", "shadow"),
+    ("on", "on"), ("true", "on"), ("off", "off"), ("nonsense", "off"),
+    (None, "off"),
+])
+def test_humanize_mode_normalizer(value, expected):
+    assert vp.humanize_mode_for_cfg({"humanize": value}) == expected
+
+
+def test_humanize_mode_missing_key_is_off():
+    assert vp.humanize_mode_for_cfg({}) == "off"
+
+
 def test_profile_cache_invalidates(tmp_path):
     h = _h(tmp_path)
     vs.add_sample(h.conn, "first sample text here")

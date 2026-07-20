@@ -82,6 +82,15 @@
   </form>
 </div>
 
+{% if profile_preview %}
+<div class="card">
+  <details>
+    <summary style="cursor: pointer;"><strong>What Echo Flow learned</strong> <span class="muted small">— the voice reference it uses</span></summary>
+    <pre style="white-space: pre-wrap; margin-top: 10px;" class="muted small">{{ profile_preview }}</pre>
+  </details>
+</div>
+{% endif %}
+
 {% if shadow_rows %}
 <div class="card">
   <h2>Shadow preview <span class="muted small">what My Voice would have written</span></h2>
