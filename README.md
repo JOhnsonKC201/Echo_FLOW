@@ -95,25 +95,26 @@ flowchart LR
 | **Auto-phasing** | Progresses from Whisper + Ollama cleanup → fully self-sufficient LLM-free cleanup as your history grows. |
 
 ### My Voice — and the humanizer
-Paste writing samples on the **My Voice** page and Echo Flow builds a profile of
-how you actually write. Two features use it, and they are different jobs:
+Two features on the **My Voice** page, different jobs:
 
 | | What it does |
 |---|---|
 | **My Voice (dictation)** | A light-touch pass after cleanup that nudges your dictated text toward your own phrasing. Off by default; `shadow` previews it without changing anything. Meaning is preserved exactly, and the rewrite is dropped if it drifts at all. |
-| **Humanize (paste-in)** | Paste AI-written text and get it back the way you would have written it. Strips the LLM tells — em-dash rhythm, *delve / moreover / a testament to*, "it's not just X, it's Y", tricolons, hedging stacks — while matching your voice. |
+| **Humanize (paste-in)** | Paste AI-written text and get a human version back — the LLM tells stripped out (em-dash rhythm, *delve / moreover / a testament to*, "it's not just X, it's Y", tricolons, hedging stacks). Pick how it should sound. |
 
-The humanizer rewrites **one paragraph at a time**, so your structure survives,
-and a paragraph whose rewrite fails its checks comes back as your original text
-rather than something mangled. Every rewrite must clear guards for meaning
-similarity, length, paragraph shape, and — checked exactly, in both directions —
-**every number in the text**, since a dropped figure falsifies a document just as
-an invented one does. It also refuses output that copies your writing samples'
-*content* instead of their style. The page shows a word-level diff of what
-changed, so you can see the edit before you copy it.
+The humanizer gives you **three targets**, and needs no setup to start:
 
-Local by default. Add two or three real samples before judging the quality —
-with none, it is guessing your voice from dictation history alone.
+- **A natural human** — plain, natural prose, AI tells removed. The default.
+- **Me** — also match your writing samples (add a couple on the same page). With
+  none, it falls back to the natural-human rewrite and tells you why.
+- **A specific tone** — casual, professional, friendly, plain, confident, concise.
+
+It **always gives you a result.** A risky-but-readable rewrite (a number changed,
+meaning drifted) is shown *with a warning* rather than dropped; only genuinely
+broken output falls back to your original. It rewrites **one paragraph at a time**
+so structure survives, checks **every number in both directions** (a dropped
+figure falsifies a document as surely as an invented one), and shows a word-level
+diff of what changed so you can check the edit before copying. All local by default.
 
 ### Knowledge layer
 | Feature | Detail |

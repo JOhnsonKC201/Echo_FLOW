@@ -7,52 +7,51 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
-- **Humanize — paste AI-written text, get it back in your voice**
-  (`Cleaner.humanize_text`, dashboard → **My Voice → Humanize**). The existing
-  My Voice pass nudges *dictation* the user effectively already wrote, so it
-  forbids restructuring and rejects anything larger than a light touch. Pasted
-  AI prose is the opposite problem: real rewriting is the deliverable. Stripping
-  LLM vocabulary is by definition deleting words, which drops token overlap to
-  ~0.15 — far under the light-touch pass's 0.35/0.85 floors — so it declined
-  every genuine de-AI rewrite and reported only "No confident rewrite". This is
-  a separate method with its own prompt and guards; the dictation path is
-  untouched.
+- **Humanize — paste AI-written text, get a human version back**
+  (`Cleaner.humanize_text`, dashboard → **My Voice → Humanize**). Paste prose a
+  language model wrote and get it back reading like a person. Separate from the
+  dictation "My Voice" pass, which only nudges text the user already wrote — a
+  genuine de-AI rewrite deletes LLM vocabulary, dropping token overlap to ~0.15,
+  far under that pass's 0.35/0.85 floors, so it declined every real rewrite.
+  This is its own method, prompt, and guards; the dictation path is untouched.
 
-  The design points came out of measuring the real local model, not from theory:
+  **Three selectable targets** (no writing samples required to start):
+  - **A natural human** — strip the AI tells (em-dash rhythm, *delve / moreover
+    / a testament to*, "it's not just X, it's Y", tricolons, hedging stacks) and
+    return plain natural prose. The default; needs no setup.
+  - **Me** — additionally match your writing samples. With none it falls back to
+    the natural-human rewrite and says so, rather than refusing.
+  - **A specific tone** — casual, professional, friendly, plain, confident, or
+    concise, chosen from a dropdown.
+
+  **It always returns a result.** A risky-but-readable rewrite (a number
+  changed, meaning drifted a little) is shown *with a warning* rather than
+  dropped; only genuinely broken output (a preamble, injected markdown, a merged
+  or ballooned paragraph, off-topic text, or an echo of your writing samples)
+  falls back to your original. The page shows a word-level diff of what changed.
+
+  The guards came out of measuring the real local model, not theory:
   - **A paragraph at a time.** Handed a whole document, `qwen2.5:3b` merges
-    paragraphs. Rewriting each one separately preserves structure
-    *structurally* rather than by a post-hoc check, keeps each request inside a
-    small model's attention, and lets one bad paragraph degrade to the user's
-    original text instead of failing the whole paste. A partial result is
-    reported as partial rather than passed off as complete.
+    paragraphs; rewriting each separately preserves structure structurally and
+    lets one bad paragraph fall back without sinking the rest.
   - **Numbers are checked exactly, in both directions.** The benchmark caught
     the model turning *"caught 14 regressions before release"* into *"shows how
-    solid the process is"* — fluent, semantically close, and no longer true.
-    Dropping a fact falsifies a document as surely as inventing one.
-  - **Voice-profile regurgitation is rejected.** Given writing samples as a
-    style reference, a small model may reproduce their *subject matter*,
-    confusing "write like this" with "write this". Detected per sentence, since
-    partial contamination survives a document-level comparison. A purely
-    *leading* echo is trimmed rather than thrown away.
-  - **Prompt ordering is load-bearing.** With the profile appended last, the
-    model treated it as text to continue and prefixed rewrites with the samples
-    verbatim. The profile is now delimited and the hard rules come last.
+    solid the process is"* — fluent, close, and no longer true. A changed number
+    is now surfaced as a warning on the shown rewrite.
+  - **Voice-profile regurgitation is rejected** (voice mode). A small model may
+    reproduce the samples' *subject matter*; detected per sentence, and a purely
+    leading echo is trimmed rather than discarded.
+  - **Prompt ordering is load-bearing.** With the profile appended last the
+    model continued from it; the profile is delimited and the rules come last.
   - **Reasoning models are handled.** A thinking model (qwen3.5, deepseek-r1)
-    spends its token budget on `thinking` and returns empty `content`, which
-    reads downstream as a dead provider; this path sends `think: false`.
+    spends its budget on `thinking` and returns empty `content`, which reads as
+    a dead provider; this path sends `think: false`.
 
-  Measured over a fixed benchmark of AI-written passages on the default 3B
-  model: 80% accepted, 76% of AI tells removed, every number preserved on
-  accepted rewrites, zero profile contamination. Refusals are explained
-  specifically ("Is Ollama running?", "drifted from what your text actually
-  said") instead of one catch-all, and the result ships with a word-level diff
-  (`src/dashboard/textdiff.py`) so the edit can be checked before it is copied.
-
-  New `experimental` keys: `humanize_text_model` (blank = the cleanup model;
-  this pass runs on a button press, so a larger local model is an option),
-  `humanize_text_timeout_sec`, `humanize_text_min_sim`, and
-  `humanize_text_max_chars`. The model and meaning floor are editable in
-  **Settings → Experimental**.
+  `Cleaner.humanize_text` returns a `HumanizeOutcome(text, reason, warnings,
+  changed, total)`. `experimental` keys: `humanize_text_model` (blank = the
+  cleanup model; this pass runs on a button press, so a larger local model is an
+  option — editable in **Settings → Experimental**), `humanize_text_timeout_sec`,
+  `humanize_text_min_sim`, `humanize_text_max_chars`.
 
 - **Local intent model — a regex-miss fallback for Action Mode**
   (`src/intent_model.py`, opt-in, **off by default**). Action Mode classifies a

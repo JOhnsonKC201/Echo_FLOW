@@ -100,69 +100,130 @@ def test_myvoice_renders_profile_preview(tmp_path):
     assert b"a distinctive phrase I always use" in r.data
 
 
-# --- POST /myvoice/humanize — the paste-in de-AI humanizer -------------------
+# --- POST /myvoice/humanize — the paste-in humanizer (v2: modes + always-show) -
 #
-# The page's primary action: paste AI-written prose, get it back in the user's
-# voice. Routes to Cleaner.humanize_text, which returns (result, reason) so a
-# refusal can be explained rather than dead-ending on "no confident rewrite".
+# Routes to Cleaner.humanize_text, which returns a HumanizeOutcome. Three modes
+# (human / voice / tone), always returns a result, warnings surfaced in the UI.
+
+from src.cleanup import HumanizeOutcome
 
 AI_IN = "Moreover, it is a testament to our robust and evolving landscape."
 MINE = "It says a lot about how we build things."
 
 
-def test_myvoice_humanize_shows_result(tmp_path):
+def _outcome(text, reason="ok", warnings=None, changed=1, total=1):
+    return HumanizeOutcome(text, reason, warnings or [], changed, total)
+
+
+def test_humanize_shows_result_without_any_samples(tmp_path):
+    """The default (human) mode works with zero samples — the whole point."""
     from unittest.mock import MagicMock
     cleaner = MagicMock()
-    cleaner.humanize_text.return_value = (MINE, "ok")
-    client, _, h = _client(tmp_path, cleaner=cleaner)
-    vs.add_sample(h.conn, "how I write, sample text")
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, _, _ = _client(tmp_path, cleaner=cleaner)     # no samples added
 
     r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
 
-    assert b"In your voice" in r.data
+    assert b"Humanized" in r.data
     assert MINE.encode() in r.data
     assert cleaner.humanize_text.call_args.args[0] == AI_IN
+    assert cleaner.humanize_text.call_args.kwargs["mode"] == "human"
 
 
-def test_myvoice_humanize_threads_config_knobs(tmp_path):
-    """The paste-in path must use its OWN timeout and floor — the dictation
-    8s/0.85 values would time out and then reject every real rewrite."""
+def test_humanize_threads_mode_and_tone_from_the_form(tmp_path):
     from unittest.mock import MagicMock
     cleaner = MagicMock()
-    cleaner.humanize_text.return_value = (MINE, "ok")
-    client, app_ref, h = _client(tmp_path, cleaner=cleaner)
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+
+    client.post("/myvoice/humanize", headers=HDR,
+                data={"hz_text": AI_IN, "hz_mode": "tone", "hz_tone": "casual"})
+
+    kw = cleaner.humanize_text.call_args.kwargs
+    assert kw["mode"] == "tone" and kw["tone"] == "casual"
+
+
+def test_humanize_only_builds_the_profile_in_voice_mode(tmp_path):
+    """'human' and 'tone' modes need no samples, so the profile is passed empty
+    and voice mode gets the real thing."""
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, _, h = _client(tmp_path, cleaner=cleaner)
+    vs.add_sample(h.conn, "how I actually write things, in my own words")
+
+    client.post("/myvoice/humanize", headers=HDR,
+                data={"hz_text": AI_IN, "hz_mode": "human"})
+    assert cleaner.humanize_text.call_args.kwargs["voice_profile"] == ""
+
+    client.post("/myvoice/humanize", headers=HDR,
+                data={"hz_text": AI_IN, "hz_mode": "voice"})
+    assert cleaner.humanize_text.call_args.kwargs["voice_profile"] != ""
+
+
+def test_humanize_rejects_a_bad_mode(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+    client.post("/myvoice/humanize", headers=HDR,
+                data={"hz_text": AI_IN, "hz_mode": "../etc"})
+    assert cleaner.humanize_text.call_args.kwargs["mode"] == "human"   # fell back
+
+
+def test_humanize_threads_config_knobs(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, app_ref, _ = _client(tmp_path, cleaner=cleaner)
     app_ref.cfg["experimental"].update({
         "humanize_text_timeout_sec": 60.0,
         "humanize_text_min_sim": 0.5,
         "humanize_text_max_chars": 1234,
+        "humanize_text_model": "qwen3.5:latest",
     })
-    vs.add_sample(h.conn, "sample")
 
     client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
 
     kw = cleaner.humanize_text.call_args.kwargs
-    assert kw["timeout_sec"] == 60.0
-    assert kw["min_sim"] == 0.5
-    assert kw["max_chars"] == 1234
+    assert kw["timeout_sec"] == 60.0 and kw["min_sim"] == 0.5
+    assert kw["max_chars"] == 1234 and kw["model"] == "qwen3.5:latest"
 
 
-def test_myvoice_humanize_without_samples_prompts_for_one(tmp_path):
+def test_humanize_renders_warnings(tmp_path):
     from unittest.mock import MagicMock
     cleaner = MagicMock()
-    client, _, _ = _client(tmp_path, cleaner=cleaner)     # no samples, no profile
+    cleaner.humanize_text.return_value = _outcome(
+        MINE, reason="warned",
+        warnings=["A number may have changed — double-check the figures in the text."])
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
 
     r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
 
-    assert b"add a writing sample below" in r.data.lower()
-    cleaner.humanize_text.assert_not_called()             # skipped: empty profile
+    assert MINE.encode() in r.data
+    assert "double-check the figures".encode() in r.data
 
 
-def test_myvoice_humanize_refuses_oversize_paste_without_calling_model(tmp_path):
+def test_humanize_kept_shows_original_with_a_note(tmp_path):
+    """When nothing could be rewritten the original is shown (always-show), with
+    a note explaining why — never a dead end."""
     from unittest.mock import MagicMock
     cleaner = MagicMock()
-    client, app_ref, h = _client(tmp_path, cleaner=cleaner)
+    cleaner.humanize_text.return_value = _outcome(AI_IN, reason="kept", changed=0)
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+
+    r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
+
+    assert AI_IN.encode() in r.data
+    assert b"Couldn" in r.data                      # "Couldn't produce a clean rewrite"
+    assert b"What changed" not in r.data            # no diff when text == input
+
+
+def test_humanize_refuses_oversize_paste_without_calling_model(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    client, app_ref, _ = _client(tmp_path, cleaner=cleaner)
     app_ref.cfg["experimental"]["humanize_text_max_chars"] = 50
-    vs.add_sample(h.conn, "sample")
 
     r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": "x" * 200})
 
@@ -170,32 +231,22 @@ def test_myvoice_humanize_refuses_oversize_paste_without_calling_model(tmp_path)
     cleaner.humanize_text.assert_not_called()
 
 
-@pytest.mark.parametrize("reason, needle", [
-    ("provider_down", b"Is Ollama running"),
-    ("meaning_drift", b"drifted from what your text actually said"),
-    ("bad_shape", "didn’t return a clean rewrite".encode()),
-    ("unchanged", b"already reads like you"),
-])
-def test_myvoice_humanize_explains_each_refusal(tmp_path, reason, needle):
-    """Every refusal reason gets its own message — the whole point of returning
-    (result, reason) instead of None."""
+def test_humanize_provider_down_message(tmp_path):
     from unittest.mock import MagicMock
     cleaner = MagicMock()
-    cleaner.humanize_text.return_value = (None, reason)
-    client, _, h = _client(tmp_path, cleaner=cleaner)
-    vs.add_sample(h.conn, "sample")
+    cleaner.humanize_text.return_value = HumanizeOutcome(None, "provider_down")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
 
     r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
 
-    assert needle in r.data
+    assert b"Is Ollama running" in r.data
 
 
-def test_myvoice_humanize_survives_a_raising_cleaner(tmp_path):
+def test_humanize_survives_a_raising_cleaner(tmp_path):
     from unittest.mock import MagicMock
     cleaner = MagicMock()
     cleaner.humanize_text.side_effect = RuntimeError("boom")
-    client, _, h = _client(tmp_path, cleaner=cleaner)
-    vs.add_sample(h.conn, "sample")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
 
     r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
 
@@ -203,45 +254,24 @@ def test_myvoice_humanize_survives_a_raising_cleaner(tmp_path):
     assert b"Is Ollama running" in r.data
 
 
-def test_myvoice_humanize_flags_a_partial_rewrite(tmp_path):
-    """A half-rewritten document must say so, or the untouched paragraphs read
-    as a deliberate choice rather than a rejected rewrite."""
+def test_humanize_renders_a_word_diff_when_text_changed(tmp_path):
     from unittest.mock import MagicMock
     cleaner = MagicMock()
-    cleaner.humanize_text.return_value = (MINE + "\n\nUntouched paragraph.", "partial")
-    client, _, h = _client(tmp_path, cleaner=cleaner)
-    vs.add_sample(h.conn, "sample")
-
-    r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
-
-    assert b"Some paragraphs are unchanged" in r.data
-    assert b"Untouched paragraph." in r.data
-
-
-def test_myvoice_humanize_renders_a_word_diff(tmp_path):
-    """A rewrite you can't inspect has to be trusted blindly, so a successful
-    pass ships its change set with the text."""
-    from unittest.mock import MagicMock
-    cleaner = MagicMock()
-    cleaner.humanize_text.return_value = ("The quick red fox jumped.", "ok")
-    client, _, h = _client(tmp_path, cleaner=cleaner)
-    vs.add_sample(h.conn, "sample")
+    cleaner.humanize_text.return_value = _outcome("The quick red fox jumped.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
 
     r = client.post("/myvoice/humanize", headers=HDR,
                     data={"hz_text": "The quick brown fox jumped."})
 
     assert b"What changed" in r.data
-    assert b"<del" in r.data and b"brown" in r.data      # removed word struck out
-    assert b"<ins" in r.data and b"red" in r.data        # replacement highlighted
+    assert b"<del" in r.data and b"brown" in r.data
+    assert b"<ins" in r.data and b"red" in r.data
 
 
-def test_myvoice_no_diff_when_nothing_came_back(tmp_path):
-    from unittest.mock import MagicMock
-    cleaner = MagicMock()
-    cleaner.humanize_text.return_value = (None, "meaning_drift")
-    client, _, h = _client(tmp_path, cleaner=cleaner)
-    vs.add_sample(h.conn, "sample")
+def test_humanize_page_has_mode_and_tone_controls(tmp_path):
+    client, _, _ = _client(tmp_path)
+    r = client.get("/myvoice", headers=HDR)
+    assert b'name="hz_mode"' in r.data
+    assert b'name="hz_tone"' in r.data
+    assert b'value="human"' in r.data and b'value="voice"' in r.data and b'value="tone"' in r.data
 
-    r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
-
-    assert b"What changed" not in r.data

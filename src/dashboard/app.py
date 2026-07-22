@@ -584,16 +584,20 @@ def make_app(app_ref, bound_port: int | None = None):
     # ---- My Voice (humanize samples + shadow review) -----------------------
 
     def _myvoice_render(flash="", hz_input="", hz_result=None,
-                        hz_reason="", hz_ran=False):
-        # A rewrite the user can't inspect is one they have to trust blindly,
-        # so a successful pass always ships its change set alongside the text.
+                        hz_reason="", hz_ran=False, hz_mode="human",
+                        hz_tone="plain", hz_warnings=None):
+        hz_warnings = hz_warnings or []
+        # A rewrite the user can't inspect is one they have to trust blindly, so
+        # a result always ships its change set — but only when it actually
+        # differs from the paste (a "kept" result is the original, no diff).
         hz_diff, hz_changed = [], 0.0
-        if hz_result:
+        if hz_result and hz_result.strip() != (hz_input or "").strip():
             from . import textdiff as _td
             hz_diff = _td.word_diff(hz_input, hz_result)
             hz_changed = _td.change_ratio(hz_input, hz_result)
         from . import voice_samples as _vs
         from .. import voice_profile as _vp
+        from ..cleanup import HUMANIZE_TONES as _HUMANIZE_TONES
         samples, shadow_rows, stats = [], [], {}
         history = getattr(app_ref, "history", None)
         profile_preview = ""
@@ -614,6 +618,8 @@ def make_app(app_ref, bound_port: int | None = None):
             profile_preview=profile_preview, has_profile=bool(profile_preview),
             hz_input=hz_input, hz_result=hz_result, hz_reason=hz_reason,
             hz_ran=hz_ran, hz_diff=hz_diff, hz_changed=hz_changed,
+            hz_mode=hz_mode, hz_tone=hz_tone, hz_warnings=hz_warnings,
+            hz_tones=list(_HUMANIZE_TONES),
             hz_max_chars=int(exp.get("humanize_text_max_chars", 6000)),
             flash=flash,
         )
@@ -625,51 +631,59 @@ def make_app(app_ref, bound_port: int | None = None):
 
     @flask_app.post("/myvoice/humanize")
     def myvoice_humanize():
-        # The paste-in humanizer: the user pastes AI-written prose and gets it
-        # back in their own voice. This is NOT the dictation pass — see
-        # Cleaner.humanize_text for why the two can't share a prompt or guards.
-        # Read-only: nothing is stored, nothing is typed into any window.
+        # The paste-in humanizer: paste AI-written prose, get a human version
+        # back. Three selectable modes — 'human' (no samples), 'voice' (uses
+        # writing samples), 'tone' (a chosen register). Always returns a result;
+        # see Cleaner.humanize_text. Read-only: nothing stored, nothing typed.
         from .. import voice_profile as _vp
+        from ..cleanup import HUMANIZE_TONES
         from flask import request as _req
         exp = app_ref.cfg.get("experimental", {}) or {}
         max_chars = int(exp.get("humanize_text_max_chars", 6000))
         text = (_req.form.get("hz_text", "") or "").strip()
+        mode = (_req.form.get("hz_mode", "human") or "human").strip().lower()
+        if mode not in ("human", "voice", "tone"):
+            mode = "human"
+        tone = (_req.form.get("hz_tone", "plain") or "plain").strip().lower()
+        if tone not in HUMANIZE_TONES:
+            tone = "plain"
         cleaner = getattr(app_ref, "cleaner", None)
         history = getattr(app_ref, "history", None)
-        result, reason = None, ""
+        outcome = None
 
         if not text:
             reason = "empty"
         elif len(text) > max_chars:
-            # Refused up front — never hand an oversized paste to the model.
-            reason = "too_long"
+            reason = "too_long"        # refused up front, never sent to the model
         elif cleaner is None or history is None:
             reason = "provider_down"
         else:
             try:
                 retriever = getattr(app_ref, "retriever", None)
-                profile = _vp.build(history, retriever)
-                if not profile:
-                    reason = "no_profile"
-                else:
-                    use_cloud = (bool(exp.get("humanize_use_cloud")) and bool(
-                        (app_ref.cfg.get("cleanup", {}) or {}).get(
-                            "allow_cloud_cleanup")))
-                    result, reason = cleaner.humanize_text(
-                        text, voice_profile=profile, use_cloud=use_cloud,
-                        retriever=retriever,
-                        min_sim=float(exp.get("humanize_text_min_sim", 0.65)),
-                        timeout_sec=float(
-                            exp.get("humanize_text_timeout_sec", 45.0)),
-                        max_chars=max_chars,
-                        model=str(exp.get("humanize_text_model", "") or ""),
-                    )
+                # Only build the (expensive) voice profile when it's actually
+                # used — 'human' and 'tone' modes need no samples at all.
+                profile = _vp.build(history, retriever) if mode == "voice" else ""
+                use_cloud = (bool(exp.get("humanize_use_cloud")) and bool(
+                    (app_ref.cfg.get("cleanup", {}) or {}).get(
+                        "allow_cloud_cleanup")))
+                outcome = cleaner.humanize_text(
+                    text, voice_profile=profile, mode=mode, tone=tone,
+                    use_cloud=use_cloud, retriever=retriever,
+                    min_sim=float(exp.get("humanize_text_min_sim", 0.65)),
+                    timeout_sec=float(exp.get("humanize_text_timeout_sec", 45.0)),
+                    max_chars=max_chars,
+                    model=str(exp.get("humanize_text_model", "") or ""),
+                )
+                reason = outcome.reason
             except Exception as e:
                 _log.warning("myvoice humanize failed: %s", e)
                 reason = "provider_down"
 
+        result = outcome.text if outcome else None
+        warnings = outcome.warnings if outcome else []
         return _myvoice_render(hz_input=text, hz_result=result,
-                               hz_reason=reason, hz_ran=True)
+                               hz_reason=reason, hz_ran=True,
+                               hz_mode=mode, hz_tone=tone, hz_warnings=warnings)
 
     def _myvoice_conn():
         history = getattr(app_ref, "history", None)

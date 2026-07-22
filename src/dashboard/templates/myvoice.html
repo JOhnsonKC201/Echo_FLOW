@@ -27,26 +27,51 @@
 
 <div class="card" style="border-left: 3px solid var(--accent, #3eaf6f);">
   <h2>Humanize</h2>
-  <div class="muted small" style="margin-bottom: 10px;">
-    Paste AI-written text and get it back the way <em>you</em> would have written it —
-    AI tells stripped, facts and paragraphs untouched. Nothing is saved or dictated.
+  <div class="muted small" style="margin-bottom: 12px;">
+    Paste AI-written text and get a human version back — the AI tells stripped out.
+    Pick how it should sound below. Nothing is saved or dictated.
   </div>
 
-  {% if samples|length == 0 %}
-    <div class="muted small" style="margin-bottom: 10px; padding: 10px 12px;
-         border-left: 3px solid var(--warn, #d1a54a); background: rgba(209,165,74,0.08);">
-      <strong>Add a writing sample first.</strong> With no samples, Echo Flow is guessing
-      your voice from dictations alone — the rewrite will be generic. Two or three
-      paragraphs you actually wrote make the difference.
-      <a href="#add-sample">Add one below ↓</a>
-    </div>
-  {% endif %}
-
   <form method="post" action="/myvoice/humanize">
-    <textarea name="hz_text" rows="10" required
+    <textarea name="hz_text" rows="9" required
       placeholder="Paste the AI-written paragraph(s) here…">{{ hz_input }}</textarea>
-    <div style="margin-top: 8px;">
-      <button type="submit" class="primary">Rewrite in my voice</button>
+
+    <fieldset style="border: none; padding: 0; margin: 12px 0 0;">
+      <legend class="muted small" style="padding: 0 0 6px;">Make it sound like…</legend>
+      <label style="margin-right: 16px;">
+        <input type="radio" name="hz_mode" value="human" onchange="hzToggleTone()"
+          {{ 'checked' if hz_mode != 'voice' and hz_mode != 'tone' else '' }}>
+        A natural human
+      </label>
+      <label style="margin-right: 16px;">
+        <input type="radio" name="hz_mode" value="voice" onchange="hzToggleTone()"
+          {{ 'checked' if hz_mode == 'voice' else '' }}>
+        Me <span class="muted small">(uses my writing samples)</span>
+      </label>
+      <label>
+        <input type="radio" name="hz_mode" value="tone" onchange="hzToggleTone()"
+          {{ 'checked' if hz_mode == 'tone' else '' }}>
+        A specific tone
+      </label>
+      <span id="hz-tone-wrap" style="margin-left: 8px; display: {{ 'inline' if hz_mode == 'tone' else 'none' }};">
+        <select name="hz_tone">
+          {% for t in hz_tones %}
+            <option value="{{ t }}" {{ 'selected' if hz_tone == t else '' }}>{{ t|capitalize }}</option>
+          {% endfor %}
+        </select>
+      </span>
+    </fieldset>
+
+    {% if hz_mode == 'voice' and samples|length == 0 %}
+      <div class="muted small" style="margin: 10px 0 0; padding: 8px 12px;
+           border-left: 3px solid var(--warn, #d1a54a); background: rgba(209,165,74,0.08);">
+        You have no writing samples yet, so “Me” will fall back to a natural-human rewrite.
+        <a href="#add-sample">Add a couple below ↓</a> to make it sound like you.
+      </div>
+    {% endif %}
+
+    <div style="margin-top: 12px;">
+      <button type="submit" class="primary">Humanize</button>
       <span class="muted small" style="margin-left: 10px;">up to {{ hz_max_chars }} characters</span>
     </div>
   </form>
@@ -55,17 +80,29 @@
     {% if hz_result %}
       <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border, #333);">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-          <strong>In your voice</strong>
+          <strong>{% if hz_reason == 'unchanged' or hz_reason == 'kept' %}Result{% else %}Humanized{% endif %}</strong>
           <button type="button" class="link-action" onclick="hzCopy(this)">Copy</button>
         </div>
         <div id="hz-output" style="white-space: pre-wrap; line-height: 1.6;">{{ hz_result }}</div>
-        {% if hz_reason == 'partial' %}
+
+        {% if hz_warnings %}
+          <div class="muted small" style="margin-top: 12px; padding: 8px 12px;
+               border-left: 3px solid var(--warn, #d1a54a); background: rgba(209,165,74,0.08);">
+            {% for w in hz_warnings %}<div>⚠️ {{ w }}</div>{% endfor %}
+          </div>
+        {% elif hz_reason == 'unchanged' %}
           <div class="muted small" style="margin-top: 10px;">
-            Some paragraphs are unchanged — their rewrites didn’t pass the meaning
-            and structure checks, so your original text was kept for those.
+            The model left this essentially unchanged — it already reads cleanly.
+          </div>
+        {% elif hz_reason == 'kept' %}
+          <div class="muted small" style="margin-top: 10px;">
+            Couldn’t produce a clean rewrite this time, so your original is shown.
+            Dense or technical text is the usual cause — try a shorter passage or a
+            stronger <a href="/settings/experimental">humanizer model</a>.
           </div>
         {% endif %}
 
+        {% if hz_diff %}
         <details style="margin-top: 14px;">
           <summary class="muted small" style="cursor: pointer;">
             What changed <span class="muted">— {{ '%.0f'|format(hz_changed * 100) }}% of the words</span>
@@ -79,29 +116,18 @@
             {%- endfor -%}
           </div>
         </details>
+        {% endif %}
       </div>
     {% else %}
       <div class="muted small" style="margin-top: 12px;">
-        {% if hz_reason == 'no_profile' %}
-          Nothing to match yet — add a writing sample below, then try again.
-        {% elif hz_reason == 'too_long' %}
+        {% if hz_reason == 'too_long' %}
           That paste is over the {{ hz_max_chars }}-character limit. Try it in smaller pieces.
         {% elif hz_reason == 'provider_down' %}
           Couldn’t reach the local model. Is Ollama running? (<code>ollama serve</code>)
-        {% elif hz_reason == 'meaning_drift' %}
-          Rejected — the rewrite drifted from what your text actually said, so it was
-          discarded rather than handed back. Try a shorter passage.
-        {% elif hz_reason == 'bad_shape' %}
-          Rejected — the model didn’t return a clean rewrite (it changed the structure,
-          padded it out, or echoed your writing samples back). Your text was left alone.
-          Dense or technical passages are the usual cause; a shorter passage often works,
-          and a stronger <a href="/settings/experimental">humanizer model</a> helps most.
-        {% elif hz_reason == 'unchanged' %}
-          That already reads like you — left exactly as it was.
         {% elif hz_reason == 'empty' %}
           Paste some text first.
         {% else %}
-          No rewrite this time. Make sure Ollama is running and try again.
+          Nothing came back. Make sure Ollama is running and try again.
         {% endif %}
       </div>
     {% endif %}
@@ -217,6 +243,14 @@ function hzCopy(btn) {
   ta.select();
   try { document.execCommand('copy'); done(); } catch (e) {}
   document.body.removeChild(ta);
+}
+
+// Show the tone dropdown only when the "A specific tone" mode is selected.
+function hzToggleTone() {
+  var wrap = document.getElementById('hz-tone-wrap');
+  if (!wrap) return;
+  var picked = document.querySelector('input[name="hz_mode"]:checked');
+  wrap.style.display = (picked && picked.value === 'tone') ? 'inline' : 'none';
 }
 </script>
 {% endblock %}
