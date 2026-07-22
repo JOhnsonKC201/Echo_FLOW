@@ -224,6 +224,14 @@ SYSTEM_PROMPTS = {
         "the paragraph.\n"
         "- Uniform sentence length. Real writing varies: a long sentence, "
         "then a short one.\n\n"
+        "EXAMPLES (before → after):\n"
+        "- \"It's important to note that this represents a testament to our "
+        "robust culture.\" → \"This says a lot about the team.\"\n"
+        "- \"Moreover, by leveraging a seamless integration layer, we navigate "
+        "the evolving landscape of user needs.\" → \"We built one integration "
+        "layer, and it keeps up with what users need.\"\n"
+        "- \"This isn't just about speed — it's about reimagining the workflow.\" "
+        "→ \"It's not only faster. It changes how the work flows.\"\n\n"
     ),
     # STEP-2 middles — exactly one is inserted, per mode.
     "humanize_text_mid_human": (
@@ -242,6 +250,27 @@ SYSTEM_PROMPTS = {
     "humanize_text_restructure": (
         "YOU MAY restructure sentences within a paragraph, merge or split "
         "them, and reorder clauses. That is the job."
+    ),
+    # Strength — one line appended after STEP 2, steering how far to rewrite.
+    # 'balanced' adds nothing (the default posture).
+    "humanize_text_strength_light": (
+        "\n\nSTRENGTH: lightest touch. Change as little as possible — remove the "
+        "AI tells and fix only what clearly reads like a machine. Keep the "
+        "original words, order, and sentence boundaries wherever you can."
+    ),
+    "humanize_text_strength_aggressive": (
+        "\n\nSTRENGTH: rewrite freely for the most natural, human result. "
+        "Restructure sentences and swap phrasing as much as it takes, as long as "
+        "the meaning stays identical and every fact is preserved."
+    ),
+    # A focused SECOND pass: given a rewrite that still has named tells, remove
+    # exactly those without touching anything else. Formatted with the phrases.
+    "humanize_text_polish": (
+        "The text below already reads mostly human, but a few AI-giveaway "
+        "phrases remain: {tells}. Rewrite ONLY to remove those phrases — replace "
+        "each with plain, natural wording. Change nothing else. Preserve every "
+        "fact, number, and name exactly. Keep it to a single paragraph. Output "
+        "only the rewritten text, no preamble."
     ),
     # The rules that CLOSE the assembled instruction. Split from the head on
     # purpose: when the profile was appended last, a 3B model treated it as text
@@ -1434,25 +1463,44 @@ class Cleaner:
     )
 
     @staticmethod
-    def _humanize_instruction(mode: str, tone: str, voice_profile: str) -> str:
+    def _tone_desc(tone: str) -> str:
+        """Resolve a tone id to its instruction. A value that isn't a known key
+        is treated as a user-supplied CUSTOM tone: sanitized (one line, length-
+        capped) and wrapped, so 'like a pirate' works without a prompt-injection
+        vector — it can only ever describe a tone."""
+        known = HUMANIZE_TONES.get(tone)
+        if known:
+            return known
+        custom = re.sub(r"\s+", " ", str(tone or "")).strip()[:80]
+        if not custom:
+            return HUMANIZE_TONES["plain"]
+        return f"Write in this tone: {custom}."
+
+    @staticmethod
+    def _humanize_instruction(mode: str, tone: str, voice_profile: str,
+                              strength: str = "balanced") -> str:
         """Assemble the system prompt for one humanize mode.
 
         Three modes, one shared de-AI head and rule block. Only 'voice' (with a
         non-empty profile) carries the VOICE PROFILE data and its extra rules;
-        'human' and 'tone' carry none of the voice machinery. The rules always
-        close the prompt — a small model weights its most-recent tokens most.
+        'human' and 'tone' carry none of the voice machinery. ``strength`` adds
+        one steering line after STEP 2. The rules always close the prompt — a
+        small model weights its most-recent tokens most.
         """
         S = SYSTEM_PROMPTS
         use_voice = mode == "voice" and bool(voice_profile)
         if use_voice:
             mid = S["humanize_text_mid_voice"]
         elif mode == "tone":
-            desc = HUMANIZE_TONES.get(tone, HUMANIZE_TONES["plain"])
-            mid = S["humanize_text_mid_tone"].format(tone_desc=desc)
+            mid = S["humanize_text_mid_tone"].format(tone_desc=Cleaner._tone_desc(tone))
         else:
             mid = S["humanize_text_mid_human"]
 
         parts = [S["humanize_text_head"], mid, S["humanize_text_restructure"]]
+        if strength == "light":
+            parts.append(S["humanize_text_strength_light"])
+        elif strength == "aggressive":
+            parts.append(S["humanize_text_strength_aggressive"])
         if use_voice:
             parts.append(
                 "\n\n=== BEGIN VOICE PROFILE (style reference only — never "
@@ -1464,6 +1512,10 @@ class Cleaner:
         rules += S["humanize_text_rules_base"]
         parts.append(rules)
         return "".join(parts)
+
+    # Ratio budgets per strength — a lighter touch should barely change length,
+    # an aggressive one gets more room.
+    _STRENGTH_RATIO = {"light": 1.15, "balanced": 1.35, "aggressive": 1.6}
 
     def _humanize_one(self, para: str, instruction: str, *, use_cloud: bool,
                       retriever, min_sim: float, max_ratio: float,
@@ -1491,6 +1543,18 @@ class Cleaner:
         Guards are per-paragraph: a length ratio or similarity averaged over a
         whole document hides one paragraph being mangled.
         """
+        out = self._call_model(instruction, para, use_cloud=use_cloud,
+                               timeout_sec=timeout_sec, model=model)
+        if out is None:
+            return (None, "provider_down")
+        return self._judge_humanized(
+            para, out, retriever=retriever, min_sim=min_sim, max_ratio=max_ratio,
+            voice_profile=voice_profile, meaning_floor_hard=meaning_floor_hard)
+
+    def _call_model(self, instruction: str, para: str, *, use_cloud: bool,
+                    timeout_sec: float, model: str = "") -> str | None:
+        """One model call for the humanizer. Returns the stripped output, or
+        None when the provider is unreachable / empty. Never raises."""
         max_tokens = min(2048, max(256, int(len(para) / 3) + 200))
         out = None
         if use_cloud:
@@ -1506,17 +1570,23 @@ class Cleaner:
                                        model_override=model, no_think=True)
             except Exception as e:
                 _log.warning("humanize_text local pass failed: %s", e)
-                return (None, "provider_down")
-
+                return None
         # Small models like to wrap the whole answer in quotes despite the
         # "no quotes" instruction. Strip a matched pair only — never an
         # apostrophe or a legitimately quoted phrase inside the text.
         out = (out or "").strip()
         if len(out) > 1 and out[0] == '"' and out[-1] == '"':
             out = out[1:-1].strip()
-        if not out:
-            return (None, "provider_down")
+        return out or None
 
+    def _judge_humanized(self, para: str, out: str, *, retriever,
+                         min_sim: float, max_ratio: float,
+                         voice_profile: str = "",
+                         meaning_floor_hard: float = 0.45
+                         ) -> tuple[str | None, str]:
+        """Judge a candidate rewrite against the original paragraph. Shared by
+        the first pass, the model-escalation retry, and the tell-polish pass, so
+        every rewrite clears the same bar. Model-free; never raises."""
         # Repair before judging: a leading profile echo is a removable prefix,
         # not a reason to discard an otherwise-correct rewrite. (No-op unless a
         # profile is in play — i.e. voice mode.)
@@ -1583,12 +1653,89 @@ class Cleaner:
 
         return (out, "ok")
 
+    def _polish_tells(self, rewrite: str, original: str, *, retriever,
+                      min_sim: float, max_ratio: float, timeout_sec: float,
+                      model: str = "") -> str | None:
+        """A focused second pass: if a clean rewrite still carries AI tells, ask
+        the model to remove exactly those and nothing else. Kept only if it
+        clears the SAME guards (vs the original) AND strictly lowers the tell
+        count — otherwise the first rewrite stands. Returns the polished text or
+        None. Never raises."""
+        from . import aitells
+        before = aitells.score(rewrite)
+        if before == 0:
+            return None
+        tells = aitells.phrases(rewrite, limit=10)
+        instruction = SYSTEM_PROMPTS["humanize_text_polish"].format(
+            tells=", ".join(tells))
+        out = self._call_model(instruction, rewrite, use_cloud=False,
+                               timeout_sec=timeout_sec, model=model)
+        if out is None:
+            return None
+        # Judge the polish against the ORIGINAL paragraph, so a polish can't
+        # quietly drift meaning even though its input was the first rewrite.
+        judged, status = self._judge_humanized(
+            original, out, retriever=retriever, min_sim=min_sim,
+            max_ratio=max_ratio, voice_profile="")
+        if status not in ("ok", "warn_meaning") or not judged:
+            return None
+        if aitells.score(judged) >= before:
+            return None                      # no net improvement — keep the first
+        _log.info("humanize_text: polish lowered tells %d -> %d",
+                  before, aitells.score(judged))
+        return judged
+
+    def _pick_stronger_model(self, current: str) -> str | None:
+        """Pick the NEXT-STEP-UP installed Ollama model from ``current`` — the
+        smallest model on disk that is still meaningfully larger than the one in
+        use, not the outright biggest.
+
+        "Next step up" is deliberate: the dictation model is tiny to fit an 8 GB
+        GPU, and jumping to a 17 GB model would spill to CPU and blow the time
+        budget. On-disk size is the capability signal (model names don't reliably
+        encode parameter counts — ``qwen3.5:latest`` has no ``Nb`` token). The
+        current model's size is read from the tag list; a candidate must be at
+        least 20% larger to count as a step up. Cached per ``current``. Returns a
+        name or None; never raises, so a missing or down Ollama just means "no
+        escalation"."""
+        cache = getattr(self, "_stronger_cache", None)
+        if cache is None:
+            cache = self._stronger_cache = {}
+        key = current or ""
+        if key in cache:
+            return cache[key]
+
+        result = None
+        try:
+            oc = self.cfg.get("ollama", {}) or {}
+            url = (oc.get("base_url", "http://localhost:11434").rstrip("/")
+                   + "/api/tags")
+            r = self._session.get(url, timeout=3.0)
+            r.raise_for_status()
+            models = r.json().get("models", []) or []
+            sizes = {(m.get("name") or m.get("model") or ""):
+                     int(m.get("size", 0) or 0) for m in models if m}
+            cur_size = sizes.get(current, 0)
+            # Candidates at least 20% bigger than the current model.
+            bigger = [(sz, nm) for nm, sz in sizes.items()
+                      if nm and nm != current and sz > cur_size * 1.2]
+            if bigger:
+                result = min(bigger)[1]     # smallest of the bigger ones
+        except Exception:   # noqa: BLE001 — no Ollama / bad response ⇒ no escalation
+            result = None
+        cache[key] = result
+        if result:
+            _log.info("humanize_text: escalation model for %r -> %r", current, result)
+        return result
+
     def humanize_text(self, text: str, *, voice_profile: str = "",
                       mode: str = "human", tone: str = "",
+                      strength: str = "balanced",
                       use_cloud: bool = False, retriever=None,
-                      min_sim: float = 0.65, max_ratio: float = 1.35,
+                      min_sim: float = 0.65, max_ratio: float | None = None,
                       timeout_sec: float = 45.0, max_chars: int = 6000,
-                      model: str = "") -> "HumanizeOutcome":
+                      model: str = "", escalate_model: str = "auto",
+                      polish: bool = True) -> "HumanizeOutcome":
         """Rewrite pasted AI-written prose so it reads like a person wrote it.
 
         The "paste an AI paragraph, get a human version back" path — a different
@@ -1599,27 +1746,32 @@ class Cleaner:
             natural prose.
           - ``voice`` — additionally match the user's writing ``voice_profile``.
             With an empty profile it degrades to ``human`` and notes why.
-          - ``tone`` — write in the requested ``tone`` (see ``HUMANIZE_TONES``).
+          - ``tone`` — write in the requested ``tone`` (a ``HUMANIZE_TONES`` key,
+            or free text used as a custom tone).
 
-        **Always returns a result.** The feature's whole point is to hand text
-        back, so it never dead-ends on a guard: a paragraph the model mangles
-        (preamble, injected markdown, a merged/ballooned paragraph, off-topic
-        output) falls back to the user's original; a *risky-but-readable* rewrite
-        (a number changed, meaning drifted a little) is shown WITH a warning
-        rather than dropped. ``text`` is None only when there is truly nothing to
-        show — empty/oversized input, or the model fully unreachable.
+        ``strength`` (light | balanced | aggressive) steers how far to rewrite
+        and scales the length budget. Two automatic quality lifts run within the
+        time budget: a stronger installed model is tried once when the default
+        mangles a paragraph (``escalate_model``, ``"auto"`` to auto-detect), and
+        a focused polish pass removes any AI tells a clean rewrite left behind
+        (``polish``).
 
-        Rewrites paragraph by paragraph so structure survives structurally (a
-        small model merges paragraphs when handed a whole document) and one bad
-        paragraph can't sink the rest.
+        **Always returns a result.** A mangled paragraph falls back to the
+        user's original; a risky-but-readable rewrite (a number changed, meaning
+        drifted) is shown WITH a warning. ``text`` is None only for empty /
+        oversized input or a fully unreachable model.
 
         Returns a :class:`HumanizeOutcome`. Never raises.
         """
+        from . import aitells
+
         text = (text or "").strip()
         if not text:
             return HumanizeOutcome(None, "empty")
         if len(text) > max_chars:
             return HumanizeOutcome(None, "too_long")
+        if max_ratio is None:
+            max_ratio = self._STRENGTH_RATIO.get(strength, 1.35)
 
         # A 'voice' request with no samples can't match a voice — fall back to a
         # generic humanize and say so, rather than refusing (the old dead end).
@@ -1631,12 +1783,29 @@ class Cleaner:
                         "generically. Add a couple on this page to match your "
                         "own voice.")
         prof = voice_profile if eff_mode == "voice" else ""
-        instruction = self._humanize_instruction(eff_mode, tone, prof)
+        instruction = self._humanize_instruction(eff_mode, tone, prof, strength)
 
         paras = self._paragraphs(text)
         total = len(paras)
         deadline = time.monotonic() + timeout_sec
         MIN_CALL_BUDGET = 5.0   # not worth starting a call below this
+
+        # Resolve the escalation model LAZILY — only when a paragraph actually
+        # mangles, so the happy path never touches Ollama /api/tags. Cached.
+        _strong_box: list[str | None] = []
+
+        def _strong() -> str | None:
+            if not escalate_model:
+                return None
+            if _strong_box:
+                return _strong_box[0]
+            s = (self._pick_stronger_model(model or self.cfg.get(
+                "ollama", {}).get("model", "")) if escalate_model == "auto"
+                else escalate_model)
+            if s and s == (model or ""):
+                s = None
+            _strong_box.append(s)
+            return s
 
         out_paras: list[str] = []
         warnings: list[str] = []
@@ -1647,9 +1816,11 @@ class Cleaner:
         def _ref(idx: int) -> str:
             return "the text" if total == 1 else f"paragraph {idx + 1}"
 
+        def _budget() -> float:
+            return deadline - time.monotonic()
+
         for i, para in enumerate(paras):
-            remaining = deadline - time.monotonic()
-            if remaining < MIN_CALL_BUDGET:
+            if _budget() < MIN_CALL_BUDGET:
                 out_paras.extend(paras[i:])
                 statuses.extend(["timeout"] * (total - i))
                 warnings.append("Ran out of time, so the rest was kept as-is. "
@@ -1658,19 +1829,39 @@ class Cleaner:
 
             rw, st = self._humanize_one(
                 para, instruction, use_cloud=use_cloud, retriever=retriever,
-                min_sim=min_sim, max_ratio=max_ratio, timeout_sec=remaining,
+                min_sim=min_sim, max_ratio=max_ratio, timeout_sec=_budget(),
                 voice_profile=prof, model=model)
             # A malformed output is often a one-off (a stray preamble, a merged
             # paragraph); one retry measurably lifts the clean-rewrite rate.
             # warn_* are already showable, so they aren't retried.
-            if st == "malformed":
-                retry_budget = deadline - time.monotonic()
-                if retry_budget >= MIN_CALL_BUDGET:
-                    rw, st = self._humanize_one(
+            if st == "malformed" and _budget() >= MIN_CALL_BUDGET:
+                rw, st = self._humanize_one(
+                    para, instruction, use_cloud=use_cloud,
+                    retriever=retriever, min_sim=min_sim,
+                    max_ratio=max_ratio, timeout_sec=_budget(),
+                    voice_profile=prof, model=model)
+            # Still garbage on the small model — escalate ONCE to a stronger
+            # installed model before giving up on this paragraph.
+            if st == "malformed" and _budget() >= MIN_CALL_BUDGET:
+                strong = _strong()
+                if strong:
+                    erw, est = self._humanize_one(
                         para, instruction, use_cloud=use_cloud,
                         retriever=retriever, min_sim=min_sim,
-                        max_ratio=max_ratio, timeout_sec=retry_budget,
-                        voice_profile=prof, model=model)
+                        max_ratio=max_ratio, timeout_sec=_budget(),
+                        voice_profile=prof, model=strong)
+                    if est != "malformed":
+                        rw, st = erw, est
+            # A clean rewrite that still reads a bit AI gets one focused polish
+            # pass to strip the residual tells — kept only if it improves.
+            if polish and st in ("ok", "warn_meaning") and rw \
+                    and aitells.score(rw) > 0 and _budget() >= MIN_CALL_BUDGET:
+                polished = self._polish_tells(
+                    rw, para, retriever=retriever, min_sim=min_sim,
+                    max_ratio=max_ratio, timeout_sec=_budget(),
+                    model=model or "")
+                if polished:
+                    rw = polished
             statuses.append(st)
 
             if st == "provider_down":

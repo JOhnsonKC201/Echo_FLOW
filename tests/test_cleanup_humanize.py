@@ -152,9 +152,14 @@ class _SimRetriever:
         return np.array([1.0, 0.0])
 
 
+# Escalation and polish are OFF by default in these helpers so the unit tests
+# stay deterministic and never touch the network (escalation would hit Ollama's
+# /api/tags). Dedicated tests below exercise both explicitly.
 def _human(cleaner, text=AI_TEXT, **kw):
     kw.setdefault("retriever", _SimRetriever())
     kw.setdefault("mode", "human")
+    kw.setdefault("escalate_model", "")
+    kw.setdefault("polish", False)
     return cleaner.humanize_text(text, **kw)
 
 
@@ -162,6 +167,8 @@ def _voice(cleaner, text=AI_TEXT, **kw):
     kw.setdefault("retriever", _SimRetriever())
     kw.setdefault("voice_profile", VOICE)
     kw.setdefault("mode", "voice")
+    kw.setdefault("escalate_model", "")
+    kw.setdefault("polish", False)
     return cleaner.humanize_text(text, **kw)
 
 
@@ -229,14 +236,54 @@ def test_tone_mode_injects_the_chosen_tone(monkeypatch):
     assert "VOICE PROFILE" not in seen["system"]
 
 
-def test_unknown_tone_falls_back_to_plain(monkeypatch):
+def test_custom_free_text_tone_is_used(monkeypatch):
+    """A tone that isn't a known key is treated as a custom tone — sanitized and
+    wrapped so it can only ever describe a tone, never inject instructions."""
     cleaner = _cleaner()
     seen = {}
     monkeypatch.setattr(cleaner, "_via_ollama",
                         lambda s, t, *a, **k: seen.update(system=s) or AI_HUMANIZED)
-    cleaner.humanize_text(AI_TEXT, mode="tone", tone="nonsense",
-                          retriever=_SimRetriever())
+    _human(cleaner, mode="tone", tone="like a grumpy pirate")
+    assert "Write in this tone: like a grumpy pirate." in seen["system"]
+
+
+def test_custom_tone_is_length_capped_and_single_line(monkeypatch):
+    cleaner = _cleaner()
+    seen = {}
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda s, t, *a, **k: seen.update(system=s) or AI_HUMANIZED)
+    _human(cleaner, mode="tone", tone="a\nb   c " + "x" * 200)
+    line = [l for l in seen["system"].splitlines() if "Write in this tone" in l][0]
+    assert "\n" not in "Write in this tone: a b c"      # newline collapsed
+    assert len(line) < 140                              # capped, not 200+ chars
+
+
+def test_empty_custom_tone_falls_back_to_plain(monkeypatch):
+    cleaner = _cleaner()
+    seen = {}
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda s, t, *a, **k: seen.update(system=s) or AI_HUMANIZED)
+    _human(cleaner, mode="tone", tone="   ")
     assert HUMANIZE_TONES["plain"] in seen["system"]
+
+
+# --- Strength ----------------------------------------------------------------
+
+def test_strength_lines_and_ratios(monkeypatch):
+    cleaner = _cleaner()
+    seen = {}
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda s, t, *a, **k: seen.update(system=s) or AI_HUMANIZED)
+
+    _human(cleaner, strength="light")
+    assert "lightest touch" in seen["system"]
+    _human(cleaner, strength="aggressive")
+    assert "rewrite freely" in seen["system"].lower()
+    _human(cleaner, strength="balanced")
+    assert "lightest touch" not in seen["system"] and "rewrite freely" not in seen["system"].lower()
+
+    assert cleaner._STRENGTH_RATIO["light"] < cleaner._STRENGTH_RATIO["balanced"] \
+        < cleaner._STRENGTH_RATIO["aggressive"]
 
 
 # --- Prompt structure (load-bearing ordering) --------------------------------
@@ -466,3 +513,142 @@ def test_uses_the_passed_timeout_and_model(monkeypatch):
     _human(cleaner, timeout_sec=45.0, model="qwen3.5:latest")
     assert 40.0 < seen["timeout_sec"] <= 45.0
     assert seen["model_override"] == "qwen3.5:latest"
+
+
+# --- Model escalation --------------------------------------------------------
+
+def test_escalates_to_a_stronger_model_when_the_small_one_mangles(monkeypatch):
+    """When the default model keeps producing garbage, one retry on a stronger
+    installed model rescues the paragraph."""
+    cleaner = _cleaner()
+    monkeypatch.setattr(cleaner, "_pick_stronger_model", lambda cur: "qwen3.5:latest")
+    calls = []
+
+    def fake(system, text, *a, **k):
+        calls.append(k.get("model_override", ""))
+        # The small model always preambles (malformed); the strong one nails it.
+        return AI_HUMANIZED if k.get("model_override") == "qwen3.5:latest" \
+            else "Sure! Here's the rewrite: " + AI_HUMANIZED
+
+    monkeypatch.setattr(cleaner, "_via_ollama", fake)
+    out = cleaner.humanize_text(AI_TEXT, mode="human", retriever=_SimRetriever(),
+                                escalate_model="auto", polish=False)
+    assert out.reason == "ok" and out.text == AI_HUMANIZED
+    assert "qwen3.5:latest" in calls                    # the strong model was tried
+
+
+def test_escalation_off_never_queries_for_a_model(monkeypatch):
+    cleaner = _cleaner()
+    probed = []
+    monkeypatch.setattr(cleaner, "_pick_stronger_model",
+                        lambda cur: probed.append(1) or "big:latest")
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda *a, **k: "Sure! preamble " + AI_HUMANIZED)   # malformed
+    cleaner.humanize_text(AI_TEXT, mode="human", retriever=_SimRetriever(),
+                          escalate_model="", polish=False)
+    assert probed == []                                 # never asked for a model
+
+
+def test_happy_path_does_not_probe_for_a_stronger_model(monkeypatch):
+    """Clean rewrites must not touch /api/tags — escalation is lazy."""
+    cleaner = _cleaner()
+    probed = []
+    monkeypatch.setattr(cleaner, "_pick_stronger_model",
+                        lambda cur: probed.append(1) or "big:latest")
+    monkeypatch.setattr(cleaner, "_via_ollama", lambda *a, **k: AI_HUMANIZED)
+    cleaner.humanize_text(AI_TEXT, mode="human", retriever=_SimRetriever(),
+                          escalate_model="auto", polish=False)
+    assert probed == []                                 # never needed it
+
+
+# --- Tell-polish second pass -------------------------------------------------
+
+TELLY = ("This is a testament to our robust culture. Moreover, we leverage "
+         "seamless synergies to navigate the landscape.")
+CLEANED_UP = "The team built something that works, and it keeps up with demand."
+
+
+def test_polish_removes_residual_tells(monkeypatch):
+    """A first rewrite that still scores AI tells gets a focused second pass that
+    strips them; the cleaner version is kept because it lowers the tell count."""
+    cleaner = _cleaner()
+    calls = []
+
+    def fake(system, text, *a, **k):
+        calls.append(system)
+        # First pass returns a still-telly rewrite; the polish pass (its prompt
+        # names the tells) returns the clean one.
+        return CLEANED_UP if "AI-giveaway phrases remain" in system else TELLY
+
+    monkeypatch.setattr(cleaner, "_via_ollama", fake)
+    out = cleaner.humanize_text(AI_TEXT, mode="human", retriever=_SimRetriever(),
+                                escalate_model="", polish=True)
+    assert out.text == CLEANED_UP
+    assert any("AI-giveaway phrases remain" in s for s in calls)   # polish ran
+
+
+def test_polish_is_discarded_if_it_does_not_improve(monkeypatch):
+    cleaner = _cleaner()
+
+    def fake(system, text, *a, **k):
+        # Polish returns something just as telly → no net improvement → discard.
+        return TELLY
+
+    monkeypatch.setattr(cleaner, "_via_ollama", fake)
+    out = cleaner.humanize_text(AI_TEXT, mode="human", retriever=_SimRetriever(),
+                                escalate_model="", polish=True)
+    assert out.text == TELLY                            # kept the first pass
+
+
+def test_polish_skipped_when_first_rewrite_is_already_clean(monkeypatch):
+    cleaner = _cleaner()
+    calls = []
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda s, t, *a, **k: calls.append(s) or AI_HUMANIZED)
+    cleaner.humanize_text(AI_TEXT, mode="human", retriever=_SimRetriever(),
+                          escalate_model="", polish=True)
+    # AI_HUMANIZED has no tells → no polish call.
+    assert not any("AI-giveaway phrases remain" in s for s in calls)
+
+
+def test_pick_stronger_model_picks_the_next_step_up_not_the_biggest(monkeypatch):
+    cleaner = _cleaner()
+
+    class _Resp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"models": [
+                {"name": "qwen2.5:3b-instruct-q4_K_M", "size": 2_000_000_000},
+                {"name": "qwen3.5:latest", "size": 6_000_000_000},
+                {"name": "glm-4.7-flash:latest", "size": 17_000_000_000},
+            ]}
+
+    monkeypatch.setattr(cleaner._session, "get", lambda *a, **k: _Resp())
+    # 6GB is the next step up from 2GB — NOT the 17GB model (won't fit an 8GB GPU).
+    pick = cleaner._pick_stronger_model("qwen2.5:3b-instruct-q4_K_M")
+    assert pick == "qwen3.5:latest"
+
+
+def test_pick_stronger_model_none_when_current_is_the_biggest(monkeypatch):
+    cleaner = _cleaner()
+
+    class _Resp:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"models": [
+                {"name": "small:latest", "size": 1_000_000_000},
+                {"name": "big:latest", "size": 9_000_000_000},
+            ]}
+
+    monkeypatch.setattr(cleaner._session, "get", lambda *a, **k: _Resp())
+    assert cleaner._pick_stronger_model("big:latest") is None
+
+
+def test_pick_stronger_model_none_when_ollama_down(monkeypatch):
+    cleaner = _cleaner()
+
+    def boom(*a, **k):
+        raise requests.exceptions.ConnectionError("no ollama")
+
+    monkeypatch.setattr(cleaner._session, "get", boom)
+    assert cleaner._pick_stronger_model("qwen2.5:3b") is None

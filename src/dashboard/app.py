@@ -585,8 +585,11 @@ def make_app(app_ref, bound_port: int | None = None):
 
     def _myvoice_render(flash="", hz_input="", hz_result=None,
                         hz_reason="", hz_ran=False, hz_mode="human",
-                        hz_tone="plain", hz_warnings=None):
+                        hz_tone="plain", hz_tone_custom="", hz_strength="balanced",
+                        hz_warnings=None, hz_tells_before=0, hz_tells_after=0,
+                        hz_tells_remaining=None):
         hz_warnings = hz_warnings or []
+        hz_tells_remaining = hz_tells_remaining or []
         # A rewrite the user can't inspect is one they have to trust blindly, so
         # a result always ships its change set — but only when it actually
         # differs from the paste (a "kept" result is the original, no diff).
@@ -618,7 +621,10 @@ def make_app(app_ref, bound_port: int | None = None):
             profile_preview=profile_preview, has_profile=bool(profile_preview),
             hz_input=hz_input, hz_result=hz_result, hz_reason=hz_reason,
             hz_ran=hz_ran, hz_diff=hz_diff, hz_changed=hz_changed,
-            hz_mode=hz_mode, hz_tone=hz_tone, hz_warnings=hz_warnings,
+            hz_mode=hz_mode, hz_tone=hz_tone, hz_tone_custom=hz_tone_custom,
+            hz_strength=hz_strength, hz_warnings=hz_warnings,
+            hz_tells_before=hz_tells_before, hz_tells_after=hz_tells_after,
+            hz_tells_remaining=hz_tells_remaining,
             hz_tones=list(_HUMANIZE_TONES),
             hz_max_chars=int(exp.get("humanize_text_max_chars", 6000)),
             flash=flash,
@@ -637,6 +643,7 @@ def make_app(app_ref, bound_port: int | None = None):
         # see Cleaner.humanize_text. Read-only: nothing stored, nothing typed.
         from .. import voice_profile as _vp
         from ..cleanup import HUMANIZE_TONES
+        from .. import aitells as _ai
         from flask import request as _req
         exp = app_ref.cfg.get("experimental", {}) or {}
         max_chars = int(exp.get("humanize_text_max_chars", 6000))
@@ -644,9 +651,17 @@ def make_app(app_ref, bound_port: int | None = None):
         mode = (_req.form.get("hz_mode", "human") or "human").strip().lower()
         if mode not in ("human", "voice", "tone"):
             mode = "human"
+        # A known key, or free-text custom tone the user typed (validated by the
+        # cleaner, which sanitizes anything that isn't a known key).
         tone = (_req.form.get("hz_tone", "plain") or "plain").strip().lower()
-        if tone not in HUMANIZE_TONES:
+        tone_custom = (_req.form.get("hz_tone_custom", "") or "").strip()
+        effective_tone = tone_custom if (tone == "custom" and tone_custom) else tone
+        if not tone_custom and tone not in HUMANIZE_TONES and tone != "custom":
             tone = "plain"
+            effective_tone = "plain"
+        strength = (_req.form.get("hz_strength", "balanced") or "balanced").strip().lower()
+        if strength not in ("light", "balanced", "aggressive"):
+            strength = "balanced"
         cleaner = getattr(app_ref, "cleaner", None)
         history = getattr(app_ref, "history", None)
         outcome = None
@@ -667,12 +682,13 @@ def make_app(app_ref, bound_port: int | None = None):
                     (app_ref.cfg.get("cleanup", {}) or {}).get(
                         "allow_cloud_cleanup")))
                 outcome = cleaner.humanize_text(
-                    text, voice_profile=profile, mode=mode, tone=tone,
-                    use_cloud=use_cloud, retriever=retriever,
+                    text, voice_profile=profile, mode=mode, tone=effective_tone,
+                    strength=strength, use_cloud=use_cloud, retriever=retriever,
                     min_sim=float(exp.get("humanize_text_min_sim", 0.65)),
                     timeout_sec=float(exp.get("humanize_text_timeout_sec", 45.0)),
                     max_chars=max_chars,
                     model=str(exp.get("humanize_text_model", "") or ""),
+                    escalate_model=str(exp.get("humanize_text_escalate_model", "auto")),
                 )
                 reason = outcome.reason
             except Exception as e:
@@ -681,9 +697,18 @@ def make_app(app_ref, bound_port: int | None = None):
 
         result = outcome.text if outcome else None
         warnings = outcome.warnings if outcome else []
+        # AI-tell score before → after, and what still remains, so the rewrite is
+        # legible rather than a black box.
+        tells_before = _ai.score(text) if text else 0
+        tells_after = _ai.score(result) if result else 0
+        tells_remaining = _ai.phrases(result) if result else []
         return _myvoice_render(hz_input=text, hz_result=result,
                                hz_reason=reason, hz_ran=True,
-                               hz_mode=mode, hz_tone=tone, hz_warnings=warnings)
+                               hz_mode=mode, hz_tone=tone, hz_tone_custom=tone_custom,
+                               hz_strength=strength, hz_warnings=warnings,
+                               hz_tells_before=tells_before,
+                               hz_tells_after=tells_after,
+                               hz_tells_remaining=tells_remaining)
 
     def _myvoice_conn():
         history = getattr(app_ref, "history", None)

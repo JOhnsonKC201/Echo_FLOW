@@ -258,6 +258,7 @@ experimental:
   humanize_text_timeout_sec: 45.0   # total budget for the whole paste. Text is rewritten one paragraph at a time; when the budget runs out the remaining paragraphs come back unchanged rather than half-written. Bigger models need more.
   humanize_text_min_sim: 0.65       # meaning floor for the paste-in rewrite. Lower than humanize_min_sim because de-AI-ing text legitimately changes far more wording. Raise it if rewrites drift.
   humanize_text_max_chars: 6000     # largest single paste accepted. Bigger pastes are refused up front rather than silently truncated.
+  humanize_text_escalate_model: "auto"  # when the main model mangles a paragraph, retry it ONCE on a stronger installed model before keeping your original. "auto" picks the next-step-up model by size (won't jump to one too big for your GPU); a name like "qwen3.5:latest" pins one; "" disables.
 
 logging:
   level: "INFO"

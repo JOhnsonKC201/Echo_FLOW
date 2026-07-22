@@ -259,6 +259,8 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "humanize_log_verbose": bool(exp.get("humanize_log_verbose", False)),
             "humanize_min_sim": _intent_conf(exp.get("humanize_min_sim", 0.85)),
             "humanize_text_model": exp.get("humanize_text_model", "") or "",
+            "humanize_text_escalate_model": exp.get(
+                "humanize_text_escalate_model", "auto") or "",
             "humanize_text_min_sim": _intent_conf(
                 exp.get("humanize_text_min_sim", 0.65)),
         }, supported_commands=_cmds.list_supported(),
@@ -338,6 +340,13 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
                 "/settings/experimental?flash=humanizer model must be a single "
                 "Ollama model name, e.g. qwen2.5:7b-instruct."
             )
+        hz_escalate = (f.get("humanize_text_escalate_model", "") or "").strip()
+        if hz_escalate and hz_escalate != "auto" and (
+                len(hz_escalate) > 100 or any(c.isspace() for c in hz_escalate)):
+            return redirect(
+                "/settings/experimental?flash=escalation model must be 'auto', "
+                "blank, or a single Ollama model name."
+            )
         raw_tsim = (f.get("humanize_text_min_sim", "") or "").strip()
         try:
             hz_tsim = float(raw_tsim) if raw_tsim else 0.65
@@ -364,6 +373,7 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             ("experimental.humanize_log_verbose", _checkbox(f, "humanize_log_verbose")),
             ("experimental.humanize_min_sim", hz_sim),
             ("experimental.humanize_text_model", hz_model),
+            ("experimental.humanize_text_escalate_model", hz_escalate),
             ("experimental.humanize_text_min_sim", hz_tsim),
         ], log)
         if errs:

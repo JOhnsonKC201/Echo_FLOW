@@ -53,6 +53,31 @@ All notable changes are documented here. Format roughly follows
   option — editable in **Settings → Experimental**), `humanize_text_timeout_sec`,
   `humanize_text_min_sim`, `humanize_text_max_chars`.
 
+  Then, in the same cycle:
+  - **Deterministic AI-tell detector** (`src/aitells.py`) — a pure, tested module
+    that scores how much a passage still reads like a model (LLM vocabulary,
+    em-dash rhythm, the "not just X" antithesis, hedging, throat-clearers). The
+    page shows an **"AI tells: N → M"** score on every result and lists what
+    still remains, so the rewrite is legible instead of a black box.
+  - **Better output on the small model.** Few-shot before→after examples in the
+    prompt, plus a budget-bounded **tell-polish second pass**: when a clean
+    rewrite still scores tells, one focused "remove exactly these phrases" call
+    that is kept only if it clears the same guards and strictly lowers the score.
+    On the benchmark this took the previously-failing dense/technical case to a
+    clean rewrite, and most cases to zero remaining tells.
+  - **Auto model escalation** (`humanize_text_escalate_model`, default `"auto"`).
+    When the main model mangles a paragraph, it retries once on the next-step-up
+    installed model — chosen by size so it won't jump to one too big for the GPU
+    — before falling back to your original. Verified live: the 3B's hardest case
+    is rescued by `qwen3.5`.
+  - **More control.** A **strength** selector (light / balanced / aggressive)
+    that steers how far to rewrite and scales the length budget, and a **custom
+    free-text tone** box (sanitized) alongside the presets. Plus a **Try again**
+    button to re-roll a different rewrite.
+  - **`scripts/eval_humanize.py`** — a committed quality benchmark (fixture
+    corpus + `--check` release gate) that measures acceptance, tells-removed (via
+    `aitells`), facts-kept, and voice contamination against the real model.
+
 - **Local intent model — a regex-miss fallback for Action Mode**
   (`src/intent_model.py`, opt-in, **off by default**). Action Mode classifies a
   prefixed command with tight anchored regexes; that is high-precision but

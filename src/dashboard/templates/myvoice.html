@@ -32,7 +32,7 @@
     Pick how it should sound below. Nothing is saved or dictated.
   </div>
 
-  <form method="post" action="/myvoice/humanize">
+  <form method="post" action="/myvoice/humanize" id="hz-form">
     <textarea name="hz_text" rows="9" required
       placeholder="Paste the AI-written paragraph(s) here…">{{ hz_input }}</textarea>
 
@@ -54,12 +54,28 @@
         A specific tone
       </label>
       <span id="hz-tone-wrap" style="margin-left: 8px; display: {{ 'inline' if hz_mode == 'tone' else 'none' }};">
-        <select name="hz_tone">
+        <select name="hz_tone" onchange="hzToggleTone()">
           {% for t in hz_tones %}
             <option value="{{ t }}" {{ 'selected' if hz_tone == t else '' }}>{{ t|capitalize }}</option>
           {% endfor %}
+          <option value="custom" {{ 'selected' if hz_tone == 'custom' else '' }}>Custom…</option>
         </select>
+        <input type="text" name="hz_tone_custom" maxlength="80" spellcheck="false"
+          placeholder="e.g. dry and witty" value="{{ hz_tone_custom }}"
+          id="hz-tone-custom"
+          style="margin-left: 6px; display: {{ 'inline-block' if hz_tone == 'custom' else 'none' }}; width: 180px;">
       </span>
+    </fieldset>
+
+    <fieldset style="border: none; padding: 0; margin: 10px 0 0;">
+      <legend class="muted small" style="padding: 0 0 6px;">How hard should it rewrite?</legend>
+      {% for s, lbl in [('light','Light — minimal changes'), ('balanced','Balanced'), ('aggressive','Aggressive — most natural')] %}
+        <label style="margin-right: 16px;">
+          <input type="radio" name="hz_strength" value="{{ s }}"
+            {{ 'checked' if hz_strength == s or (hz_strength not in ['light','balanced','aggressive'] and s == 'balanced') else '' }}>
+          {{ lbl }}
+        </label>
+      {% endfor %}
     </fieldset>
 
     {% if hz_mode == 'voice' and samples|length == 0 %}
@@ -82,8 +98,20 @@
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
           <strong>{% if hz_reason == 'unchanged' or hz_reason == 'kept' %}Result{% else %}Humanized{% endif %}</strong>
           <button type="button" class="link-action" onclick="hzCopy(this)">Copy</button>
+          <button type="submit" form="hz-form" class="link-action" title="Re-roll a different rewrite">Try again</button>
+          <span class="muted small" style="margin-left: auto;">
+            AI tells:
+            <strong>{{ hz_tells_before }}</strong> →
+            <strong style="color: {{ 'var(--accent, #3eaf6f)' if hz_tells_after < hz_tells_before else 'inherit' }};">{{ hz_tells_after }}</strong>
+          </span>
         </div>
         <div id="hz-output" style="white-space: pre-wrap; line-height: 1.6;">{{ hz_result }}</div>
+
+        {% if hz_tells_remaining %}
+          <div class="muted small" style="margin-top: 8px;">
+            Still a bit AI: {{ hz_tells_remaining|join(', ') }}. Hit <em>Try again</em> or turn up the strength.
+          </div>
+        {% endif %}
 
         {% if hz_warnings %}
           <div class="muted small" style="margin-top: 12px; padding: 8px 12px;
@@ -245,12 +273,17 @@ function hzCopy(btn) {
   document.body.removeChild(ta);
 }
 
-// Show the tone dropdown only when the "A specific tone" mode is selected.
+// Show the tone dropdown only in tone mode, and the custom-tone box only when
+// "Custom…" is picked.
 function hzToggleTone() {
   var wrap = document.getElementById('hz-tone-wrap');
-  if (!wrap) return;
+  var custom = document.getElementById('hz-tone-custom');
+  var sel = document.querySelector('select[name="hz_tone"]');
   var picked = document.querySelector('input[name="hz_mode"]:checked');
-  wrap.style.display = (picked && picked.value === 'tone') ? 'inline' : 'none';
+  var isTone = picked && picked.value === 'tone';
+  if (wrap) wrap.style.display = isTone ? 'inline' : 'none';
+  if (custom) custom.style.display = (isTone && sel && sel.value === 'custom')
+    ? 'inline-block' : 'none';
 }
 </script>
 {% endblock %}

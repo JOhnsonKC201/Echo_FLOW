@@ -109,12 +109,17 @@ The humanizer gives you **three targets**, and needs no setup to start:
   none, it falls back to the natural-human rewrite and tells you why.
 - **A specific tone** — casual, professional, friendly, plain, confident, concise.
 
+You also steer it: a **strength** slider (light / balanced / aggressive) and a
+**custom tone** box, plus a **Try again** button to re-roll.
+
 It **always gives you a result.** A risky-but-readable rewrite (a number changed,
 meaning drifted) is shown *with a warning* rather than dropped; only genuinely
 broken output falls back to your original. It rewrites **one paragraph at a time**
 so structure survives, checks **every number in both directions** (a dropped
 figure falsifies a document as surely as an invented one), and shows a word-level
-diff of what changed so you can check the edit before copying. All local by default.
+diff plus an **"AI tells: N → M"** score so you can see exactly what it stripped.
+When the small default model struggles on a paragraph it **auto-escalates once**
+to the next-larger model you have installed. All local by default.
 
 ### Knowledge layer
 | Feature | Detail |

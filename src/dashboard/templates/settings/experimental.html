@@ -105,6 +105,12 @@
           <span class="set-field-hint">0–1, default 0.65. Applies to pasted text only. Lower than the dictation floor above because rewriting AI-written prose legitimately changes far more wording. Raise it if rewrites drift from your meaning.</span>
         </label>
 
+        <label class="set-field">
+          <span class="set-field-label">Humanizer escalation model</span>
+          <input type="text" name="humanize_text_escalate_model" value="{{ values.humanize_text_escalate_model }}" placeholder="auto" autocomplete="off" spellcheck="false">
+          <span class="set-field-hint"><code>auto</code> (default): when the main model mangles a paragraph, retry it once on the next-step-up model you have installed before keeping your original — it won't jump to one too big for your GPU. Pin a name like <code>qwen3.5:latest</code>, or blank to disable.</span>
+        </label>
+
         <label class="set-field set-field-checkbox">
           <input type="checkbox" name="humanize_log_verbose" value="1" {% if values.humanize_log_verbose %}checked{% endif %}>
           <span class="set-field-label">Verbose My Voice logs</span>

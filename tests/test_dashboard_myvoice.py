@@ -275,3 +275,65 @@ def test_humanize_page_has_mode_and_tone_controls(tmp_path):
     assert b'name="hz_tone"' in r.data
     assert b'value="human"' in r.data and b'value="voice"' in r.data and b'value="tone"' in r.data
 
+
+
+def test_humanize_threads_strength(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+    client.post("/myvoice/humanize", headers=HDR,
+                data={"hz_text": AI_IN, "hz_strength": "aggressive"})
+    assert cleaner.humanize_text.call_args.kwargs["strength"] == "aggressive"
+
+
+def test_humanize_bad_strength_falls_back(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+    client.post("/myvoice/humanize", headers=HDR,
+                data={"hz_text": AI_IN, "hz_strength": "nonsense"})
+    assert cleaner.humanize_text.call_args.kwargs["strength"] == "balanced"
+
+
+def test_humanize_uses_custom_tone_text(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+    client.post("/myvoice/humanize", headers=HDR, data={
+        "hz_text": AI_IN, "hz_mode": "tone",
+        "hz_tone": "custom", "hz_tone_custom": "dry and witty"})
+    kw = cleaner.humanize_text.call_args.kwargs
+    assert kw["mode"] == "tone" and kw["tone"] == "dry and witty"
+
+
+def test_humanize_threads_escalate_model_from_config(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, app_ref, _ = _client(tmp_path, cleaner=cleaner)
+    app_ref.cfg["experimental"]["humanize_text_escalate_model"] = "qwen3.5:latest"
+    client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
+    assert cleaner.humanize_text.call_args.kwargs["escalate_model"] == "qwen3.5:latest"
+
+
+def test_humanize_shows_the_ai_tell_score(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    # A telly input, a clean output → score should drop, and be shown.
+    cleaner.humanize_text.return_value = _outcome("We shipped it and it works.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+    telly = "Moreover, this is a testament to our robust, seamless synergy."
+    r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": telly})
+    assert b"AI tells:" in r.data
+
+
+def test_humanize_page_has_strength_and_custom_tone_controls(tmp_path):
+    client, _, _ = _client(tmp_path)
+    r = client.get("/myvoice", headers=HDR)
+    assert b'name="hz_strength"' in r.data
+    assert b'value="aggressive"' in r.data
+    assert b'name="hz_tone_custom"' in r.data
+    assert b"Try again" in r.data or b"hz-form" in r.data
