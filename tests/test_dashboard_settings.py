@@ -167,6 +167,32 @@ def test_vibe_save_partial_set(tmp_path):
     assert reparsed["prompt_engineering"]["enabled"] is False
 
 
+def test_vibe_save_pe_style(tmp_path):
+    client, app_ref = _client(tmp_path)
+    r = client.post("/settings/vibe/save", headers=HOST, data={
+        "prompt_engineering_enabled": "1",
+        "prompt_engineering_style": "chain_of_thought",
+    })
+    assert r.status_code == 302
+    reparsed = yaml.safe_load(app_ref.cfg_path.read_text(encoding="utf-8"))
+    assert reparsed["prompt_engineering"]["style"] == "chain_of_thought"
+
+
+def test_vibe_save_pe_style_rejects_garbage(tmp_path):
+    client, app_ref = _client(tmp_path)
+    client.post("/settings/vibe/save", headers=HOST, data={
+        "prompt_engineering_style": "../etc/passwd"})
+    reparsed = yaml.safe_load(app_ref.cfg_path.read_text(encoding="utf-8"))
+    assert reparsed["prompt_engineering"]["style"] == "simple"   # normalized
+
+
+def test_vibe_page_renders_pe_style_dropdown(tmp_path):
+    client, _ = _client(tmp_path)
+    r = client.get("/settings/vibe", headers=HOST)
+    assert b'name="prompt_engineering_style"' in r.data
+    assert b"Reflection" in r.data and b"Chain-of-Thought" in r.data
+
+
 # --- Experimental save -------------------------------------------------------
 
 def test_experimental_save(tmp_path):

@@ -7,6 +7,24 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Prompt-Engineering techniques — Simple / Reflection / Chain-of-Thought.**
+  PE mode used to do one thing: clean a dictation into a faithful, well-phrased
+  request. It now has a **Technique** selector (Settings → Vibe, or
+  `prompt_engineering.style`):
+  - **Simple** — the original faithful rewrite (default, unchanged).
+  - **Reflection** — wraps your request in Draft → Reflect → Refine steps, so the
+    receiving agent drafts, critiques its own draft, then rewrites.
+  - **Chain-of-Thought** — wraps it in brainstorm → methodology → score → build
+    steps, so the agent reasons before answering.
+
+  The two scaffolds deliberately *expand* the prompt (guard bypassed, as PE mode
+  already is) but keep your actual task faithful — the "invent no requirements"
+  rule still holds, extended to concrete specifics (budgets, counts, dates) and
+  ALL-CAPS/echo artifacts a small local model tends to add. Composes with the
+  existing audience (claude-code / chatgpt / generic) and provider settings.
+  `build_pe_prompt(audience, provider, style)`, `PE_STYLES`,
+  `normalize_pe_style()`.
+
 - **Humanize — paste AI-written text, get a human version back**
   (`Cleaner.humanize_text`, dashboard → **My Voice → Humanize**). Paste prose a
   language model wrote and get it back reading like a person. Separate from the

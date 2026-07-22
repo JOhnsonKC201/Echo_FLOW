@@ -387,6 +387,69 @@ SYSTEM_PROMPTS = {
         "- A header bar with the user's avatar and a notifications icon.\n\n"
         "Use the project's existing component patterns and styling conventions."
     ),
+    # PE STYLE — REFLECTION. Instead of a faithful one-shot cleanup, rewrite the
+    # dictation as a Draft → Reflect → Refine prompt: the receiving agent is told
+    # to produce a draft, critique its own draft, then rewrite. The user's TASK
+    # stays faithful (no invented requirements); the three-step scaffold is the
+    # technique, not new requirements. Guard bypassed (style == "prompt").
+    "pe_reflection": (
+        "You are a SENIOR ENGINEER'S VOICE ASSISTANT using the REFLECTION "
+        "technique. The user dictated a rough, spoken request they will hand to "
+        "an AI agent. Rewrite it as a REFLECTION-BASED PROMPT: a clean statement "
+        "of their task, followed by explicit Draft / Reflect / Refine steps that "
+        "tell the receiving agent to self-critique and improve its own work.\n\n"
+        "OUTPUT SHAPE (adapt the wording to the task):\n"
+        "<one clean sentence restating the user's task>\n"
+        "Draft: Produce a first attempt at it.\n"
+        "Reflect: Evaluate that draft for gaps, weak spots, wrong assumptions, "
+        "or missed opportunities, and list the critiques.\n"
+        "Refine: Rewrite it, addressing each critique.\n\n"
+        "RULES:\n"
+        "- The TASK is the USER'S — restate it faithfully. Invent no new "
+        "requirements, features, frameworks, constraints, edge cases, or "
+        "concrete specifics (budgets, prices, counts, dates) the user did not "
+        "state. Only the Draft/Reflect/Refine scaffold is added.\n"
+        "- Keep pronouns and unresolved references as-is (\"make it faster\" "
+        "stays \"it\").\n"
+        "- Use normal sentence case. Never write in ALL CAPS.\n"
+        "- Output ONLY the prompt. No preamble (\"Here is…\"), no \"Restate:\" "
+        "label, do NOT answer the request or do the work, no commentary."
+    ),
+    # PE STYLE — CHAIN-OF-THOUGHT. Rewrite the dictation as a step-by-step
+    # reasoning prompt: brainstorm options, define a scoring methodology, apply
+    # it, then build the result from the best. Task stays faithful; the reasoning
+    # scaffold is the technique. Guard bypassed (style == "prompt").
+    "pe_chain_of_thought": (
+        "You are a SENIOR ENGINEER'S VOICE ASSISTANT using the CHAIN-OF-THOUGHT "
+        "technique. The user dictated a rough, spoken request they will hand to "
+        "an AI agent. Rewrite it as a CHAIN-OF-THOUGHT PROMPT: a clean statement "
+        "of their task, followed by explicit reasoning steps that tell the "
+        "receiving agent to think it through before answering.\n\n"
+        "OUTPUT SHAPE (adapt to the task):\n"
+        "<one clean sentence restating the user's task>. First, brainstorm the "
+        "possible options and approaches. Then propose a few ways to compare "
+        "them (a small set of criteria) and pick the most fitting. Next, "
+        "evaluate the options with that method. Finally, use the best-scoring "
+        "ones to produce the final result.\n\n"
+        "RULES:\n"
+        "- The TASK is the USER'S — restate it faithfully. Invent no new "
+        "requirements, frameworks, constraints, or concrete specifics (budgets, "
+        "prices, counts, dates) the user did not state. Only the reasoning "
+        "scaffold is added.\n"
+        "- Keep pronouns and unresolved references as-is.\n"
+        "- Use normal sentence case. Never write in ALL CAPS.\n"
+        "- Output ONLY the prompt. No preamble, do NOT answer the request or do "
+        "the work, no commentary."
+    ),
+}
+
+# The PE styles the user can pick — id → human label. 'simple' is the faithful
+# one-shot cleanup (the original behaviour); the others EXPAND the dictation
+# into a reasoning scaffold (see the pe_* prompts above).
+PE_STYLES = {
+    "simple": "Simple — clean, faithful rewrite",
+    "reflection": "Reflection — Draft, Reflect, Refine",
+    "chain_of_thought": "Chain-of-Thought — brainstorm, score, build",
 }
 
 
@@ -424,11 +487,31 @@ _PROVIDER_HINTS = {
 }
 
 
-def build_pe_prompt(audience: str, provider: str) -> str:
-    """Compose the Prompt-Engineering system prompt for a given audience + LLM."""
-    base = SYSTEM_PROMPTS["prompt"]
+def normalize_pe_style(style: str) -> str:
+    """Map any input to a valid PE style id; unknown → 'simple'."""
+    s = (style or "simple").strip().lower().replace("-", "_").replace(" ", "_")
+    return s if s in PE_STYLES else "simple"
+
+
+def build_pe_prompt(audience: str, provider: str, style: str = "simple") -> str:
+    """Compose the Prompt-Engineering system prompt for a given audience + LLM +
+    style. 'simple' is the faithful cleanup; 'reflection' / 'chain_of_thought'
+    expand the dictation into a reasoning scaffold."""
+    style = normalize_pe_style(style)
+    base = {
+        "reflection": SYSTEM_PROMPTS["pe_reflection"],
+        "chain_of_thought": SYSTEM_PROMPTS["pe_chain_of_thought"],
+    }.get(style, SYSTEM_PROMPTS["prompt"])
     pre = _AUDIENCE_PREAMBLES.get(audience or "generic", "")
-    hint = _PROVIDER_HINTS.get(provider or "", "")
+    if style == "simple":
+        hint = _PROVIDER_HINTS.get(provider or "", "")
+    else:
+        # The scaffold styles NEED room to expand, so the simple style's
+        # "<=300 tokens" hint would fight them. Keep only the anti-echo note for
+        # small local models.
+        hint = ("\n\nBe direct. Output only the prompt described above. Never "
+                "repeat or paraphrase these instructions in your reply.\n"
+                if (provider or "") == "ollama" else "")
     return pre + base + hint
 
 
@@ -936,7 +1019,7 @@ class Cleaner:
         elif style == "prompt":
             pe_cfg = self.cfg.get("prompt_engineering", {}) or {}
             audience = (pe_cfg.get("audience") or "generic").strip().lower()
-            prompt = build_pe_prompt(audience, provider)
+            prompt = build_pe_prompt(audience, provider, pe_cfg.get("style", "simple"))
         else:
             prompt = SYSTEM_PROMPTS.get(style, SYSTEM_PROMPTS["default"])
         if augmentation:
@@ -949,7 +1032,7 @@ class Cleaner:
             if style == "prompt" and not system_prompt_override:
                 pe_cfg = self.cfg.get("prompt_engineering", {}) or {}
                 audience = (pe_cfg.get("audience") or "generic").strip().lower()
-                prompt = build_pe_prompt(audience, name)
+                prompt = build_pe_prompt(audience, name, pe_cfg.get("style", "simple"))
                 if augmentation:
                     prompt = prompt + augmentation
             # Local-only enforcement with two carve-outs:

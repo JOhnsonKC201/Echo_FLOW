@@ -173,6 +173,7 @@ prompt_engineering:
   fallback_provider: "ollama"    # invoked only if Groq raises (no key, rate-limit, network)
   oneshot_combo: "ctrl+shift+alt"  # arm prompt mode for the NEXT dictation only; "" to disable
   audience: claude-code        # claude-code | chatgpt | generic — picks system-prompt variant
+  style: simple                # simple | reflection | chain_of_thought — the technique PE applies. 'simple' cleans your dictation into a faithful, well-phrased request. 'reflection' wraps it in Draft→Reflect→Refine steps so the receiving agent self-critiques. 'chain_of_thought' wraps it in brainstorm→methodology→score→build steps. The two scaffolds EXPAND the request (that's the point) and keep your actual task faithful — no invented requirements.
   max_output_tokens: 700         # room for richer polish on complex multi-component dictations without inviting PRD-style padding
 
 inject:

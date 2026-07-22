@@ -82,6 +82,16 @@
         </label>
 
         <label class="set-field">
+          <span class="set-field-label">Technique</span>
+          <select name="prompt_engineering_style">
+            {% for sid, slabel in values.prompt_engineering_styles.items() %}
+              <option value="{{ sid }}" {% if values.prompt_engineering_style == sid %}selected{% endif %}>{{ slabel }}</option>
+            {% endfor %}
+          </select>
+          <span class="set-field-hint"><strong>Simple</strong> cleans your dictation into a faithful request. <strong>Reflection</strong> wraps it in Draft→Reflect→Refine steps; <strong>Chain-of-Thought</strong> in brainstorm→score→build steps — so the agent reasons before answering. The scaffolds expand the prompt on purpose but never invent requirements.</span>
+        </label>
+
+        <label class="set-field">
           <span class="set-field-label">Target audience</span>
           <select name="prompt_engineering_audience">
             <option value="claude-code" {% if values.prompt_engineering_audience == 'claude-code' %}selected{% endif %}>Claude Code — filesystem &amp; shell aware</option>

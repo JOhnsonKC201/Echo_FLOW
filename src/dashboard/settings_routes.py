@@ -13,6 +13,8 @@ from typing import Any, Callable
 from urllib.parse import quote_plus as _qp
 
 from . import config_writer as cw
+from .. import cleanup as _pe
+from ..cleanup import PE_STYLES as _PE_STYLES
 
 
 # ---- Helpers ----------------------------------------------------------------
@@ -206,6 +208,8 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "prompt_engineering_enabled": bool(pe.get("enabled", True)),
             "prompt_engineering_audience": pe.get("audience", "claude-code"),
             "prompt_engineering_provider": pe.get("provider", "groq"),
+            "prompt_engineering_style": _pe.normalize_pe_style(pe.get("style", "simple")),
+            "prompt_engineering_styles": _PE_STYLES,
         })
 
     @flask_app.post("/settings/vibe/save")
@@ -219,6 +223,7 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         provider = f.get("prompt_engineering_provider", "groq")
         if provider not in _PROVIDERS:
             provider = "groq"
+        pe_style = _pe.normalize_pe_style(f.get("prompt_engineering_style", "simple"))
         teacher_model = (f.get("teacher_model", "") or "").strip()
         # Keep it conservative — only Groq model names are sensible here.
         if len(teacher_model) > 80:
@@ -233,6 +238,7 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             ("prompt_engineering.enabled", _checkbox(f, "prompt_engineering_enabled")),
             ("prompt_engineering.audience", audience),
             ("prompt_engineering.provider", provider),
+            ("prompt_engineering.style", pe_style),
         ], log)
         if errs:
             return redirect("/settings/vibe?flash=" + "; ".join(errs))
