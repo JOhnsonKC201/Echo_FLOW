@@ -69,7 +69,7 @@
 
     <fieldset style="border: none; padding: 0; margin: 10px 0 0;">
       <legend class="muted small" style="padding: 0 0 6px;">How hard should it rewrite?</legend>
-      {% for s, lbl in [('light','Light — minimal changes'), ('balanced','Balanced'), ('aggressive','Aggressive — most natural')] %}
+      {% for s, lbl in [('light','Light — minimal, stable'), ('balanced','Balanced'), ('aggressive','Aggressive — bolder, more varied')] %}
         <label style="margin-right: 16px;">
           <input type="radio" name="hz_strength" value="{{ s }}"
             {{ 'checked' if hz_strength == s or (hz_strength not in ['light','balanced','aggressive'] and s == 'balanced') else '' }}>

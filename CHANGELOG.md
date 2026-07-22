@@ -71,9 +71,12 @@ All notable changes are documented here. Format roughly follows
     — before falling back to your original. Verified live: the 3B's hardest case
     is rescued by `qwen3.5`.
   - **More control.** A **strength** selector (light / balanced / aggressive)
-    that steers how far to rewrite and scales the length budget, and a **custom
-    free-text tone** box (sanitized) alongside the presets. Plus a **Try again**
-    button to re-roll a different rewrite.
+    that steers how far to rewrite: it scales the length budget, adds a steering
+    line to the prompt, AND sets the model's sampling temperature (0.15 / 0.4 /
+    0.75). Light stays stable (re-rolls barely move); aggressive samples hotter,
+    so **Try again** gives a genuinely different take — measured 1/5 vs 4/5
+    distinct re-rolls. The dictation pass keeps its fixed 0.2. Plus a **custom
+    free-text tone** box (sanitized) alongside the presets.
   - **`scripts/eval_humanize.py`** — a committed quality benchmark (fixture
     corpus + `--check` release gate) that measures acceptance, tells-removed (via
     `aitells`), facts-kept, and voice contamination against the real model.

@@ -652,3 +652,31 @@ def test_pick_stronger_model_none_when_ollama_down(monkeypatch):
 
     monkeypatch.setattr(cleaner._session, "get", boom)
     assert cleaner._pick_stronger_model("qwen2.5:3b") is None
+
+
+# --- Strength → temperature --------------------------------------------------
+
+def test_strength_sets_sampling_temperature(monkeypatch):
+    """Strength now drives the model's sampling temperature: light stays near
+    the deterministic default, aggressive samples hotter for more variety."""
+    cleaner = _cleaner()
+    seen = {}
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda s, t, *a, **k: seen.update(k) or AI_HUMANIZED)
+    for strength, expected in [("light", 0.15), ("balanced", 0.4),
+                               ("aggressive", 0.75)]:
+        _human(cleaner, strength=strength)
+        assert seen["temperature"] == expected, strength
+    assert cleaner._STRENGTH_TEMP["light"] < cleaner._STRENGTH_TEMP["aggressive"]
+
+
+def test_dictation_humanize_temperature_is_untouched(monkeypatch):
+    """The light-touch dictation pass (humanize) must keep the fixed 0.2 default —
+    strength temperature is a paste-in-humanizer concept only."""
+    cleaner = _cleaner()
+    seen = {}
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda s, t, *a, **k: seen.update(k) or HUMANIZED)
+    cleaner.humanize(CLEANED, voice_profile=VOICE, retriever=_FakeRetriever())
+    # humanize() never passes a temperature → _via_ollama uses its 0.2 default.
+    assert seen.get("temperature") is None

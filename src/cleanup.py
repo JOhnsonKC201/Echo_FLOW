@@ -1084,10 +1084,13 @@ class Cleaner:
                     style: str = "default",
                     timeout_sec: float | None = None,
                     model_override: str | None = None,
-                    no_think: bool = False) -> str:
+                    no_think: bool = False,
+                    temperature: float | None = None) -> str:
         oc = self.cfg.get("ollama", {})
         url = f"{oc.get('base_url', 'http://localhost:11434').rstrip('/')}/api/chat"
-        options: dict = {"temperature": 0.2}
+        # 0.2 is the tight dictation default; the humanizer passes a
+        # strength-derived temperature (higher = more variety in the rewrite).
+        options: dict = {"temperature": 0.2 if temperature is None else float(temperature)}
         # Honor max_tokens override (used by prompt-engineering mode).
         if max_tokens:
             options["num_predict"] = int(max_tokens)
@@ -1122,7 +1125,8 @@ class Cleaner:
 
     def _via_groq(self, system: str, text: str, *,
                   max_tokens: int | None = None,
-                  model_override: str | None = None) -> str:
+                  model_override: str | None = None,
+                  temperature: float | None = None) -> str:
         """Cloud path — used only for Prompt-Engineering mode.
 
         Reads GROQ_API_KEY from env. Model and timeout come from cleanup.groq
@@ -1152,7 +1156,7 @@ class Cleaner:
                     {"role": "system", "content": system},
                     {"role": "user", "content": text},
                 ],
-                "temperature": 0.3,
+                "temperature": 0.3 if temperature is None else float(temperature),
                 "max_tokens": int(max_tokens) if max_tokens else 700,
             },
             timeout=timeout,
@@ -1516,11 +1520,18 @@ class Cleaner:
     # Ratio budgets per strength — a lighter touch should barely change length,
     # an aggressive one gets more room.
     _STRENGTH_RATIO = {"light": 1.15, "balanced": 1.35, "aggressive": 1.6}
+    # Sampling temperature per strength. Light stays near the deterministic
+    # dictation default (stable, minimal change); aggressive samples hotter for
+    # more varied rewriting — and, because "Try again" re-runs at the same
+    # strength, gives re-rolls that actually differ. The guards + polish still
+    # catch any drift the extra heat produces, so hotter is safe here.
+    _STRENGTH_TEMP = {"light": 0.15, "balanced": 0.4, "aggressive": 0.75}
 
     def _humanize_one(self, para: str, instruction: str, *, use_cloud: bool,
                       retriever, min_sim: float, max_ratio: float,
                       timeout_sec: float, voice_profile: str = "",
-                      model: str = "", meaning_floor_hard: float = 0.45
+                      model: str = "", meaning_floor_hard: float = 0.45,
+                      temperature: float | None = None
                       ) -> tuple[str | None, str]:
         """Rewrite ONE paragraph. Returns ``(text, status)``; never raises.
 
@@ -1544,7 +1555,8 @@ class Cleaner:
         whole document hides one paragraph being mangled.
         """
         out = self._call_model(instruction, para, use_cloud=use_cloud,
-                               timeout_sec=timeout_sec, model=model)
+                               timeout_sec=timeout_sec, model=model,
+                               temperature=temperature)
         if out is None:
             return (None, "provider_down")
         return self._judge_humanized(
@@ -1552,14 +1564,16 @@ class Cleaner:
             voice_profile=voice_profile, meaning_floor_hard=meaning_floor_hard)
 
     def _call_model(self, instruction: str, para: str, *, use_cloud: bool,
-                    timeout_sec: float, model: str = "") -> str | None:
+                    timeout_sec: float, model: str = "",
+                    temperature: float | None = None) -> str | None:
         """One model call for the humanizer. Returns the stripped output, or
         None when the provider is unreachable / empty. Never raises."""
         max_tokens = min(2048, max(256, int(len(para) / 3) + 200))
         out = None
         if use_cloud:
             try:
-                out = self._via_groq(instruction, para, max_tokens=max_tokens)
+                out = self._via_groq(instruction, para, max_tokens=max_tokens,
+                                     temperature=temperature)
             except Exception as e:
                 _log.warning("humanize_text cloud pass failed (%s); using local", e)
                 out = None
@@ -1567,7 +1581,8 @@ class Cleaner:
             try:
                 out = self._via_ollama(instruction, para, max_tokens=max_tokens,
                                        timeout_sec=timeout_sec,
-                                       model_override=model, no_think=True)
+                                       model_override=model, no_think=True,
+                                       temperature=temperature)
             except Exception as e:
                 _log.warning("humanize_text local pass failed: %s", e)
                 return None
@@ -1772,6 +1787,7 @@ class Cleaner:
             return HumanizeOutcome(None, "too_long")
         if max_ratio is None:
             max_ratio = self._STRENGTH_RATIO.get(strength, 1.35)
+        temperature = self._STRENGTH_TEMP.get(strength, 0.4)
 
         # A 'voice' request with no samples can't match a voice — fall back to a
         # generic humanize and say so, rather than refusing (the old dead end).
@@ -1830,7 +1846,7 @@ class Cleaner:
             rw, st = self._humanize_one(
                 para, instruction, use_cloud=use_cloud, retriever=retriever,
                 min_sim=min_sim, max_ratio=max_ratio, timeout_sec=_budget(),
-                voice_profile=prof, model=model)
+                voice_profile=prof, model=model, temperature=temperature)
             # A malformed output is often a one-off (a stray preamble, a merged
             # paragraph); one retry measurably lifts the clean-rewrite rate.
             # warn_* are already showable, so they aren't retried.
@@ -1839,7 +1855,7 @@ class Cleaner:
                     para, instruction, use_cloud=use_cloud,
                     retriever=retriever, min_sim=min_sim,
                     max_ratio=max_ratio, timeout_sec=_budget(),
-                    voice_profile=prof, model=model)
+                    voice_profile=prof, model=model, temperature=temperature)
             # Still garbage on the small model — escalate ONCE to a stronger
             # installed model before giving up on this paragraph.
             if st == "malformed" and _budget() >= MIN_CALL_BUDGET:
@@ -1849,7 +1865,7 @@ class Cleaner:
                         para, instruction, use_cloud=use_cloud,
                         retriever=retriever, min_sim=min_sim,
                         max_ratio=max_ratio, timeout_sec=_budget(),
-                        voice_profile=prof, model=strong)
+                        voice_profile=prof, model=strong, temperature=temperature)
                     if est != "malformed":
                         rw, st = erw, est
             # A clean rewrite that still reads a bit AI gets one focused polish
