@@ -41,6 +41,20 @@ _VOCAB = [
     "harness", "harnessing", "elevate", "elevating", "streamline",
     "streamlining", "endeavor", "endeavour", "utilize", "utilizing",
     "commendable", "noteworthy", "paramount", "realm of",
+    # Round two — more of the same register.
+    "delving", "hitherto", "aforementioned", "plethora",
+    "quintessential", "multifaceted", "synergy", "synergies", "synergize",
+    "spearhead", "spearheading", "showcase", "showcasing", "underpin",
+    "underpinning", "facilitate", "facilitating", "cultivate", "cultivating",
+    "empower", "empowering", "optimize", "optimizing", "resonate",
+    "resonates", "amplify", "amplifying", "bolster", "bolstering",
+    "encompass", "encompasses", "encompassing", "embark", "embarking",
+    "unveil", "unveiling", "curate", "curated", "curating",
+    "transformative", "revolutionize", "revolutionizing", "invaluable",
+    "indelible", "unwavering", "steadfast", "compelling", "captivating",
+    "boundless", "unparalleled", "ubiquitous", "burgeoning", "cornerstone",
+    "catalyst", "roadmap", "actionable", "deliverable", "deliverables",
+    "granular", "scalable", "turnkey", "best-in-class", "world-class",
 ]
 
 # Multi-word / phrasal tells. Each is a (kind, regex) pair. All case-insensitive.
@@ -64,11 +78,25 @@ _PHRASES: list[tuple[str, re.Pattern]] = [
     ("throat-clearing", re.compile(r"\bat\s+the\s+end\s+of\s+the\s+day\b", re.I)),
     ("throat-clearing", re.compile(r"\bin\s+today['’]?s\s+(?:world|landscape|"
                                    r"digital\s+\w+|fast[- ]paced\s+\w+)", re.I)),
+    ("hedging", re.compile(r"\bit\s+is\s+important\s+to\s+(?:note|remember|understand)\b", re.I)),
+    ("hedging", re.compile(r"\bplays?\s+a\s+(?:crucial|vital|key|pivotal|significant)\s+role\b", re.I)),
+    ("hedging", re.compile(r"\bas\s+we\s+(?:can\s+see|(?:have\s+)?(?:seen|noted))\b", re.I)),
+    ("throat-clearing", re.compile(r"\bin\s+conclusion\b", re.I)),
+    ("throat-clearing", re.compile(r"\bin\s+summary\b", re.I)),
+    ("throat-clearing", re.compile(r"\bin\s+the\s+(?:world|realm|age|era)\s+of\b", re.I)),
+    ("throat-clearing", re.compile(r"\bfirst\s+and\s+foremost\b", re.I)),
+    ("filler", re.compile(r"\ba\s+wide\s+(?:range|array|variety)\s+of\b", re.I)),
+    ("filler", re.compile(r"\ba\s+testament\s+to\b", re.I)),
+    ("filler", re.compile(r"\bthe\s+power\s+of\b", re.I)),
+    ("filler", re.compile(r"\bunlock(?:s|ing)?\s+the\s+(?:power|potential|value)\b", re.I)),
+    ("filler", re.compile(r"\btake\s+(?:it|things|your\s+\w+)\s+to\s+the\s+next\s+level\b", re.I)),
     ("cliche", re.compile(r"\bever[- ]evolving\b", re.I)),
     ("cliche", re.compile(r"\bever[- ]changing\b", re.I)),
     ("cliche", re.compile(r"\bcutting[- ]edge\b", re.I)),
     ("cliche", re.compile(r"\bgame[- ]chang(?:er|ing)\b", re.I)),
     ("cliche", re.compile(r"\bstate[- ]of[- ]the[- ]art\b", re.I)),
+    ("cliche", re.compile(r"\bneedle\s+in\s+a\s+haystack\b", re.I)),
+    ("cliche", re.compile(r"\btip\s+of\s+the\s+iceberg\b", re.I)),
 ]
 
 _VOCAB_RE = re.compile(
@@ -121,3 +149,24 @@ def phrases(text: str, limit: int = 12) -> list[str]:
         if len(seen) >= limit:
             break
     return seen
+
+
+def segments(text: str) -> list[tuple[bool, str]]:
+    """Split ``text`` into ``(is_tell, chunk)`` runs that concatenate back to the
+    original exactly, so a template can wrap the tell chunks in ``<mark>`` to
+    highlight them in place. Returns markup-free data — escaping and styling stay
+    in the template, as with :mod:`src.dashboard.textdiff`."""
+    text = text or ""
+    hits = find(text)
+    if not hits:
+        return [(False, text)] if text else []
+    out: list[tuple[bool, str]] = []
+    pos = 0
+    for h in hits:
+        if h.start > pos:
+            out.append((False, text[pos:h.start]))
+        out.append((True, text[h.start:h.end]))
+        pos = h.end
+    if pos < len(text):
+        out.append((False, text[pos:]))
+    return out

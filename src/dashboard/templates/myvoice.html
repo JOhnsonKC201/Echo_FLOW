@@ -105,11 +105,18 @@
             <strong style="color: {{ 'var(--accent, #3eaf6f)' if hz_tells_after < hz_tells_before else 'inherit' }};">{{ hz_tells_after }}</strong>
           </span>
         </div>
-        <div id="hz-output" style="white-space: pre-wrap; line-height: 1.6;">{{ hz_result }}</div>
+        <div id="hz-output" style="white-space: pre-wrap; line-height: 1.6;">
+          {%- for is_tell, chunk in hz_out_segments -%}
+            {%- if is_tell -%}<mark title="still reads AI" style="background: rgba(209,165,74,0.28); border-radius: 2px;">{{ chunk }}</mark>
+            {%- else -%}{{ chunk }}
+            {%- endif -%}
+          {%- else -%}{{ hz_result }}
+          {%- endfor -%}
+        </div>
 
-        {% if hz_tells_remaining %}
+        {% if hz_tells_after > 0 %}
           <div class="muted small" style="margin-top: 8px;">
-            Still a bit AI: {{ hz_tells_remaining|join(', ') }}. Hit <em>Try again</em> or turn up the strength.
+            The highlighted bits still read a little AI — hit <em>Try again</em> or turn up the strength.
           </div>
         {% endif %}
 
@@ -140,6 +147,21 @@
               {%- if op == 'equal' -%}{{ chunk }}
               {%- elif op == 'delete' -%}<del style="background: rgba(200,80,80,0.16); text-decoration: line-through; opacity: .75;">{{ chunk }}</del>
               {%- else -%}<ins style="background: rgba(62,175,111,0.20); text-decoration: none;">{{ chunk }}</ins>
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
+        </details>
+        {% endif %}
+
+        {% if hz_tells_before > 0 %}
+        <details style="margin-top: 8px;">
+          <summary class="muted small" style="cursor: pointer;">
+            AI tells in your paste <span class="muted">— {{ hz_tells_before }} highlighted</span>
+          </summary>
+          <div style="white-space: pre-wrap; line-height: 1.7; margin-top: 8px;" class="muted small">
+            {%- for is_tell, chunk in hz_in_segments -%}
+              {%- if is_tell -%}<mark style="background: rgba(209,165,74,0.28); border-radius: 2px;">{{ chunk }}</mark>
+              {%- else -%}{{ chunk }}
               {%- endif -%}
             {%- endfor -%}
           </div>

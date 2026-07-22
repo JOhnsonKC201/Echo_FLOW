@@ -587,9 +587,10 @@ def make_app(app_ref, bound_port: int | None = None):
                         hz_reason="", hz_ran=False, hz_mode="human",
                         hz_tone="plain", hz_tone_custom="", hz_strength="balanced",
                         hz_warnings=None, hz_tells_before=0, hz_tells_after=0,
-                        hz_tells_remaining=None):
+                        hz_in_segments=None, hz_out_segments=None):
         hz_warnings = hz_warnings or []
-        hz_tells_remaining = hz_tells_remaining or []
+        hz_in_segments = hz_in_segments or []
+        hz_out_segments = hz_out_segments or []
         # A rewrite the user can't inspect is one they have to trust blindly, so
         # a result always ships its change set — but only when it actually
         # differs from the paste (a "kept" result is the original, no diff).
@@ -624,7 +625,7 @@ def make_app(app_ref, bound_port: int | None = None):
             hz_mode=hz_mode, hz_tone=hz_tone, hz_tone_custom=hz_tone_custom,
             hz_strength=hz_strength, hz_warnings=hz_warnings,
             hz_tells_before=hz_tells_before, hz_tells_after=hz_tells_after,
-            hz_tells_remaining=hz_tells_remaining,
+            hz_in_segments=hz_in_segments, hz_out_segments=hz_out_segments,
             hz_tones=list(_HUMANIZE_TONES),
             hz_max_chars=int(exp.get("humanize_text_max_chars", 6000)),
             flash=flash,
@@ -697,18 +698,21 @@ def make_app(app_ref, bound_port: int | None = None):
 
         result = outcome.text if outcome else None
         warnings = outcome.warnings if outcome else []
-        # AI-tell score before → after, and what still remains, so the rewrite is
-        # legible rather than a black box.
+        # AI-tell score before → after, and the tells marked IN PLACE (input =
+        # what it targeted, output = what remains), so the rewrite is legible
+        # rather than a black box.
         tells_before = _ai.score(text) if text else 0
         tells_after = _ai.score(result) if result else 0
-        tells_remaining = _ai.phrases(result) if result else []
+        in_segments = _ai.segments(text) if text else []
+        out_segments = _ai.segments(result) if result else []
         return _myvoice_render(hz_input=text, hz_result=result,
                                hz_reason=reason, hz_ran=True,
                                hz_mode=mode, hz_tone=tone, hz_tone_custom=tone_custom,
                                hz_strength=strength, hz_warnings=warnings,
                                hz_tells_before=tells_before,
                                hz_tells_after=tells_after,
-                               hz_tells_remaining=tells_remaining)
+                               hz_in_segments=in_segments,
+                               hz_out_segments=out_segments)
 
     def _myvoice_conn():
         history = getattr(app_ref, "history", None)

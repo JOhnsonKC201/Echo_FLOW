@@ -337,3 +337,24 @@ def test_humanize_page_has_strength_and_custom_tone_controls(tmp_path):
     assert b'value="aggressive"' in r.data
     assert b'name="hz_tone_custom"' in r.data
     assert b"Try again" in r.data or b"hz-form" in r.data
+
+
+def test_humanize_highlights_remaining_tells_in_the_output(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    # Output that still contains a tell → it should be <mark>ed inline.
+    cleaner.humanize_text.return_value = _outcome("We leverage the new tool daily.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+    r = client.post("/myvoice/humanize", headers=HDR,
+                    data={"hz_text": "Moreover, we use it."})
+    assert b"<mark" in r.data and b"leverage" in r.data
+
+
+def test_humanize_shows_tells_in_the_paste(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome("We use it every day.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+    r = client.post("/myvoice/humanize", headers=HDR,
+                    data={"hz_text": "Moreover, we leverage seamless synergy."})
+    assert b"AI tells in your paste" in r.data

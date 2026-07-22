@@ -83,3 +83,36 @@ def test_handles_empty_and_none():
     assert aitells.score("") == 0
     assert aitells.score(None) == 0        # type: ignore[arg-type]
     assert aitells.find("") == []
+
+
+def test_detects_expanded_vocabulary_and_phrases():
+    assert aitells.score("We leverage synergies to spearhead the roadmap.") >= 3
+    assert aitells.score("It plays a crucial role in the process.") >= 1
+    assert aitells.score("A wide range of options is available.") >= 1
+    assert aitells.score("In conclusion, this unlocks the potential of growth.") >= 2
+    assert aitells.score("This is a testament to the team.") >= 1
+
+
+def test_segments_roundtrip_exactly():
+    for t in ["", "clean human text here",
+              "Moreover, we leverage seamless synergy.",
+              "delve — into it"]:
+        segs = aitells.segments(t)
+        assert "".join(chunk for _, chunk in segs) == t
+
+
+def test_segments_flag_only_the_tells():
+    segs = aitells.segments("We delve into it daily.")
+    tells = [c for is_t, c in segs if is_t]
+    plain = "".join(c for is_t, c in segs if not is_t)
+    assert tells == ["delve"]
+    assert "into it daily" in plain
+
+
+def test_segments_emit_no_markup():
+    for _, chunk in aitells.segments("<b>moreover</b> we leverage things"):
+        assert "<mark" not in chunk and "<span" not in chunk
+
+
+def test_segments_empty_text():
+    assert aitells.segments("") == []

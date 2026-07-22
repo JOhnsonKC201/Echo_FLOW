@@ -77,6 +77,12 @@ All notable changes are documented here. Format roughly follows
   - **`scripts/eval_humanize.py`** — a committed quality benchmark (fixture
     corpus + `--check` release gate) that measures acceptance, tells-removed (via
     `aitells`), facts-kept, and voice contamination against the real model.
+  - **Inline tell highlighting + broader detection.** The detector grew from ~65
+    to ~130 tells (more LLM vocabulary, "plays a crucial role", "a wide range
+    of", "in conclusion", "unlock the potential", "first and foremost", …). The
+    result now marks any remaining tells *in place* (`aitells.segments`), and a
+    "AI tells in your paste" panel shows exactly what the pass targeted — so both
+    ends are legible, not just a number.
 
 - **Local intent model — a regex-miss fallback for Action Mode**
   (`src/intent_model.py`, opt-in, **off by default**). Action Mode classifies a
