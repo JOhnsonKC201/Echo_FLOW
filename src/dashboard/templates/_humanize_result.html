@@ -45,6 +45,22 @@
       </div>
     {% endif %}
 
+    {# The "delete-first" pass: dead sentences cut before the rewrite. Most of
+       the de-AI win is subtraction, so it's worth showing what went. #}
+    {% if hz_cut %}
+      <details style="margin-top: 12px;">
+        <summary class="muted small" style="cursor: pointer;">
+          Cut {{ hz_cut|length }} empty sentence{{ 's' if hz_cut|length != 1 else '' }}
+          <span class="muted">— filler that did no work</span>
+        </summary>
+        <div class="muted small" style="margin-top: 6px;">
+          {% for s in hz_cut %}
+            <div style="margin: 2px 0; text-decoration: line-through; opacity: .7;">{{ s }}</div>
+          {% endfor %}
+        </div>
+      </details>
+    {% endif %}
+
     {# The "specify" pass: vague claims a humanizer can't fill in for you. The
        absence of a real detail is the biggest AI tell, and no rewrite can invent
        it — so it asks. #}

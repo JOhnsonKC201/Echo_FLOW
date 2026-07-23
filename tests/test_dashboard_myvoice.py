@@ -427,3 +427,28 @@ def test_humanize_no_diagnostics_when_source_is_concrete(tmp_path):
         "hz_text": "We shipped the parser Tuesday; it reads 12 formats and "
                    "fails on rotated scans."})
     assert b"Reads empty" not in r.data
+
+
+def test_humanize_shows_cut_sentences(tmp_path):
+    """The delete-first pass reports what it removed, and the UI shows it."""
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = HumanizeOutcome(
+        "Deep models win.", "ok", [], 1, 1,
+        cut=["Machine learning has transformed the landscape of things."])
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+
+    r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": "x"})
+
+    assert b"Cut 1 empty sentence" in r.data
+    assert b"transformed the landscape" in r.data
+
+
+def test_humanize_threads_delete_first_from_config(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome(MINE)
+    client, app_ref, _ = _client(tmp_path, cleaner=cleaner)
+    app_ref.cfg["experimental"]["humanize_text_delete_first"] = False
+    client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
+    assert cleaner.humanize_text.call_args.kwargs["delete_first"] is False

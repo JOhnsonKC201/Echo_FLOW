@@ -7,6 +7,21 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Humanize delete-first pass — cut the dead sentences before rewriting.** Most
+  of the de-AI win is subtraction, not rephrasing, and it has to be
+  deterministic: a small local model told to "be concise" paraphrases instead of
+  cutting, locking in the dead structure. So a new pass (`src/deadweight.py`)
+  runs BEFORE the model and removes the sentences that do no work —
+  topic-announcement openers ("X has transformed the landscape of Y"),
+  empty-optimism closers ("… continues to evolve rapidly", "the future is
+  bright"), and pure throat-clearing ("It is important to note that …"). It is
+  conservative: a sentence with a number or two-plus proper nouns is protected,
+  a lone sentence is never cut, and a paragraph is never emptied. The result
+  lists exactly what was removed. On the protein-ML example, a five-sentence
+  paragraph drops to the two that carry content before it's even rewritten.
+  `deadweight.trim`; `humanize_text(delete_first=…)`;
+  `experimental.humanize_text_delete_first` (default true).
+
 - **Humanize diagnostic pass — "reads empty, add the specifics".** A humanizer
   can strip the machine's tics but can't invent what the writer never said, and
   the absence of concrete detail is the biggest tell. So the result now ships a

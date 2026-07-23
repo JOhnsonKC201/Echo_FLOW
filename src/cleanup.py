@@ -45,6 +45,7 @@ class HumanizeOutcome:
     warnings: list[str] = field(default_factory=list)
     changed: int = 0
     total: int = 0
+    cut: list[str] = field(default_factory=list)   # dead sentences removed pre-rewrite
 
 
 # --- Casing helpers (shared by _polish_text and Cleaner._apply_learned_casing) ---
@@ -1871,7 +1872,8 @@ class Cleaner:
                       min_sim: float = 0.65, max_ratio: float | None = None,
                       timeout_sec: float = 45.0, max_chars: int = 6000,
                       model: str = "", escalate_model: str = "auto",
-                      polish: bool = True) -> "HumanizeOutcome":
+                      polish: bool = True, delete_first: bool = True
+                      ) -> "HumanizeOutcome":
         """Rewrite pasted AI-written prose so it reads like a person wrote it.
 
         The "paste an AI paragraph, get a human version back" path — a different
@@ -1909,6 +1911,15 @@ class Cleaner:
         if max_ratio is None:
             max_ratio = self._STRENGTH_RATIO.get(strength, 1.35)
         temperature = self._STRENGTH_TEMP.get(strength, 0.4)
+
+        # DELETE-FIRST: cut the sentences that do no work (topic-announce
+        # openers, empty-optimism closers, pure throat-clearing) BEFORE the model
+        # sees the text — deterministically, since a small model paraphrases
+        # instead of cutting. Most of the de-AI win is this subtraction.
+        cut: list[str] = []
+        if delete_first:
+            from . import deadweight
+            text, cut = deadweight.trim(text)
 
         # A 'voice' request with no samples can't match a voice — fall back to a
         # generic humanize and say so, rather than refusing (the old dead end).
@@ -2028,7 +2039,7 @@ class Cleaner:
 
         # Provider never produced anything usable → surface that, not a no-op.
         if provider_dead and changed == 0:
-            return HumanizeOutcome(None, "provider_down", total=total)
+            return HumanizeOutcome(None, "provider_down", total=total, cut=cut)
 
         result_text = "\n\n".join(out_paras)
         all_warnings = info + warnings
@@ -2039,7 +2050,8 @@ class Cleaner:
             reason = "warned"
         else:
             reason = "ok"
-        return HumanizeOutcome(result_text, reason, all_warnings, changed, total)
+        return HumanizeOutcome(result_text, reason, all_warnings, changed, total,
+                               cut=cut)
 
     def _via_anthropic(self, system: str, text: str, *,
                        max_tokens: int | None = None) -> str:

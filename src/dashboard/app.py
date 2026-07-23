@@ -587,7 +587,7 @@ def make_app(app_ref, bound_port: int | None = None):
                 hz_mode="human", hz_tone="plain", hz_tone_custom="",
                 hz_strength="balanced", hz_warnings=None, hz_tells_before=0,
                 hz_tells_after=0, hz_in_segments=None, hz_out_segments=None,
-                hz_diagnostics=None, hz_diag_segments=None):
+                hz_diagnostics=None, hz_diag_segments=None, hz_cut=None):
         """The Humanize result context — shared by the full page and the async
         fragment (templates/_humanize_result.html) so the two never drift."""
         from . import textdiff as _td
@@ -608,6 +608,7 @@ def make_app(app_ref, bound_port: int | None = None):
             hz_tells_before=hz_tells_before, hz_tells_after=hz_tells_after,
             hz_in_segments=hz_in_segments or [], hz_out_segments=hz_out_segments or [],
             hz_diagnostics=hz_diagnostics or [], hz_diag_segments=hz_diag_segments or [],
+            hz_cut=hz_cut or [],
             hz_tones=list(_HUMANIZE_TONES),
             hz_max_chars=int(exp.get("humanize_text_max_chars", 6000)),
         )
@@ -696,6 +697,7 @@ def make_app(app_ref, bound_port: int | None = None):
                     max_chars=max_chars,
                     model=str(exp.get("humanize_text_model", "") or ""),
                     escalate_model=str(exp.get("humanize_text_escalate_model", "auto")),
+                    delete_first=bool(exp.get("humanize_text_delete_first", True)),
                 )
                 reason = outcome.reason
             except Exception as e:
@@ -704,6 +706,7 @@ def make_app(app_ref, bound_port: int | None = None):
 
         result = outcome.text if outcome else None
         warnings = outcome.warnings if outcome else []
+        cut = outcome.cut if outcome else []
         # AI-tell score before → after, and the tells marked IN PLACE (input =
         # what it targeted, output = what remains), so the rewrite is legible
         # rather than a black box.
@@ -725,7 +728,8 @@ def make_app(app_ref, bound_port: int | None = None):
             hz_strength=strength, hz_warnings=warnings,
             hz_tells_before=tells_before, hz_tells_after=tells_after,
             hz_in_segments=in_segments, hz_out_segments=out_segments,
-            hz_diagnostics=diagnostics, hz_diag_segments=diag_segments)
+            hz_diagnostics=diagnostics, hz_diag_segments=diag_segments,
+            hz_cut=cut)
         # An async submit (the fetch handler on /myvoice) asks for just the
         # result panel so the page updates in place without a full reload.
         if _req.form.get("fetch") or _req.headers.get("X-Requested-With"):

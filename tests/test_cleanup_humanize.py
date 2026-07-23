@@ -160,6 +160,7 @@ def _human(cleaner, text=AI_TEXT, **kw):
     kw.setdefault("mode", "human")
     kw.setdefault("escalate_model", "")
     kw.setdefault("polish", False)
+    kw.setdefault("delete_first", False)
     return cleaner.humanize_text(text, **kw)
 
 
@@ -169,6 +170,7 @@ def _voice(cleaner, text=AI_TEXT, **kw):
     kw.setdefault("mode", "voice")
     kw.setdefault("escalate_model", "")
     kw.setdefault("polish", False)
+    kw.setdefault("delete_first", False)
     return cleaner.humanize_text(text, **kw)
 
 
@@ -708,3 +710,37 @@ def test_humanize_output_is_always_dash_free(monkeypatch):
     assert out.text is not None
     assert "—" not in out.text and "–" not in out.text
     assert "," in out.text          # dashes became commas
+
+
+# --- Delete-first pass -------------------------------------------------------
+
+def test_delete_first_cuts_dead_sentences_and_reports_them(monkeypatch):
+    """Dead sentences are cut BEFORE the model runs, and reported in .cut so the
+    UI can show what went. The model only ever sees the trimmed text."""
+    cleaner = _cleaner()
+    src = ("Machine learning has transformed the landscape of prediction. "
+           "Deep models beat the baselines. Nevertheless, the field continues "
+           "to evolve rapidly.")
+    seen = {}
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda s, t, *a, **k: seen.update(text=t) or "Deep models win.")
+    out = cleaner.humanize_text(src, mode="human", retriever=_SimRetriever(),
+                                escalate_model="", polish=False, delete_first=True)
+    # Two dead sentences removed, reported.
+    assert len(out.cut) == 2
+    assert any("transformed the landscape" in c for c in out.cut)
+    assert any("continues" in c for c in out.cut)
+    # The model saw the trimmed text, not the dead openers/closers.
+    assert "transformed the landscape" not in seen["text"]
+
+
+def test_delete_first_off_leaves_everything(monkeypatch):
+    cleaner = _cleaner()
+    src = "Machine learning has transformed the landscape. Deep models win here."
+    seen = {}
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda s, t, *a, **k: seen.update(text=t) or "Deep models win here.")
+    out = cleaner.humanize_text(src, mode="human", retriever=_SimRetriever(),
+                                escalate_model="", polish=False, delete_first=False)
+    assert out.cut == []
+    assert "transformed the landscape" in seen["text"]
