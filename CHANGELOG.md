@@ -7,6 +7,32 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Speaker adaptation, Phase 1 — Echo Flow learns your voice's recurring errors
+  faster and visibly.** An accent isn't tuned at the acoustic level (Whisper is
+  already accent-robust, and it's a single-user app); it shows up as the *same
+  words misheard the same way*, so the win is a stronger text-level correction
+  loop.
+  - **Multi-word ("n-gram") substitution learning.** The pattern miner only
+    learned 1↔1 word fixes; a phrase mishearing like "note to vec" → "node2vec"
+    (3 tokens → 1) fell through entirely. New `learn._diff_ngram_pairs` captures
+    2–3 word `replace` spans, gated by a vendored, dependency-free **phonetic
+    check** (`src/phonetic.py`, Metaphone) so a genuine mishearing is learned but
+    an LLM paraphrase that changed meaning is rejected — "the weather is nice" →
+    "let us ship it" scores 0.12 similarity and is dropped. Stored in a sibling
+    `learned_ngrams` table with a stricter confidence bar
+    (`PatternMiner.confident_ngrams`), applied longest-phrase-first before the
+    single-word pass (`Cleaner._apply_learned_ngrams`).
+    `learned.min_ngram_confidence` / `min_ngram_total`.
+  - **Low-confidence → dictionary suggestions.** Whisper now returns the words it
+    was unsure about (`word_timestamps`, surfaced as `meta["low_conf_words"]`);
+    content words (names / technical tokens, never plain words or already-known
+    terms — `src/vocab_suggest.py`) are recorded as suggestions
+    (`History.record_vocab_suggestion`, `vocab_suggestions` table).
+  - **Review surface.** The Dictionary page now shows "Suggested terms" ranked by
+    how often each was fumbled; one click **Pins** a term into the dictionary
+    (feeding the Whisper decoder bias on the next reload) or dismisses the noise
+    (`src/dashboard/suggestions.py`). `whisper.word_confidence` /
+    `word_conf_floor` toggle the per-word signal.
 - **Humanize hard-exclude zones — the facts are never sent to the model.** In a
   methods section the numbers, hyperparameters, splits, metrics, citations,
   quotes and code ARE the content; precision there reads "competent" to a

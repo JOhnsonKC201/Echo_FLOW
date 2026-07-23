@@ -54,6 +54,39 @@ def test_bulk_import_mixed_separators(tmp_path):
     assert "node2vec" in terms
 
 
+# --- suggestions review: list / dismiss / promote ----------------------------
+
+def test_suggestions_list_ranks_by_count(tmp_path):
+    from src.dashboard import suggestions as sug
+    h = _h(tmp_path)
+    h.record_vocab_suggestion("Kubernetes", 0.4)
+    h.record_vocab_suggestion("Kubernetes", 0.5)
+    h.record_vocab_suggestion("Grafana", 0.3)
+    rows = sug.list_suggestions(h.conn)
+    assert [r["term"] for r in rows] == ["Kubernetes", "Grafana"]  # count desc
+    assert sug.count_pending(h.conn) == 2
+
+
+def test_suggestions_dismiss_hides_from_list(tmp_path):
+    from src.dashboard import suggestions as sug
+    h = _h(tmp_path)
+    h.record_vocab_suggestion("Grafana", 0.3)
+    assert sug.dismiss(h.conn, "grafana") is True
+    assert sug.list_suggestions(h.conn) == []
+    assert sug.count_pending(h.conn) == 0
+
+
+def test_suggestions_promote_adds_term_and_removes_suggestion(tmp_path):
+    from src.dashboard import suggestions as sug
+    h = _h(tmp_path)
+    h.record_vocab_suggestion("Grafana", 0.3)
+    promoted = sug.promote(h.conn, "grafana")
+    assert promoted == "Grafana"
+    assert "Grafana" in [t["term"] for t in vocab.list_terms(h.conn)]  # pinned
+    assert sug.list_suggestions(h.conn) == []                          # gone
+    assert sug.promote(h.conn, "nope") == ""                           # missing
+
+
 def test_bulk_import_counts_preexisting_db_term_as_duplicate(tmp_path):
     """A term already in the DB (but not repeated in the paste batch) must be
     counted as a duplicate, not an addition — add_term returns the existing id

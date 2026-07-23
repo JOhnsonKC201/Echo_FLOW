@@ -1013,7 +1013,7 @@ class Cleaner:
             # when the input is "clean enough" to bypass the LLM.
             base = text
             if self.provider == "learned":
-                base = self._apply_learned_patterns(base)
+                base = self._apply_learned_patterns(self._apply_learned_ngrams(base))
             return self._expand_snippets(self._finalize(base, style)), True
         provider = provider_override or self.provider
         # PE mode: build a system prompt tailored to BOTH the audience
@@ -2298,6 +2298,36 @@ class Cleaner:
         _, protected = self._casing_context()
         return _polish_text(text, protected=protected)
 
+    def _apply_learned_ngrams(self, text: str) -> str:
+        """Apply high-confidence MULTI-word learned substitutions. Pure function.
+
+        Runs BEFORE `_apply_learned_patterns`, longest phrase first, so a learned
+        phrase ("note to vec" → "node2vec") wins over any single-word sub inside
+        it. The stored replacement carries its own canonical casing, so it is
+        emitted verbatim. Whitespace-flexible, word-boundary matched.
+        """
+        if self._pattern_miner is None or not text:
+            return text
+        lc = self.cfg.get("learned", {})
+        min_conf = float(lc.get("min_ngram_confidence", 0.75))
+        min_total = int(lc.get("min_ngram_total", 2))
+        try:
+            ngrams = self._pattern_miner.confident_ngrams(
+                min_confidence=min_conf, min_total=min_total)
+        except Exception as e:
+            _log.warning("learned: ngram lookup error: %s", e)
+            return text
+        if not ngrams:
+            return text
+        import re as _re
+        for trig in sorted(ngrams, key=len, reverse=True):
+            repl = ngrams[trig]
+            pat = _re.compile(
+                r"\b" + r"\s+".join(_re.escape(w) for w in trig.split()) + r"\b",
+                _re.IGNORECASE)
+            text = pat.sub(lambda _m, r=repl: r, text)
+        return text
+
     def _apply_learned_patterns(self, text: str) -> str:
         """Apply high-confidence learned token substitutions. Pure function.
 
@@ -2353,8 +2383,9 @@ class Cleaner:
             except Exception as e:
                 _log.warning("learned: retriever error: %s", e)
 
-        # Path B: token-level substitutions from learned_patterns.
-        out = self._apply_learned_patterns(text)
+        # Path B: learned substitutions — multi-word phrases first (longest
+        # match), then single tokens on the result.
+        out = self._apply_learned_patterns(self._apply_learned_ngrams(text))
         applied = out != text
 
         # Path C: cheap, deterministic capitalization + punctuation polish.

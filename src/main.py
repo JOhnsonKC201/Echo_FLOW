@@ -1271,6 +1271,20 @@ class App:
                             self.pattern_miner.record(raw, cleaned)
                         except Exception as e:
                             _log.warning("pattern_miner record failed: %s", e)
+                    # Surface words Whisper was UNSURE about as dictionary
+                    # suggestions (content words only, never an already-known
+                    # term), so a name it keeps fumbling can be pinned to the
+                    # decoder bias. Best-effort, background thread.
+                    if (self.history and not use_prompt and whisper_meta
+                            and whisper_meta.get("low_conf_words")):
+                        try:
+                            from . import vocab_suggest
+                            known = set(self._build_custom_vocabulary())
+                            for term, prob in vocab_suggest.filter_candidates(
+                                    whisper_meta["low_conf_words"], cleaned, known):
+                                self.history.record_vocab_suggestion(term, prob)
+                        except Exception as e:
+                            _log.warning("vocab suggestion record failed: %s", e)
                     # Background teacher distillation: re-clean via a stronger
                     # cloud model and store as source='teacher'. Off by default;
                     # opt in via cleanup.learning.teacher_enabled.

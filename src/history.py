@@ -367,6 +367,22 @@ class History:
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_humanize_shadow_ts ON humanize_shadow(ts)"
         )
+        # vocab_suggestions — content words Whisper transcribed with LOW
+        # confidence. Surfaced in the dashboard so the user can pin the correct
+        # spelling to custom_vocabulary (which feeds the decoder bias), making
+        # future recognition of that term reliable. A running count ranks the
+        # most persistent offenders; a dismissed term stays hidden.
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS vocab_suggestions (
+                term_lc TEXT PRIMARY KEY,
+                term TEXT NOT NULL,
+                count INTEGER NOT NULL DEFAULT 1,
+                avg_prob REAL,
+                first_seen REAL NOT NULL,
+                last_seen REAL NOT NULL,
+                dismissed INTEGER NOT NULL DEFAULT 0
+            )
+        """)
         self.conn.commit()
         # All single-threaded setup above is done on the raw connection. Now
         # wrap it so every subsequent access — from daemon threads AND the
@@ -502,6 +518,41 @@ class History:
         )
         self.conn.commit()
         return cur.lastrowid or 0
+
+    def record_vocab_suggestion(self, term: str, prob: float | None = None) -> None:
+        """Upsert a low-confidence word as a dictionary suggestion.
+
+        Increments a running count and folds `prob` into a running mean, so the
+        dashboard can rank the terms Whisper fumbles most. Best-effort — a bad
+        term is a no-op, never an exception on the dictation hot path. A term the
+        user already dismissed keeps its flag (it stays hidden) but still counts,
+        so a genuinely persistent offender can be surfaced again by the UI.
+        """
+        term = (term or "").strip()
+        if not term:
+            return
+        lc = term.lower()
+        now = time.time()
+        try:
+            self.conn.execute(
+                """
+                INSERT INTO vocab_suggestions
+                    (term_lc, term, count, avg_prob, first_seen, last_seen)
+                VALUES (?, ?, 1, ?, ?, ?)
+                ON CONFLICT(term_lc) DO UPDATE SET
+                    count = count + 1,
+                    avg_prob = CASE
+                        WHEN ? IS NULL THEN avg_prob
+                        WHEN avg_prob IS NULL THEN ?
+                        ELSE (avg_prob * count + ?) / (count + 1)
+                    END,
+                    last_seen = ?
+                """,
+                (lc, term, prob, now, now, prob, prob, prob, now),
+            )
+            self.conn.commit()
+        except Exception:
+            pass
 
     def recent_humanize_shadow(self, limit: int = 50) -> list[dict]:
         rows = self.conn.execute(

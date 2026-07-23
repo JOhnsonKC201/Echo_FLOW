@@ -121,6 +121,8 @@ cleanup:
   learned:
     min_similarity: 0.85           # cosine threshold for retrieving a past correction as a fix
     min_pattern_confidence: 0.7    # require pattern to have been seen this often (success / total)
+    min_ngram_confidence: 0.75     # multi-word phrase fixes ("note to vec"->"node2vec"): stricter bar than single words
+    min_ngram_total: 2             # and require the phrase mishearing to have been seen at least this often
     fallback_to_ollama: true       # if no high-confidence fix found, fall back to ollama for this dictation
   # A/B provider shadow testing — runs an alternate provider in the background
   # on each dictation, grades both, and logs the comparison to provider_ab_log.

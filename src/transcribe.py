@@ -19,6 +19,13 @@ class WhisperConfig:
     # tokens by the builder. Mutable post-init so main.py can set it after
     # the personal vocabulary has been mined from history.
     initial_prompt: str | None = None
+    # Per-word confidence: when on, transcribe() asks faster-whisper for word
+    # timestamps (which carry a per-word probability) and returns the words it
+    # was UNSURE about in meta["low_conf_words"]. Those become dictionary
+    # suggestions so a term Whisper keeps fumbling can be pinned. `word_conf_floor`
+    # is the probability below which a word counts as "unsure".
+    word_confidence: bool = True
+    word_conf_floor: float = 0.6
 
 
 def _select_cuda_model() -> str:
@@ -84,6 +91,7 @@ class Transcriber:
         # Short-clip optimization: beam_size=1 (greedy) saves 150-300ms on
         # sub-3s dictations where the search rarely changes the top hypothesis.
         beam_size = 1 if (len(audio) / sample_rate) < 3.0 else self.cfg.beam_size
+        word_ts = bool(self.cfg.word_confidence)
         segments, info = self.model.transcribe(
             audio,
             language=self.cfg.language,
@@ -91,12 +99,15 @@ class Transcriber:
             vad_filter=self.cfg.vad_filter,
             condition_on_previous_text=False,
             initial_prompt=self.cfg.initial_prompt,
+            word_timestamps=word_ts,
         )
         # Iterate once: faster-whisper segments is a generator.
         parts: list[str] = []
         lp_sum = 0.0; lp_n = 0
         ns_max = 0.0
         cr_sum = 0.0; cr_n = 0
+        low_conf: list[tuple[str, float]] = []
+        floor = float(self.cfg.word_conf_floor)
         for seg in segments:
             parts.append(seg.text.strip())
             if getattr(seg, "avg_logprob", None) is not None:
@@ -107,10 +118,18 @@ class Transcriber:
             cr = getattr(seg, "compression_ratio", None)
             if cr is not None:
                 cr_sum += float(cr); cr_n += 1
+            # Words the model was unsure about — candidate dictionary terms.
+            if word_ts:
+                for wd in (getattr(seg, "words", None) or []):
+                    prob = getattr(wd, "probability", None)
+                    word = (getattr(wd, "word", "") or "").strip()
+                    if prob is not None and word and float(prob) < floor:
+                        low_conf.append((word, float(prob)))
         text = " ".join(parts).strip()
         meta = {
             "avg_logprob": (lp_sum / lp_n) if lp_n else None,
             "no_speech_prob": ns_max if (parts or ns_max) else None,
             "compression_ratio": (cr_sum / cr_n) if cr_n else None,
+            "low_conf_words": low_conf,
         }
         return text, info.language, meta

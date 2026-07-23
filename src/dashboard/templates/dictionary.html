@@ -16,6 +16,34 @@
   </form>
 </div>
 
+{% if suggestions %}
+<div class="card">
+  <h2>Suggested terms <span class="muted small">{{ suggestions|length }} waiting</span></h2>
+  <div class="muted small" style="margin-bottom: 10px;">
+    Words Whisper heard but wasn’t sure about — most likely names or jargon it
+    keeps fumbling. Pin the right ones to lock them into recognition; dismiss the noise.
+  </div>
+  <ul class="term-list">
+    {% for s in suggestions %}
+      <li>
+        <span class="term">{{ s.term }}</span>
+        <span class="muted small" title="Heard {{ s.count }} time{{ 's' if s.count != 1 else '' }}{% if s.avg_prob is not none %}, avg confidence {{ '%.0f'|format(s.avg_prob * 100) }}%{% endif %}">
+          ×{{ s.count }}{% if s.avg_prob is not none %} · {{ '%.0f'|format(s.avg_prob * 100) }}%{% endif %}
+        </span>
+        <form method="post" action="/dictionary/suggest/accept" class="inline">
+          <input type="hidden" name="term_lc" value="{{ s.term_lc }}">
+          <button type="submit" class="link-action" title="Pin to your dictionary">Pin</button>
+        </form>
+        <form method="post" action="/dictionary/suggest/dismiss" class="inline">
+          <input type="hidden" name="term_lc" value="{{ s.term_lc }}">
+          <button type="submit" class="link-danger" title="Dismiss">✕</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <div class="card">
   <h2>All terms <span class="muted small">{{ terms|length }} total</span></h2>
   {% if terms %}

@@ -249,6 +249,30 @@ def _ensure_patterns_table(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE learned_patterns ADD COLUMN teacher_count INTEGER NOT NULL DEFAULT 0")
 
 
+def _ensure_ngrams_table(conn: sqlite3.Connection) -> None:
+    """Multi-word learned substitutions (parallel to learned_patterns).
+
+    Kept in its own table so the 2–3 word phrase triggers don't pollute the
+    single-token success/total stats and can be applied with a longest-match
+    pass of their own. Same success/total confidence model.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS learned_ngrams (
+            trigger TEXT NOT NULL,
+            replacement TEXT NOT NULL,
+            success INTEGER NOT NULL DEFAULT 0,
+            total INTEGER NOT NULL DEFAULT 0,
+            updated_at REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (trigger, replacement)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ngrams_trigger ON learned_ngrams(trigger)"
+    )
+
+
 def _ensure_casing_table(conn: sqlite3.Connection) -> None:
     """Per-word canonical-casing store, taught by user edits (tiktok -> TikTok).
 
@@ -339,6 +363,43 @@ def _diff_casing_pairs(before: str, after: str) -> list[tuple[str, str]]:
     return pairs
 
 
+def _diff_ngram_pairs(raw: str, cleaned: str,
+                      max_span: int = 3) -> list[tuple[str, str]]:
+    """Extract MULTI-word substitutions between raw and cleaned text.
+
+    The complement of `_diff_token_pairs` (which keeps only 1↔1 subs): here we
+    keep `replace` spans where at least one side is 2+ tokens — "note to vec" →
+    "node2vec", "fast API" → "FastAPI". These are the accent errors a 1↔1 diff
+    can't express. Each side is capped at `max_span` tokens so we learn short
+    phrases, not sentence rewrites, and every candidate must pass the phonetic
+    gate (`phonetic.phonetic_similar`) so a genuine mishearing is learned but an
+    LLM paraphrase that changed meaning is rejected. Casing on the cleaned side
+    is preserved.
+    """
+    import difflib
+    from . import phonetic
+    raw_toks = [t for t in _tokenize(raw) if not t.isspace()]
+    cln_toks = [t for t in _tokenize(cleaned) if not t.isspace()]
+    sm = difflib.SequenceMatcher(a=raw_toks, b=cln_toks, autojunk=False)
+    pairs: list[tuple[str, str]] = []
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag != "replace":
+            continue
+        la, lb = i2 - i1, j2 - j1
+        if la + lb < 3:
+            continue                     # pure 1↔1 — _diff_token_pairs' job
+        if la > max_span or lb > max_span:
+            continue                     # too long — a rewrite, not a mishearing
+        a = " ".join(raw_toks[i1:i2])
+        b = " ".join(cln_toks[j1:j2])
+        if a.lower() == b.lower():
+            continue
+        if not phonetic.phonetic_similar(a, b):
+            continue                     # sounds different → not a mishearing
+        pairs.append((a, b))
+    return pairs
+
+
 def _is_titlecase_storm(text: str) -> bool:
     """True when text Capitalizes Most Words (a Whisper casing artifact).
 
@@ -377,7 +438,11 @@ class PatternMiner:
         if not raw or not cleaned or raw == cleaned:
             return 0
         pairs = _diff_token_pairs(raw, cleaned)
-        if not pairs:
+        # Multi-word mishearings produce NO 1↔1 pair ("note to vec" → "node2vec"
+        # collapses 3 tokens into 1), so they must be gathered independently —
+        # an early return on empty `pairs` alone would drop every n-gram fix.
+        ngram_pairs = _diff_ngram_pairs(raw, cleaned)
+        if not pairs and not ngram_pairs:
             return 0
         import time as _t
         now = _t.time()
@@ -408,8 +473,29 @@ class PatternMiner:
                     "WHERE trigger = ? AND replacement != ?",
                     (now, trigger, b),
                 )
+            if ngram_pairs:
+                _ensure_ngrams_table(conn)
+                for a, b in ngram_pairs:
+                    trigger = a.lower()
+                    conn.execute(
+                        """
+                        INSERT INTO learned_ngrams
+                            (trigger, replacement, success, total, updated_at)
+                        VALUES (?, ?, 1, 1, ?)
+                        ON CONFLICT(trigger, replacement) DO UPDATE SET
+                            success = success + 1,
+                            total = total + 1,
+                            updated_at = excluded.updated_at
+                        """,
+                        (trigger, b, now),
+                    )
+                    conn.execute(
+                        "UPDATE learned_ngrams SET total = total + 1, updated_at = ? "
+                        "WHERE trigger = ? AND replacement != ?",
+                        (now, trigger, b),
+                    )
             conn.commit()
-        return len(pairs)
+        return len(pairs) + len(ngram_pairs)
 
     def confident_patterns(self, min_confidence: float = 0.7, min_total: int = 2) -> dict[str, str]:
         """Return {trigger_lowercase: replacement} for patterns above threshold."""
@@ -424,6 +510,34 @@ class PatternMiner:
         except Exception:
             return {}
         # For each trigger, pick the highest-confidence replacement above threshold.
+        best: dict[str, tuple[str, float]] = {}
+        for trig, repl, succ, total in rows:
+            if total == 0:
+                continue
+            conf = succ / total
+            if conf < min_confidence:
+                continue
+            cur = best.get(trig)
+            if cur is None or conf > cur[1]:
+                best[trig] = (repl, conf)
+        return {t: r for t, (r, _) in best.items()}
+
+    def confident_ngrams(self, min_confidence: float = 0.75,
+                         min_total: int = 2) -> dict[str, str]:
+        """Return {trigger_lowercase: replacement} for multi-word patterns above
+        threshold. Stricter defaults than `confident_patterns` — a wrong phrase
+        substitution is more disruptive than a wrong single word, and the
+        phonetic gate has already removed the obviously-unrelated candidates."""
+        try:
+            with closing(self._conn()) as conn:
+                _ensure_ngrams_table(conn)
+                rows = conn.execute(
+                    "SELECT trigger, replacement, success, total FROM learned_ngrams "
+                    "WHERE total >= ?",
+                    (min_total,),
+                ).fetchall()
+        except Exception:
+            return {}
         best: dict[str, tuple[str, float]] = {}
         for trig, repl, succ, total in rows:
             if total == 0:

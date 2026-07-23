@@ -56,6 +56,42 @@ def test_meta_aggregation_logprob_mean_nospeech_max_cr_mean():
     assert meta["compression_ratio"] == pytest.approx((1.0 + 2.0 + 3.0) / 3)
 
 
+def _word(w, prob):
+    return types.SimpleNamespace(word=w, probability=prob, start=0.0, end=0.1)
+
+
+def _seg_words(text, words):
+    s = _seg(text, -0.2, 0.1, 1.5)
+    s.words = words
+    return s
+
+
+def test_low_conf_words_collected_below_floor():
+    # Kubernetes at 0.4 is below the 0.6 floor; "the"/"app" above it.
+    segs = [_seg_words("deploy to Kubernetes app", [
+        _word("deploy", 0.95), _word("to", 0.9),
+        _word("Kubernetes", 0.4), _word("app", 0.88),
+    ])]
+    t, captured = _make_transcriber_with_segments(segs)
+    audio = np.zeros(16000 * 5, dtype=np.float32)
+    _, _, meta = t.transcribe(audio, 16000)
+    assert captured.get("word_timestamps") is True
+    low = dict((w, round(p, 2)) for w, p in meta["low_conf_words"])
+    assert "Kubernetes" in low and low["Kubernetes"] == 0.4
+    assert "deploy" not in low and "app" not in low
+
+
+def test_low_conf_words_empty_when_disabled():
+    from src.transcribe import WhisperConfig
+    segs = [_seg_words("hi there", [_word("hi", 0.2)])]
+    t, captured = _make_transcriber_with_segments(segs)
+    t.cfg = WhisperConfig(model="tiny", word_confidence=False)
+    audio = np.zeros(16000 * 5, dtype=np.float32)
+    _, _, meta = t.transcribe(audio, 16000)
+    assert captured.get("word_timestamps") is False
+    assert meta["low_conf_words"] == []
+
+
 def test_initial_prompt_forwarded_to_model():
     segs = [_seg("hi", -0.2, 0.1, 1.5)]
     prompt = "Vocabulary: FastAPI, Supabase, node2vec"

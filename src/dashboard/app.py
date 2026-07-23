@@ -370,12 +370,58 @@ def make_app(app_ref, bound_port: int | None = None):
                 casings = pm.list_casings()
             except Exception as e:
                 _log.warning("dictionary casings list failed: %s", e)
+        # Suggestions: words Whisper was unsure about, waiting to be pinned.
+        suggestions = []
+        if history is not None and getattr(history, "conn", None) is not None:
+            try:
+                from . import suggestions as _sug
+                suggestions = _sug.list_suggestions(history.conn)
+            except Exception as e:
+                _log.warning("dictionary suggestions list failed: %s", e)
         flash = _req.args.get("flash", "")
         return render_template(
             "dictionary.html", sections=SECTIONS, active="dictionary",
             theme=dcfg.get("theme", "dark"),
-            terms=terms, casings=casings, flash=flash,
+            terms=terms, casings=casings, suggestions=suggestions, flash=flash,
         )
+
+    @flask_app.post("/dictionary/suggest/accept")
+    def dictionary_suggest_accept():
+        from . import suggestions as _sug
+        from flask import request as _req, redirect
+        term_lc = (_req.form.get("term_lc", "") or "").strip().lower()
+        history = getattr(app_ref, "history", None)
+        msg = ""
+        if history is not None and getattr(history, "conn", None) is not None and term_lc:
+            try:
+                promoted = _sug.promote(history.conn, term_lc)
+                if promoted:
+                    msg = f"Pinned {promoted!r} to your dictionary."
+                    _maybe_reload_config(app_ref)
+                else:
+                    msg = "Suggestion not found."
+            except ValueError as e:
+                msg = str(e)
+            except Exception as e:
+                _log.warning("dictionary suggest accept failed: %s", e)
+                msg = f"Error: {e}"
+        return redirect("/dictionary?flash=" + _qp(msg))
+
+    @flask_app.post("/dictionary/suggest/dismiss")
+    def dictionary_suggest_dismiss():
+        from . import suggestions as _sug
+        from flask import request as _req, redirect
+        term_lc = (_req.form.get("term_lc", "") or "").strip().lower()
+        history = getattr(app_ref, "history", None)
+        msg = ""
+        if history is not None and getattr(history, "conn", None) is not None and term_lc:
+            try:
+                _sug.dismiss(history.conn, term_lc)
+                msg = "Suggestion dismissed."
+            except Exception as e:
+                _log.warning("dictionary suggest dismiss failed: %s", e)
+                msg = f"Error: {e}"
+        return redirect("/dictionary?flash=" + _qp(msg))
 
     @flask_app.post("/dictionary/add")
     def dictionary_add():
