@@ -50,6 +50,7 @@ SECTIONS = [
     ("graph", "Graph", "/graph", "graph.html"),
     ("search", "Search", "/search", "search.html"),
     ("dictionary", "Dictionary", "/dictionary", "dictionary.html"),
+    ("calibration", "Calibrate", "/calibration", "calibration.html"),
     ("snippets", "Snippets", "/snippets", "snippets.html"),
     ("style", "Style", "/style", "style.html"),
     ("transforms", "Transforms", "/transforms", "transforms.html"),
@@ -445,6 +446,68 @@ def make_app(app_ref, bound_port: int | None = None):
                 _log.warning("dictionary add failed: %s", e)
                 msg = f"Error: {e}"
         return redirect("/dictionary?flash=" + _qp(msg))
+
+    # ---- Voice calibration -------------------------------------------------
+    @flask_app.get("/calibration")
+    def calibration_page():
+        from flask import request as _req
+        from ..calibration import CALIBRATION_SENTENCES
+        cal = getattr(app_ref, "_calibration", None)
+        progress = cal.progress() if cal is not None else None
+        done = cal is not None and cal.done
+        hotkey = (app_ref.cfg.get("hotkey", {}) or {}).get("combo", "") or "your dictation hotkey"
+        return render_template(
+            "calibration.html", sections=SECTIONS, active="calibration",
+            theme=dcfg.get("theme", "dark"),
+            sentences=list(CALIBRATION_SENTENCES),
+            progress=progress, hotkey=hotkey,
+            pairs=cal.pairs() if done else [],
+            baseline=cal.baseline_accuracy() if done else None,
+            flash=_req.args.get("flash", ""),
+        )
+
+    @flask_app.post("/calibration/start")
+    def calibration_start():
+        from flask import redirect
+        from ..calibration import CalibrationSession, CALIBRATION_SENTENCES
+        app_ref._calibration = CalibrationSession(list(CALIBRATION_SENTENCES))
+        return redirect("/calibration")
+
+    @flask_app.get("/calibration/status")
+    def calibration_status():
+        from flask import jsonify
+        cal = getattr(app_ref, "_calibration", None)
+        if cal is None:
+            return jsonify({"started": False, "active": False, "done": False})
+        p = cal.progress()
+        p["started"] = True
+        p["active"] = cal.active
+        return jsonify(p)
+
+    @flask_app.post("/calibration/cancel")
+    def calibration_cancel():
+        from flask import redirect
+        app_ref._calibration = None
+        return redirect("/calibration?flash=" + _qp("Calibration cancelled."))
+
+    @flask_app.post("/calibration/apply")
+    def calibration_apply():
+        from flask import redirect
+        from .. import calibration as _cal
+        cal = getattr(app_ref, "_calibration", None)
+        if cal is None or not cal.pairs():
+            return redirect("/calibration?flash=" + _qp("Read the sentences first."))
+        history = getattr(app_ref, "history", None)
+        conn = (history.conn if history is not None
+                and getattr(history, "conn", None) is not None else None)
+        summary = _cal.apply_seeds(cal, getattr(app_ref, "pattern_miner", None), conn)
+        app_ref._calibration = None
+        _maybe_reload_config(app_ref)    # pinned dictionary terms take effect now
+        msg = (f"Calibrated. Pinned {summary['pinned']} term"
+               f"{'' if summary['pinned'] == 1 else 's'} and learned "
+               f"{summary['recorded']} correction"
+               f"{'' if summary['recorded'] == 1 else 's'} from your voice.")
+        return redirect("/calibration?flash=" + _qp(msg))
 
     @flask_app.post("/dictionary/delete")
     def dictionary_delete():

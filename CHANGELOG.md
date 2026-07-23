@@ -7,6 +7,19 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Speaker adaptation, Phase 3 — guided voice calibration.** A new **Calibrate**
+  page: read ~8 known sentences aloud (with your normal dictation hotkey), and
+  Echo Flow compares what Whisper *heard* to the known *target* to get ground
+  truth — then **pins the names it fumbled** straight into your dictionary and
+  **learns the (heard → target) corrections**, instead of waiting for the same
+  errors to surface organically. It reuses the real mic + Whisper path: while a
+  session is active the daemon (`_do_dictation`) routes each utterance to the
+  session instead of pasting, so nothing lands in your documents. The page polls
+  progress live (sentence advances as you read), then shows a per-sentence
+  baseline accuracy and an **Apply** step that seeds the Phase-1 learners.
+  `src/calibration.py` (`CalibrationSession`, `word_accuracy`, `apply_seeds`);
+  `/calibration` routes; shares the in-process `App` so no IPC is needed. Full
+  Whisper weight fine-tuning remains intentionally out of scope.
 - **Speaker adaptation, Phase 2 — language selection & auto-detect.** Echo Flow
   was pinned to English. Settings → General now has a **language dropdown**
   (Auto-detect + 16 languages); picking **Auto-detect** writes `whisper.language:

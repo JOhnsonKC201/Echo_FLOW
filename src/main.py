@@ -403,6 +403,9 @@ class App:
         self._record_thread: threading.Thread | None = None
         self._active = False
         self._paused = False
+        # Active voice-calibration session (src/calibration.py), or None. When
+        # set, _do_dictation feeds each utterance to it instead of pasting.
+        self._calibration = None
         self._state_lock = threading.Lock()  # guards _active/_paused check-and-set
         # M8: focused_title() involves a Win32 round-trip (~3-15ms in some
         # configurations). Cache at hotkey-press time so the hot path between
@@ -668,6 +671,19 @@ class App:
         console.print(f"[green]Raw ({lang}, {t1-t0:.2f}s):[/green] {raw}")
         _log.info("raw (%s, %.2fs): %s", lang, t1 - t0, raw)
         if not raw.strip():
+            return
+        # CALIBRATION MODE: a read-aloud session is active, so this utterance is
+        # a spoken TARGET sentence, not a dictation. Feed the RAW transcript
+        # (what Whisper heard, pre-cleanup) to the session and stop — no cleanup,
+        # no paste. The dashboard polls progress and seeds the learners at the end.
+        cal = getattr(self, "_calibration", None)
+        if cal is not None and cal.active:
+            idx = cal.submit(raw)
+            console.print(f"[cyan]Calibration: recorded sentence {idx} of "
+                          f"{len(cal.sentences)}.[/cyan]")
+            _log.info("calibration: recorded sentence %d/%d", idx, len(cal.sentences))
+            if self.tray:
+                self.tray.set_state("idle")
             return
         # Whisper hallucination filter: very common phrases on silence/noise
         HALLUCINATIONS = {

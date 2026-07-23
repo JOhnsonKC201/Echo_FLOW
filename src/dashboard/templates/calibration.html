@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Calibrate — Echo Flow{% endblock %}
+{% block content %}
+<h1 class="welcome">Calibrate your voice</h1>
+<div class="muted small" style="margin-bottom: 14px;">
+  Read a few known sentences aloud. Echo Flow compares what it heard to the real
+  text, pins the names it fumbled, and learns your recurring mishearings — so
+  recognition gets better for <em>your</em> voice, faster than waiting for it to
+  learn on its own.
+</div>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+{# ---- State 3: finished — show results + apply ---------------------------- #}
+{% if pairs %}
+  <div class="card">
+    <h2>Results
+      {% if baseline is not none %}
+        <span class="muted small">baseline accuracy {{ '%.0f'|format(baseline * 100) }}%</span>
+      {% endif %}
+    </h2>
+    <div class="muted small" style="margin-bottom: 10px;">
+      How each sentence came through. “Apply” pins the fumbled names to your
+      dictionary and teaches the corrections — nothing is changed until you do.
+    </div>
+    <ul class="term-list" style="display: block;">
+      {% for p in pairs %}
+        <li style="display: block; padding: 8px 0; border-bottom: 1px solid rgba(128,128,128,.15);">
+          <div class="small" style="margin-bottom: 2px;">
+            <span class="muted">target:</span> {{ p.target }}
+          </div>
+          <div class="small" style="margin-bottom: 2px;">
+            <span class="muted">heard:</span>
+            <span style="{% if p.accuracy < 0.999 %}color: var(--warn, #d1a54a);{% endif %}">{{ p.heard }}</span>
+          </div>
+          <div class="muted small">{{ '%.0f'|format(p.accuracy * 100) }}% match</div>
+        </li>
+      {% endfor %}
+    </ul>
+    <div style="display: flex; gap: 10px; margin-top: 14px;">
+      <form method="post" action="/calibration/apply" class="inline">
+        <button type="submit" class="primary">Apply — pin terms &amp; learn corrections</button>
+      </form>
+      <form method="post" action="/calibration/cancel" class="inline">
+        <button type="submit" class="link-danger">Discard</button>
+      </form>
+    </div>
+  </div>
+
+{# ---- State 2: in progress — read the current sentence -------------------- #}
+{% elif progress and not progress.done %}
+  <div class="card">
+    <h2>Reading <span class="muted small" id="cal-count">{{ progress.recorded }} of {{ progress.total }}</span></h2>
+    <div class="muted small" style="margin-bottom: 12px;">
+      Press <kbd>{{ hotkey }}</kbd>, read the sentence below out loud, then release.
+      It won’t paste anywhere — Echo Flow just listens.
+    </div>
+    <div id="cal-current" style="font-size: 1.35rem; line-height: 1.5; padding: 18px 20px;
+         background: rgba(91,141,239,0.08); border-left: 3px solid #5b8def; border-radius: 4px;">
+      {{ progress.current }}
+    </div>
+    <div class="muted small" style="margin-top: 10px;" id="cal-hint">Waiting for you to read it…</div>
+    <form method="post" action="/calibration/cancel" class="inline" style="margin-top: 14px;">
+      <button type="submit" class="link-danger">Cancel</button>
+    </form>
+  </div>
+
+  <script>
+    // Poll the session so the sentence advances the moment the daemon records
+    // one — no page reload between sentences; reload once when the run is done.
+    (function () {
+      var poll = setInterval(async function () {
+        try {
+          var r = await fetch('/calibration/status', { headers: { 'X-Requested-With': 'fetch' } });
+          if (!r.ok) return;
+          var s = await r.json();
+          if (!s.started) { clearInterval(poll); location.reload(); return; }
+          if (s.done) { clearInterval(poll); location.reload(); return; }
+          document.getElementById('cal-count').textContent = s.recorded + ' of ' + s.total;
+          var cur = document.getElementById('cal-current');
+          if (cur && s.current && cur.textContent.trim() !== s.current) {
+            cur.textContent = s.current;
+            document.getElementById('cal-hint').textContent = 'Got it. Next sentence — read this one…';
+          }
+        } catch (e) { /* transient — keep polling */ }
+      }, 1200);
+    })();
+  </script>
+
+{# ---- State 1: not started ------------------------------------------------ #}
+{% else %}
+  <div class="card">
+    <h2>How it works</h2>
+    <ol class="muted small" style="margin: 0 0 14px 18px; line-height: 1.7;">
+      <li>Click <strong>Start</strong> below.</li>
+      <li>For each sentence, press <kbd>{{ hotkey }}</kbd>, read it aloud, and release.</li>
+      <li>At the end, review what it heard and <strong>Apply</strong> to lock in the fixes.</li>
+    </ol>
+    <div class="muted small" style="margin-bottom: 14px;">
+      {{ sentences|length }} short sentences, about a minute. Nothing gets pasted;
+      no audio leaves your machine.
+    </div>
+    <form method="post" action="/calibration/start" class="inline">
+      <button type="submit" class="primary">Start calibration</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>The sentences <span class="muted small">{{ sentences|length }}</span></h2>
+    <ul class="muted small" style="margin: 0 0 0 18px; line-height: 1.8;">
+      {% for s in sentences %}<li>{{ s }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% endblock %}
