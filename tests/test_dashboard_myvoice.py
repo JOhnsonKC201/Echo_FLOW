@@ -358,3 +358,43 @@ def test_humanize_shows_tells_in_the_paste(tmp_path):
     r = client.post("/myvoice/humanize", headers=HDR,
                     data={"hz_text": "Moreover, we leverage seamless synergy."})
     assert b"AI tells in your paste" in r.data
+
+
+def test_humanize_fetch_returns_only_the_result_fragment(tmp_path):
+    """The async submit (fetch=1) gets just the result panel — no full page,
+    no nav — so JS can drop it into the result box in place."""
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome("We shipped it and it works.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+
+    r = client.post("/myvoice/humanize", headers=HDR,
+                    data={"hz_text": "Moreover, we leverage it.", "fetch": "1"})
+
+    assert b"hz-output" in r.data                 # the result panel is present
+    assert b"<html" not in r.data                 # but NOT the whole page
+    assert b'href="/myvoice"' not in r.data        # no sidebar/nav
+
+
+def test_humanize_normal_post_still_returns_full_page(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome("We shipped it.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+
+    r = client.post("/myvoice/humanize", headers=HDR,
+                    data={"hz_text": "Moreover, we leverage it."})
+    assert b"hz-result-card" in r.data or b"hz-output" in r.data
+    assert b'name="hz_mode"' in r.data             # the full form is there too
+
+
+def test_humanize_shows_side_by_side_compare(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome("We shipped it and it works.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+
+    r = client.post("/myvoice/humanize", headers=HDR,
+                    data={"hz_text": "Moreover, we leverage the thing."})
+    assert b"Compare" in r.data
+    assert b"Original (AI)" in r.data and b"Humanized" in r.data

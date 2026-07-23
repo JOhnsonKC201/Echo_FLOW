@@ -583,25 +583,37 @@ def make_app(app_ref, bound_port: int | None = None):
 
     # ---- My Voice (humanize samples + shadow review) -----------------------
 
-    def _myvoice_render(flash="", hz_input="", hz_result=None,
-                        hz_reason="", hz_ran=False, hz_mode="human",
-                        hz_tone="plain", hz_tone_custom="", hz_strength="balanced",
-                        hz_warnings=None, hz_tells_before=0, hz_tells_after=0,
-                        hz_in_segments=None, hz_out_segments=None):
-        hz_warnings = hz_warnings or []
-        hz_in_segments = hz_in_segments or []
-        hz_out_segments = hz_out_segments or []
+    def _hz_ctx(hz_input="", hz_result=None, hz_reason="", hz_ran=False,
+                hz_mode="human", hz_tone="plain", hz_tone_custom="",
+                hz_strength="balanced", hz_warnings=None, hz_tells_before=0,
+                hz_tells_after=0, hz_in_segments=None, hz_out_segments=None):
+        """The Humanize result context — shared by the full page and the async
+        fragment (templates/_humanize_result.html) so the two never drift."""
+        from . import textdiff as _td
+        from ..cleanup import HUMANIZE_TONES as _HUMANIZE_TONES
+        exp = (app_ref.cfg.get("experimental", {}) or {})
         # A rewrite the user can't inspect is one they have to trust blindly, so
         # a result always ships its change set — but only when it actually
         # differs from the paste (a "kept" result is the original, no diff).
         hz_diff, hz_changed = [], 0.0
         if hz_result and hz_result.strip() != (hz_input or "").strip():
-            from . import textdiff as _td
             hz_diff = _td.word_diff(hz_input, hz_result)
             hz_changed = _td.change_ratio(hz_input, hz_result)
+        return dict(
+            hz_input=hz_input, hz_result=hz_result, hz_reason=hz_reason,
+            hz_ran=hz_ran, hz_diff=hz_diff, hz_changed=hz_changed,
+            hz_mode=hz_mode, hz_tone=hz_tone, hz_tone_custom=hz_tone_custom,
+            hz_strength=hz_strength, hz_warnings=hz_warnings or [],
+            hz_tells_before=hz_tells_before, hz_tells_after=hz_tells_after,
+            hz_in_segments=hz_in_segments or [], hz_out_segments=hz_out_segments or [],
+            hz_tones=list(_HUMANIZE_TONES),
+            hz_max_chars=int(exp.get("humanize_text_max_chars", 6000)),
+        )
+
+    def _myvoice_render(flash="", **hz_kwargs):
+        hz_ctx = _hz_ctx(**hz_kwargs)
         from . import voice_samples as _vs
         from .. import voice_profile as _vp
-        from ..cleanup import HUMANIZE_TONES as _HUMANIZE_TONES
         samples, shadow_rows, stats = [], [], {}
         history = getattr(app_ref, "history", None)
         profile_preview = ""
@@ -620,15 +632,7 @@ def make_app(app_ref, bound_port: int | None = None):
             samples=samples, shadow_rows=shadow_rows, stats=stats,
             humanize_mode=_vp.humanize_mode_for_cfg(exp),
             profile_preview=profile_preview, has_profile=bool(profile_preview),
-            hz_input=hz_input, hz_result=hz_result, hz_reason=hz_reason,
-            hz_ran=hz_ran, hz_diff=hz_diff, hz_changed=hz_changed,
-            hz_mode=hz_mode, hz_tone=hz_tone, hz_tone_custom=hz_tone_custom,
-            hz_strength=hz_strength, hz_warnings=hz_warnings,
-            hz_tells_before=hz_tells_before, hz_tells_after=hz_tells_after,
-            hz_in_segments=hz_in_segments, hz_out_segments=hz_out_segments,
-            hz_tones=list(_HUMANIZE_TONES),
-            hz_max_chars=int(exp.get("humanize_text_max_chars", 6000)),
-            flash=flash,
+            flash=flash, **hz_ctx,
         )
 
     @flask_app.get("/myvoice")
@@ -705,14 +709,17 @@ def make_app(app_ref, bound_port: int | None = None):
         tells_after = _ai.score(result) if result else 0
         in_segments = _ai.segments(text) if text else []
         out_segments = _ai.segments(result) if result else []
-        return _myvoice_render(hz_input=text, hz_result=result,
-                               hz_reason=reason, hz_ran=True,
-                               hz_mode=mode, hz_tone=tone, hz_tone_custom=tone_custom,
-                               hz_strength=strength, hz_warnings=warnings,
-                               hz_tells_before=tells_before,
-                               hz_tells_after=tells_after,
-                               hz_in_segments=in_segments,
-                               hz_out_segments=out_segments)
+        hz_kwargs = dict(
+            hz_input=text, hz_result=result, hz_reason=reason, hz_ran=True,
+            hz_mode=mode, hz_tone=tone, hz_tone_custom=tone_custom,
+            hz_strength=strength, hz_warnings=warnings,
+            hz_tells_before=tells_before, hz_tells_after=tells_after,
+            hz_in_segments=in_segments, hz_out_segments=out_segments)
+        # An async submit (the fetch handler on /myvoice) asks for just the
+        # result panel so the page updates in place without a full reload.
+        if _req.form.get("fetch") or _req.headers.get("X-Requested-With"):
+            return render_template("_humanize_result.html", **_hz_ctx(**hz_kwargs))
+        return _myvoice_render(**hz_kwargs)
 
     def _myvoice_conn():
         history = getattr(app_ref, "history", None)

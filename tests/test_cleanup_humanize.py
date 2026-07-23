@@ -680,3 +680,31 @@ def test_dictation_humanize_temperature_is_untouched(monkeypatch):
     cleaner.humanize(CLEANED, voice_profile=VOICE, retriever=_FakeRetriever())
     # humanize() never passes a temperature → _via_ollama uses its 0.2 default.
     assert seen.get("temperature") is None
+
+
+# --- Deterministic dash normalization ----------------------------------------
+
+def test_normalize_dashes_replaces_all_forms():
+    f = _cleaner()._normalize_dashes
+    assert f("extractions—confidently") == "extractions, confidently"
+    assert f("a — b — c") == "a, b, c"
+    assert f("the 1990–2000 range") == "the 1990 to 2000 range"
+    assert f("do it a - b now") == "do it a, b now"
+    # A hyphenated compound is untouched.
+    assert f("a well-tested, state-of-the-art path") == "a well-tested, state-of-the-art path"
+    # No em/en dash survives, ever.
+    for s in ["x—y", "x — y", "x–y", "ends—", "—leads"]:
+        assert "—" not in f(s) and "–" not in f(s)
+
+
+def test_humanize_output_is_always_dash_free(monkeypatch):
+    """Even if the model stubbornly returns em-dashes, the deterministic pass
+    strips them, so the result never reads AI on that account."""
+    cleaner = _cleaner()
+    monkeypatch.setattr(
+        cleaner, "_via_ollama",
+        lambda *a, **k: "The tool reads scans—sometimes wrong—and flags totals.")
+    out = _human(cleaner, text="Some AI text about reading scans and totals.")
+    assert out.text is not None
+    assert "—" not in out.text and "–" not in out.text
+    assert "," in out.text          # dashes became commas

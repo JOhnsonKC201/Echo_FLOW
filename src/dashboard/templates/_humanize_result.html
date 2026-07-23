@@ -1,0 +1,109 @@
+{# Humanize result panel. Rendered inline in myvoice.html (no-JS) AND returned
+   on its own by POST /myvoice/humanize?fetch=1 (async, injected into #hz-result).
+   Keep it self-contained: no <html>/nav, just the result. #}
+{% if hz_ran %}
+  {% if hz_result %}
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+      <strong>{% if hz_reason == 'unchanged' or hz_reason == 'kept' %}Result{% else %}Humanized{% endif %}</strong>
+      <button type="button" class="link-action" onclick="hzCopy(this)">Copy</button>
+      <button type="submit" form="hz-form" class="link-action" title="Re-roll a different rewrite">Try again</button>
+      <span class="muted small" style="margin-left: auto;">
+        AI tells:
+        <strong>{{ hz_tells_before }}</strong> →
+        <strong style="color: {{ 'var(--accent, #3eaf6f)' if hz_tells_after < hz_tells_before else 'inherit' }};">{{ hz_tells_after }}</strong>
+      </span>
+    </div>
+    <div id="hz-output" style="white-space: pre-wrap; line-height: 1.6;">
+      {%- for is_tell, chunk in hz_out_segments -%}
+        {%- if is_tell -%}<mark title="still reads AI" style="background: rgba(209,165,74,0.28); border-radius: 2px;">{{ chunk }}</mark>
+        {%- else -%}{{ chunk }}
+        {%- endif -%}
+      {%- else -%}{{ hz_result }}
+      {%- endfor -%}
+    </div>
+
+    {% if hz_tells_after > 0 %}
+      <div class="muted small" style="margin-top: 8px;">
+        The highlighted bits still read a little AI — hit <em>Try again</em> or turn up the strength.
+      </div>
+    {% endif %}
+
+    {% if hz_warnings %}
+      <div class="muted small" style="margin-top: 12px; padding: 8px 12px;
+           border-left: 3px solid var(--warn, #d1a54a); background: rgba(209,165,74,0.08);">
+        {% for w in hz_warnings %}<div>⚠️ {{ w }}</div>{% endfor %}
+      </div>
+    {% elif hz_reason == 'unchanged' %}
+      <div class="muted small" style="margin-top: 10px;">
+        The model left this essentially unchanged — it already reads cleanly.
+      </div>
+    {% elif hz_reason == 'kept' %}
+      <div class="muted small" style="margin-top: 10px;">
+        Couldn’t produce a clean rewrite this time, so your original is shown.
+        Dense or technical text is the usual cause — try a shorter passage or a
+        stronger <a href="/settings/experimental">humanizer model</a>.
+      </div>
+    {% endif %}
+
+    {% if hz_diff %}
+    <details style="margin-top: 14px;" open>
+      <summary class="muted small" style="cursor: pointer;">
+        Compare — original vs humanized
+      </summary>
+      <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px;">
+        <div style="flex: 1 1 280px; min-width: 0;">
+          <div class="muted small" style="margin-bottom: 4px;">Original (AI)</div>
+          <div style="white-space: pre-wrap; line-height: 1.6; padding: 10px 12px;
+               background: rgba(200,80,80,0.06); border-radius: 4px;">{{ hz_input }}</div>
+        </div>
+        <div style="flex: 1 1 280px; min-width: 0;">
+          <div class="muted small" style="margin-bottom: 4px;">Humanized</div>
+          <div style="white-space: pre-wrap; line-height: 1.6; padding: 10px 12px;
+               background: rgba(62,175,111,0.07); border-radius: 4px;">{{ hz_result }}</div>
+        </div>
+      </div>
+    </details>
+
+    <details style="margin-top: 8px;">
+      <summary class="muted small" style="cursor: pointer;">
+        What changed <span class="muted">— {{ '%.0f'|format(hz_changed * 100) }}% of the words</span>
+      </summary>
+      <div style="white-space: pre-wrap; line-height: 1.7; margin-top: 8px;">
+        {%- for op, chunk in hz_diff -%}
+          {%- if op == 'equal' -%}{{ chunk }}
+          {%- elif op == 'delete' -%}<del style="background: rgba(200,80,80,0.16); text-decoration: line-through; opacity: .75;">{{ chunk }}</del>
+          {%- else -%}<ins style="background: rgba(62,175,111,0.20); text-decoration: none;">{{ chunk }}</ins>
+          {%- endif -%}
+        {%- endfor -%}
+      </div>
+    </details>
+    {% endif %}
+
+    {% if hz_tells_before > 0 %}
+    <details style="margin-top: 8px;">
+      <summary class="muted small" style="cursor: pointer;">
+        AI tells in your paste <span class="muted">— {{ hz_tells_before }} highlighted</span>
+      </summary>
+      <div style="white-space: pre-wrap; line-height: 1.7; margin-top: 8px;" class="muted small">
+        {%- for is_tell, chunk in hz_in_segments -%}
+          {%- if is_tell -%}<mark style="background: rgba(209,165,74,0.28); border-radius: 2px;">{{ chunk }}</mark>
+          {%- else -%}{{ chunk }}
+          {%- endif -%}
+        {%- endfor -%}
+      </div>
+    </details>
+    {% endif %}
+  {% else %}
+    <div class="muted small">
+      {% if hz_reason == 'too_long' %}
+        That paste is over the {{ hz_max_chars }}-character limit. Try it in smaller pieces.
+      {% elif hz_reason == 'provider_down' %}
+        Couldn’t reach the local model. Is Ollama running? (<code>ollama serve</code>)
+      {% elif hz_reason == 'empty' %}
+        Paste some text first.
+      {% else %}
+        Nothing came back. Make sure Ollama is running and try again.
+      {% endif %}
+    </div>
+  {% endif %}
+{% endif %}

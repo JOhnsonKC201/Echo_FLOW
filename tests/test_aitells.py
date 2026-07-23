@@ -116,3 +116,24 @@ def test_segments_emit_no_markup():
 
 def test_segments_empty_text():
     assert aitells.segments("") == []
+
+
+def test_detects_tight_em_dash_not_just_spaced():
+    # The bug: "word—word" (no surrounding spaces) used to score 0.
+    assert aitells.score("wrong extractions—confidently reading") == 1
+    assert aitells.score("a — spaced — dash") == 2
+    assert aitells.score("the 1990–2000 range") == 1        # en dash
+    assert aitells.score("do it a - b style") == 1               # spaced hyphen
+
+
+def test_tight_ascii_hyphen_compound_is_not_a_dash():
+    # A hyphenated compound is normal writing, not a dash tell.
+    s = aitells.score("a well-tested, low-latency path")
+    assert s == 0
+
+
+def test_detects_stiff_comma_led_transitions():
+    assert aitells.score("Additionally, we shipped it.") >= 1
+    assert aitells.score("However, it works.") >= 1
+    # Without the trailing comma it is not flagged (ordinary use).
+    assert aitells.score("however you like") == 0

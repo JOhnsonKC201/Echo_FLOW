@@ -209,11 +209,16 @@ SYSTEM_PROMPTS = {
         "a language model.\n\n"
         "STEP 1 — STRIP THE AI TELLS. This text was written by a language "
         "model and reads like one. Remove:\n"
-        "- Em dashes used for rhythm rather than grammar. Use a period, a "
-        "comma, or nothing.\n"
+        "- Long dashes. NEVER use an em dash (—) or en dash (–), spaced or "
+        "tight. Use a period, a comma, or nothing — a real person on a keyboard "
+        "does not type them.\n"
         "- LLM vocabulary: delve, moreover, furthermore, crucial, pivotal, "
         "landscape, realm, tapestry, testament to, navigate (figurative), "
         "leverage (as a verb), robust, seamless, underscore, foster.\n"
+        "- Stiff comma-led connectors at the start of a sentence: "
+        "\"Additionally,\", \"Furthermore,\", \"However,\", \"Moreover,\", "
+        "\"Consequently,\", \"Ultimately,\". Start plainly, or join the "
+        "sentences.\n"
         "- The antithesis tic: \"It's not just X — it's Y\", \"This isn't "
         "about X. It's about Y.\" Say the thing plainly.\n"
         "- Rule-of-three lists where two items carry the meaning. Cut the "
@@ -1515,6 +1520,35 @@ class Cleaner:
         return False
 
     @staticmethod
+    def _normalize_dashes(text: str) -> str:
+        """Replace the em/en dashes an LLM loves with human punctuation, so the
+        result never reads AI on that account. Meaning-preserving and model-free:
+
+          - a number range (1990–2000, or with spaces) -> "1990 to 2000";
+          - any other em/en dash, tight or spaced (word—word, "a — b"), and a
+            spaced ASCII hyphen used as a dash ("a - b") -> a comma;
+          - a tight ASCII hyphen in a compound (well-tested) is left ALONE.
+
+        Then tidy up the commas that leaves behind (stray/leading, or one sitting
+        in front of terminal punctuation)."""
+        if not text:
+            return text
+        # Number ranges first, before the generic dash → comma rule claims them.
+        text = re.sub(r"(?<=\d)\s*[—–]\s*(?=\d)", " to ", text)
+        # Any remaining em/en dash, or a spaced ASCII hyphen, becomes a comma.
+        text = re.sub(r"\s*[—–]\s*", ", ", text)
+        text = re.sub(r"(?<=\s)-(?=\s)", ",", text)
+        # Tidy: " ," -> ",", doubled commas, a comma before terminal punctuation,
+        # a leading comma on any line, and collapsed spaces.
+        text = re.sub(r"\s+,", ",", text)
+        text = re.sub(r",\s*,", ",", text)
+        text = re.sub(r",\s*(?=[.!?;:])", "", text)
+        text = re.sub(r"(?m)^\s*,\s*", "", text)   # leading comma on a line
+        text = re.sub(r"(?m)\s*,\s*$", "", text)   # trailing comma on a line
+        text = re.sub(r"[ \t]{2,}", " ", text)
+        return text
+
+    @staticmethod
     def _numbers_changed(src: str, out: str) -> bool:
         """True when the rewrite's numbers are not exactly the source's.
 
@@ -1689,6 +1723,10 @@ class Cleaner:
         # not a reason to discard an otherwise-correct rewrite. (No-op unless a
         # profile is in play — i.e. voice mode.)
         out = self._strip_profile_echo(voice_profile, para, out)
+        # The model unreliably leaves long dashes in ("word—word") even when
+        # told not to. Strip them deterministically here — meaning-preserving,
+        # so every downstream guard and the returned text are already dash-free.
+        out = self._normalize_dashes(out)
 
         # --- Garbage guards: showing this is worse than showing nothing ------
         if not out:

@@ -97,16 +97,24 @@ _PHRASES: list[tuple[str, re.Pattern]] = [
     ("cliche", re.compile(r"\bstate[- ]of[- ]the[- ]art\b", re.I)),
     ("cliche", re.compile(r"\bneedle\s+in\s+a\s+haystack\b", re.I)),
     ("cliche", re.compile(r"\btip\s+of\s+the\s+iceberg\b", re.I)),
+    # Stiff comma-led transition openers LLMs stack at sentence starts. Anchored
+    # to a trailing comma — that's the giveaway; ordinary use without one is left
+    # alone. ("moreover"/"furthermore" as bare words are already in _VOCAB.)
+    ("transition", re.compile(
+        r"\b(?:additionally|however|consequently|thus|hence|notably|importantly|"
+        r"ultimately|nevertheless|nonetheless|subsequently|firstly|secondly|"
+        r"lastly|conversely|accordingly)\b\s*,", re.I)),
 ]
 
 _VOCAB_RE = re.compile(
     r"\b(" + "|".join(re.escape(w) for w in sorted(_VOCAB, key=len, reverse=True))
     + r")\b", re.I)
 
-# An em dash (—) or a spaced hyphen used as one — the rhythmic dash LLMs love.
-# A normal hyphenated-word ("state-of-the-art") is NOT this; require the dash to
-# be flanked by spaces or be a real em/en dash.
-_DASH_RE = re.compile(r"\s+[—–]\s+|\s—|—\s|\s-\s")
+# The rhythmic dash LLMs love — flagged whether it is spaced ("a — b") or tight
+# ("word—word"). Any em dash (—) or en dash (–) counts; so does a spaced ASCII
+# hyphen used as a dash ("a - b"). A normal hyphenated compound ("state-of-the-
+# art", "well-tested") uses a TIGHT ascii hyphen and is NOT flagged.
+_DASH_RE = re.compile(r"[—–]|(?<=\s)-(?=\s)")
 
 
 def find(text: str) -> list[Hit]:

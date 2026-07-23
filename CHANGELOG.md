@@ -7,6 +7,26 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Humanize reads more human — dashes killed, side-by-side compare, instant
+  feedback.**
+  - **No more long dashes.** The AI-tell detector only counted em-dashes with
+    spaces around them, so a tight `word—word` slipped through — uncounted,
+    unhighlighted, and left in the output (the score even claimed "0" while
+    dashes remained). Fixed: any em/en dash is now detected, and a deterministic
+    pass (`Cleaner._normalize_dashes`) rewrites every long dash to human
+    punctuation — a comma, or "to" for number ranges — so **no em-dash ever
+    survives**, whatever the model does. Meaning-preserving; a hyphenated
+    compound (`well-tested`) is left alone.
+  - **Broader cleanup.** The detector (and the prompt) now also flag stiff
+    comma-led connectors ("Additionally,", "However,", "Consequently,", …), so
+    they get stripped too.
+  - **Side-by-side compare.** The result panel shows Original vs Humanized in two
+    columns, next to the existing inline "What changed" diff.
+  - **Instant, in-place feedback.** Clicking Humanize now shows a "Humanizing…"
+    state and drops the result into its own box below without a full-page reload
+    (progressive enhancement — a plain POST still works with JS off). Fixes the
+    "it did nothing" feel on longer text.
+
 - **Prompt-Engineering techniques — Simple / Reflection / Chain-of-Thought.**
   PE mode used to do one thing: clean a dictation into a faithful, well-phrased
   request. It now has a **Technique** selector (Settings → Vibe, or
