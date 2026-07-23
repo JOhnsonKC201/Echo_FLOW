@@ -586,7 +586,8 @@ def make_app(app_ref, bound_port: int | None = None):
     def _hz_ctx(hz_input="", hz_result=None, hz_reason="", hz_ran=False,
                 hz_mode="human", hz_tone="plain", hz_tone_custom="",
                 hz_strength="balanced", hz_warnings=None, hz_tells_before=0,
-                hz_tells_after=0, hz_in_segments=None, hz_out_segments=None):
+                hz_tells_after=0, hz_in_segments=None, hz_out_segments=None,
+                hz_diagnostics=None, hz_diag_segments=None):
         """The Humanize result context — shared by the full page and the async
         fragment (templates/_humanize_result.html) so the two never drift."""
         from . import textdiff as _td
@@ -606,6 +607,7 @@ def make_app(app_ref, bound_port: int | None = None):
             hz_strength=hz_strength, hz_warnings=hz_warnings or [],
             hz_tells_before=hz_tells_before, hz_tells_after=hz_tells_after,
             hz_in_segments=hz_in_segments or [], hz_out_segments=hz_out_segments or [],
+            hz_diagnostics=hz_diagnostics or [], hz_diag_segments=hz_diag_segments or [],
             hz_tones=list(_HUMANIZE_TONES),
             hz_max_chars=int(exp.get("humanize_text_max_chars", 6000)),
         )
@@ -709,12 +711,21 @@ def make_app(app_ref, bound_port: int | None = None):
         tells_after = _ai.score(result) if result else 0
         in_segments = _ai.segments(text) if text else []
         out_segments = _ai.segments(result) if result else []
+        # Diagnostic "specify" pass: vague claims the humanizer can't fill in
+        # itself, surfaced as questions so the writer adds the real specifics.
+        # Run on the SOURCE — its AI-vagueness is the cleanest, most complete
+        # signal of the missing facts, and those holes survive the rewrite
+        # (the model can't invent them) however it rephrases them.
+        from .. import vagueness as _vg
+        diagnostics = _vg.prompts(text) if result else []
+        diag_segments = _vg.segments(text) if result else []
         hz_kwargs = dict(
             hz_input=text, hz_result=result, hz_reason=reason, hz_ran=True,
             hz_mode=mode, hz_tone=tone, hz_tone_custom=tone_custom,
             hz_strength=strength, hz_warnings=warnings,
             hz_tells_before=tells_before, hz_tells_after=tells_after,
-            hz_in_segments=in_segments, hz_out_segments=out_segments)
+            hz_in_segments=in_segments, hz_out_segments=out_segments,
+            hz_diagnostics=diagnostics, hz_diag_segments=diag_segments)
         # An async submit (the fetch handler on /myvoice) asks for just the
         # result panel so the page updates in place without a full reload.
         if _req.form.get("fetch") or _req.headers.get("X-Requested-With"):

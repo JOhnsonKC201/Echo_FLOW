@@ -398,3 +398,32 @@ def test_humanize_shows_side_by_side_compare(tmp_path):
                     data={"hz_text": "Moreover, we leverage the thing."})
     assert b"Compare" in r.data
     assert b"Original (AI)" in r.data and b"Humanized" in r.data
+
+
+def test_humanize_shows_diagnostic_flags(tmp_path):
+    """The 'specify' pass surfaces vague claims in the SOURCE as questions the
+    writer must answer — a humanizer can't invent the fact."""
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome("A cleaned-up rewrite here.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+
+    r = client.post("/myvoice/humanize", headers=HDR, data={
+        "hz_text": "This achieved significant improvements. "
+                   "Researchers have shown it works."})
+
+    assert b"Reads empty" in r.data
+    assert b"significant improvements" in r.data
+    assert b"Which study or source" in r.data
+
+
+def test_humanize_no_diagnostics_when_source_is_concrete(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome("A rewrite.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+
+    r = client.post("/myvoice/humanize", headers=HDR, data={
+        "hz_text": "We shipped the parser Tuesday; it reads 12 formats and "
+                   "fails on rotated scans."})
+    assert b"Reads empty" not in r.data

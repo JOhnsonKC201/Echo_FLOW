@@ -7,6 +7,17 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Humanize diagnostic pass — "reads empty, add the specifics".** A humanizer
+  can strip the machine's tics but can't invent what the writer never said, and
+  the absence of concrete detail is the biggest tell. So the result now ships a
+  deterministic **"specify" pass** (`src/vagueness.py`): it finds vague, abstract
+  claims in the source — "significant improvements", "a variety of", "researchers
+  have shown", "recently" — and turns each into a question ("By how much? Give
+  the number.", "Which study or source?", "When, specifically?"). It never fills
+  them in (that would be a bluff); it asks. Suppressed when a real number is
+  already in the sentence, so a concrete claim isn't nagged. This turns the tool
+  from a rewriter into an editor. `vagueness.find/prompts/segments/count`.
+
 - **Humanize reads more human — dashes killed, side-by-side compare, instant
   feedback.**
   - **No more long dashes.** The AI-tell detector only counted em-dashes with

@@ -45,6 +45,36 @@
       </div>
     {% endif %}
 
+    {# The "specify" pass: vague claims a humanizer can't fill in for you. The
+       absence of a real detail is the biggest AI tell, and no rewrite can invent
+       it — so it asks. #}
+    {% if hz_diagnostics %}
+      <div class="small" style="margin-top: 12px; padding: 10px 12px;
+           border-left: 3px solid #5b8def; background: rgba(91,141,239,0.07);">
+        <div style="margin-bottom: 6px;"><strong>Reads empty — make these concrete.</strong>
+          <span class="muted">Your text makes claims with no specifics, and a humanizer can’t invent the facts. Add a real number, name, or source for each:</span>
+        </div>
+        {% for d in hz_diagnostics %}
+          <div style="margin: 2px 0;">
+            <span style="background: rgba(91,141,239,0.16); border-radius: 2px; padding: 0 3px;">{{ d.phrase }}</span>
+            <span class="muted">— {{ d.question }}</span>
+          </div>
+        {% endfor %}
+        {% if hz_diag_segments %}
+          <details style="margin-top: 8px;">
+            <summary class="muted" style="cursor: pointer;">Show where in your paste</summary>
+            <div style="white-space: pre-wrap; line-height: 1.7; margin-top: 6px;">
+              {%- for is_hole, chunk in hz_diag_segments -%}
+                {%- if is_hole -%}<mark style="background: rgba(91,141,239,0.20); border-radius: 2px;">{{ chunk }}</mark>
+                {%- else -%}{{ chunk }}
+                {%- endif -%}
+              {%- endfor -%}
+            </div>
+          </details>
+        {% endif %}
+      </div>
+    {% endif %}
+
     {% if hz_diff %}
     <details style="margin-top: 14px;" open>
       <summary class="muted small" style="cursor: pointer;">
