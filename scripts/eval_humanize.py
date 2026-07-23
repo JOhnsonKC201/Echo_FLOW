@@ -12,6 +12,10 @@ It runs a fixed corpus of AI-written passages through the humanizer and reports:
   - contaminated: output leaked writing-sample content (voice mode; must be 0)
   - median latency
 
+Hard-exclude is ON here (the production default): sentences carrying numbers,
+citations, quotes or code are kept byte-for-byte and never sent to the model, so
+facts-kept is ~100% while tell-removal is capped (their tells survive on purpose).
+
 `--check` fails (non-zero exit) if acceptance or tell-removal fall below the
 bars, so a prompt/guard regression is caught before release.
 
@@ -113,7 +117,8 @@ def run(model: str, reps: int, timeout: float, verbose: bool):
                 text, mode=mode, tone=tone,
                 voice_profile=PROFILE if mode == "voice" else "",
                 retriever=None, timeout_sec=timeout, model=model,
-                escalate_model="")     # measure the target model alone
+                escalate_model="",     # measure the target model alone
+                protect_spans=True)    # production default: hard-exclude on
             el = time.time() - t0
             after = aitells.score(o.text) if o.text else base
             accepted = o.reason in ("ok", "warned")
@@ -163,7 +168,11 @@ def main():
     m = summarize(rows)
 
     if args.check:
-        # Bars chosen from the observed baseline on qwen2.5:3b, with headroom.
+        # Bars chosen from the observed baseline on qwen2.5:3b. Note that
+        # hard-exclude is ON (production default): a sentence carrying a number,
+        # citation or code is kept verbatim, so its tells survive by design.
+        # That caps tell-removal (~64% observed vs a protection-off ceiling) but
+        # guarantees facts-kept ~100% — the tradeoff the tool deliberately makes.
         ACCEPT_MIN, REMOVED_MIN, FACTS_MIN = 0.70, 0.60, 0.85
         ok = (m["accept"] >= ACCEPT_MIN and m["removed"] >= REMOVED_MIN
               and m["facts"] >= FACTS_MIN and m["contaminated"] == 0)

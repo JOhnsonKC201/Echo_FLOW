@@ -7,6 +7,25 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Humanize hard-exclude zones — the facts are never sent to the model.** In a
+  methods section the numbers, hyperparameters, splits, metrics, citations,
+  quotes and code ARE the content; precision there reads "competent" to a
+  reviewer, and a humanizer that "improves the flow" of "F1 of 0.79" into "an F1
+  of about 0.8" is doing damage. So instead of trusting the model to be careful,
+  the tool now makes it impossible for it to be careless: a new detector
+  (`src/protected.py`) finds every protected span, and any **sentence** carrying
+  one is held byte-for-byte and never sent to the model — only the free-prose
+  runs around it are rewritten. The protection is deliberately structural rather
+  than a prompt instruction: no local model reliably preserves an inline
+  placeholder token (the 3B and the escalation model alike paraphrase a masked
+  `⟦0⟧` into "zero"), so masking would silently corrupt the very figures it was
+  meant to guard. Keeping the whole sentence is coarser but honest — the tool
+  refuses to edit the facts rather than gamble on them. The result notes how many
+  spans were held exact. Sentence-splitting is span-aware, so a period inside
+  `et al.`, `0.001`, or a closing quote is never mistaken for a sentence end.
+  `protected.find/count`; `humanize_text(protect_spans=…)`;
+  `experimental.humanize_text_protect_spans` (default true).
+
 - **Humanize delete-first pass — cut the dead sentences before rewriting.** Most
   of the de-AI win is subtraction, not rephrasing, and it has to be
   deterministic: a small local model told to "be concise" paraphrases instead of

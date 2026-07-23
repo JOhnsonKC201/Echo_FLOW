@@ -261,6 +261,7 @@ experimental:
   humanize_text_max_chars: 6000     # largest single paste accepted. Bigger pastes are refused up front rather than silently truncated.
   humanize_text_escalate_model: "auto"  # when the main model mangles a paragraph, retry it ONCE on a stronger installed model before keeping your original. "auto" picks the next-step-up model by size (won't jump to one too big for your GPU); a name like "qwen3.5:latest" pins one; "" disables.
   humanize_text_delete_first: true      # before rewriting, deterministically CUT the sentences that do no work — topic-announcement openers, empty-optimism closers, pure throat-clearing. Most of the de-AI win is this subtraction; the result lists what was removed. Sentences with numbers or proper nouns are protected. Set false to disable.
+  humanize_text_protect_spans: true     # hard-exclude zones: any SENTENCE carrying a number, hyperparameter, split, citation, quote, or code is held byte-for-byte and never sent to the model — only the free-prose sentences around it are rewritten. Structural, not a prompt: no local model reliably preserves an inline placeholder, so keeping the whole sentence is the honest guarantee. Essential for methods sections. Set false to let the model touch everything.
 
 logging:
   level: "INFO"

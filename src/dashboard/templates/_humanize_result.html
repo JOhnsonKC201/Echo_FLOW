@@ -28,6 +28,14 @@
       </div>
     {% endif %}
 
+    {% if hz_protected > 0 %}
+      <div class="muted small" style="margin-top: 8px;">
+        🔒 Kept {{ hz_protected }} exact —
+        the sentences carrying your numbers, citations, quotes, and code were
+        held as you wrote them, never sent to the model.
+      </div>
+    {% endif %}
+
     {% if hz_warnings %}
       <div class="muted small" style="margin-top: 12px; padding: 8px 12px;
            border-left: 3px solid var(--warn, #d1a54a); background: rgba(209,165,74,0.08);">

@@ -161,6 +161,7 @@ def _human(cleaner, text=AI_TEXT, **kw):
     kw.setdefault("escalate_model", "")
     kw.setdefault("polish", False)
     kw.setdefault("delete_first", False)
+    kw.setdefault("protect_spans", False)
     return cleaner.humanize_text(text, **kw)
 
 
@@ -171,6 +172,7 @@ def _voice(cleaner, text=AI_TEXT, **kw):
     kw.setdefault("escalate_model", "")
     kw.setdefault("polish", False)
     kw.setdefault("delete_first", False)
+    kw.setdefault("protect_spans", False)
     return cleaner.humanize_text(text, **kw)
 
 
@@ -744,3 +746,85 @@ def test_delete_first_off_leaves_everything(monkeypatch):
                                 escalate_model="", polish=False, delete_first=False)
     assert out.cut == []
     assert "transformed the landscape" in seen["text"]
+
+
+# --- Hard-exclude zones (protected spans) ------------------------------------
+
+def test_protected_sentence_is_never_seen_by_the_model(monkeypatch):
+    """With protection on, a sentence carrying numbers/citations/code is held
+    verbatim and never sent to the model; only the free prose is rewritten."""
+    cleaner = _cleaner()
+    seen = []
+
+    def fake(system, text, *a, **k):
+        seen.append(text)
+        return "We ran a careful check."          # rewrite of the free-prose run
+
+    monkeypatch.setattr(cleaner, "_via_ollama", fake)
+    src = ("We conducted a comprehensive evaluation of the approach. "
+           "We achieved an F1 of 0.79 on the 80/20 split, see [3].")
+    out = cleaner.humanize_text(src, mode="human", retriever=_SimRetriever(),
+                                escalate_model="", polish=False, delete_first=False,
+                                protect_spans=True)
+    # The fact sentence never reached the model — not one call carried the figures.
+    joined = " ".join(seen)
+    assert "0.79" not in joined and "80/20" not in joined and "[3]" not in joined
+    # ...and it comes back byte-for-byte in the final text.
+    assert "We achieved an F1 of 0.79 on the 80/20 split, see [3]." in out.text
+    # ...while the free prose WAS rewritten.
+    assert "We ran a careful check." in out.text
+
+
+def test_all_protected_input_is_kept_and_the_model_untouched(monkeypatch):
+    """A single fact-bearing sentence is entirely protected: the model is never
+    called and the figures come back exactly — the tool refuses to edit rather
+    than risk corrupting them."""
+    cleaner = _cleaner()
+    called = []
+    # If this ran, it would invent wrong numbers — proving it never runs.
+    monkeypatch.setattr(cleaner, "_via_ollama",
+                        lambda *a, **k: called.append(1) or "We hit an F1 of 0.9 on a 70/30 split.")
+    src = "We achieved an F1 of 0.79 on the 80/20 split."
+    out = cleaner.humanize_text(src, mode="human", retriever=_SimRetriever(),
+                                escalate_model="", polish=False, delete_first=False,
+                                protect_spans=True)
+    assert called == []                         # never sent to the model
+    assert out.text == src                      # original figures intact
+    assert out.reason == "unchanged"
+
+
+def test_protect_units_isolates_fact_sentences():
+    """Free-prose runs become 'rewrite' units; a sentence with any protected
+    span becomes a 'keep' unit, in order, within its paragraph."""
+    cleaner = _cleaner()
+    src = ("We built the thing and it went well. "
+           "We measured an F1 of 0.79 on the test set. "
+           "Then we shipped it to everyone.")
+    units = cleaner._protect_units(src, protect=True)
+    kinds = [k for _, k, _ in units]
+    assert kinds == ["rewrite", "keep", "rewrite"]
+    assert "0.79" in units[1][2]
+    # Free runs never carry a protected figure.
+    assert "0.79" not in units[0][2] and "0.79" not in units[2][2]
+
+
+def test_protect_units_off_keeps_whole_paragraph_as_one_rewrite():
+    """With protection off, a paragraph is a single rewrite unit (legacy path)."""
+    cleaner = _cleaner()
+    src = "We measured an F1 of 0.79. Then we shipped it."
+    units = cleaner._protect_units(src, protect=False)
+    assert len(units) == 1 and units[0][1] == "rewrite"
+    assert units[0][2] == src
+
+
+def test_sentence_ranges_never_split_inside_a_citation():
+    """A period inside 'et al.' or a decimal is not a sentence boundary when it
+    falls within a protected span — the citation stays in one sentence."""
+    from src import protected as _prot
+    cleaner = _cleaner()
+    text = "As shown by prior work (Smith et al., 2020) the effect is real. We agree."
+    spans = _prot.find(text)
+    sents = [text[s:e].strip() for s, e in cleaner._sentence_ranges(text, spans)]
+    assert len(sents) == 2
+    assert "(Smith et al., 2020)" in sents[0]     # citation not torn in half
+    assert sents[1] == "We agree."

@@ -452,3 +452,26 @@ def test_humanize_threads_delete_first_from_config(tmp_path):
     app_ref.cfg["experimental"]["humanize_text_delete_first"] = False
     client.post("/myvoice/humanize", headers=HDR, data={"hz_text": AI_IN})
     assert cleaner.humanize_text.call_args.kwargs["delete_first"] is False
+
+
+def test_humanize_threads_protect_spans_and_shows_note(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome("A rewrite.")
+    client, _, _ = _client(tmp_path, cleaner=cleaner)
+    r = client.post("/myvoice/humanize", headers=HDR, data={
+        "hz_text": "We hit F1 of 0.79 on the 80/20 split, see (Smith et al., 2020)."})
+    assert cleaner.humanize_text.call_args.kwargs["protect_spans"] is True
+    assert b"Kept" in r.data and b"exact" in r.data
+
+
+def test_humanize_protect_spans_off_hides_note(tmp_path):
+    from unittest.mock import MagicMock
+    cleaner = MagicMock()
+    cleaner.humanize_text.return_value = _outcome("A rewrite.")
+    client, app_ref, _ = _client(tmp_path, cleaner=cleaner)
+    app_ref.cfg["experimental"]["humanize_text_protect_spans"] = False
+    r = client.post("/myvoice/humanize", headers=HDR, data={
+        "hz_text": "We hit F1 of 0.79 on the split."})
+    assert cleaner.humanize_text.call_args.kwargs["protect_spans"] is False
+    assert b"Kept" not in r.data

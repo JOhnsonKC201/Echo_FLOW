@@ -1443,6 +1443,64 @@ class Cleaner:
         return [s.strip() for s in re.split(r"(?<=[.!?])\s+", (text or "").strip())
                 if s.strip()]
 
+    # A sentence terminator followed by whitespace — but only a *real* boundary.
+    # Used with the protected-span list so a period inside ``et al.``, ``0.001``
+    # or a closing quote is never mistaken for the end of a sentence.
+    _SENT_END_RE = re.compile(r'[.!?]["”\'’)\]]*\s+')
+
+    @classmethod
+    def _sentence_ranges(cls, text: str,
+                         spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+        """``(start, end)`` char ranges of the sentences in ``text``, never
+        cutting inside a protected span. A terminator whose position falls
+        within a span (``Smith et al., 2020``, ``lr=0.001``, a quoted
+        ``"done."``) is not treated as a sentence boundary, so the span stays
+        whole inside one sentence."""
+        cuts: list[int] = []
+        for m in cls._SENT_END_RE.finditer(text):
+            if any(s <= m.start() < e for s, e in spans):
+                continue
+            cuts.append(m.end())
+        starts = [0] + cuts
+        ends = cuts + [len(text)]
+        return [(s, e) for s, e in zip(starts, ends) if text[s:e].strip()]
+
+    def _protect_units(self, text: str, *,
+                       protect: bool) -> list[tuple[int, str, str]]:
+        """Split ``text`` into ordered units ``(para_idx, kind, unit_text)``.
+
+        ``kind`` is ``"rewrite"`` (free prose sent to the model) or ``"keep"``
+        (a sentence carrying a protected span — a number, hyperparameter,
+        split, metric, citation, quote or code — held byte-for-byte and never
+        sent to the model).
+
+        The protection is deliberately *structural*, not a prompt: no local
+        model reliably preserves a placeholder token (the 3B and the escalation
+        model alike paraphrase ``⟦0⟧`` into "zero"), so rather than trust the
+        model to leave the facts alone, the tool refuses to hand it the
+        sentences that carry them. ``para_idx`` preserves paragraph boundaries
+        so the result reassembles exactly."""
+        from . import protected as _prot
+        units: list[tuple[int, str, str]] = []
+        for pi, para in enumerate(self._paragraphs(text)):
+            spans = _prot.find(para) if protect else []
+            if not spans:
+                units.append((pi, "rewrite", para))
+                continue
+            run: list[str] = []
+            for ss, se in self._sentence_ranges(para, spans):
+                sent = para[ss:se].strip()
+                if any(ss < e and s < se for s, e in spans):   # holds a span
+                    if run:
+                        units.append((pi, "rewrite", " ".join(run)))
+                        run = []
+                    units.append((pi, "keep", sent))
+                else:
+                    run.append(sent)
+            if run:
+                units.append((pi, "rewrite", " ".join(run)))
+        return units
+
     @classmethod
     def _strip_profile_echo(cls, profile: str, src: str, out: str) -> str:
         """Drop LEADING sentences that came from the voice profile.
@@ -1872,8 +1930,8 @@ class Cleaner:
                       min_sim: float = 0.65, max_ratio: float | None = None,
                       timeout_sec: float = 45.0, max_chars: int = 6000,
                       model: str = "", escalate_model: str = "auto",
-                      polish: bool = True, delete_first: bool = True
-                      ) -> "HumanizeOutcome":
+                      polish: bool = True, delete_first: bool = True,
+                      protect_spans: bool = True) -> "HumanizeOutcome":
         """Rewrite pasted AI-written prose so it reads like a person wrote it.
 
         The "paste an AI paragraph, get a human version back" path — a different
@@ -1933,12 +1991,16 @@ class Cleaner:
         prof = voice_profile if eff_mode == "voice" else ""
         instruction = self._humanize_instruction(eff_mode, tone, prof, strength)
 
-        paras = self._paragraphs(text)
-        total = len(paras)
+        # HARD-EXCLUDE: split into units so any sentence carrying a number,
+        # hyperparameter, citation, quote or code is kept byte-for-byte and
+        # never reaches the model. Only the free-prose runs are rewritten.
+        units = self._protect_units(text, protect=protect_spans)
+        n_paras = len(self._paragraphs(text))
+        total = sum(1 for _, kind, _ in units if kind == "rewrite")
         deadline = time.monotonic() + timeout_sec
         MIN_CALL_BUDGET = 5.0   # not worth starting a call below this
 
-        # Resolve the escalation model LAZILY — only when a paragraph actually
+        # Resolve the escalation model LAZILY — only when a unit actually
         # mangles, so the happy path never touches Ollama /api/tags. Cached.
         _strong_box: list[str | None] = []
 
@@ -1955,28 +2017,39 @@ class Cleaner:
             _strong_box.append(s)
             return s
 
-        out_paras: list[str] = []
+        # Pieces per paragraph, reassembled in order — free-run rewrites and
+        # kept sentences interleaved exactly as they appeared.
+        out_by_para: list[list[str]] = [[] for _ in range(n_paras)]
         warnings: list[str] = []
         statuses: list[str] = []
         changed = 0
         provider_dead = False
 
-        def _ref(idx: int) -> str:
-            return "the text" if total == 1 else f"paragraph {idx + 1}"
+        def _ref(pi: int) -> str:
+            return "the text" if n_paras == 1 else f"paragraph {pi + 1}"
 
         def _budget() -> float:
             return deadline - time.monotonic()
 
-        for i, para in enumerate(paras):
+        def _keep_rest(from_idx: int) -> None:
+            for pi, _kind, txt in units[from_idx:]:
+                out_by_para[pi].append(txt)
+
+        for i, (pi, kind, unit) in enumerate(units):
+            # Protected sentence — held verbatim, never sent to the model.
+            if kind == "keep":
+                out_by_para[pi].append(unit)
+                continue
+
             if _budget() < MIN_CALL_BUDGET:
-                out_paras.extend(paras[i:])
-                statuses.extend(["timeout"] * (total - i))
+                _keep_rest(i)
+                statuses.append("timeout")
                 warnings.append("Ran out of time, so the rest was kept as-is. "
                                 "Try a shorter passage or a longer timeout.")
                 break
 
             rw, st = self._humanize_one(
-                para, instruction, use_cloud=use_cloud, retriever=retriever,
+                unit, instruction, use_cloud=use_cloud, retriever=retriever,
                 min_sim=min_sim, max_ratio=max_ratio, timeout_sec=_budget(),
                 voice_profile=prof, model=model, temperature=temperature)
             # A malformed output is often a one-off (a stray preamble, a merged
@@ -1984,17 +2057,17 @@ class Cleaner:
             # warn_* are already showable, so they aren't retried.
             if st == "malformed" and _budget() >= MIN_CALL_BUDGET:
                 rw, st = self._humanize_one(
-                    para, instruction, use_cloud=use_cloud,
+                    unit, instruction, use_cloud=use_cloud,
                     retriever=retriever, min_sim=min_sim,
                     max_ratio=max_ratio, timeout_sec=_budget(),
                     voice_profile=prof, model=model, temperature=temperature)
             # Still garbage on the small model — escalate ONCE to a stronger
-            # installed model before giving up on this paragraph.
+            # installed model before giving up on this unit.
             if st == "malformed" and _budget() >= MIN_CALL_BUDGET:
                 strong = _strong()
                 if strong:
                     erw, est = self._humanize_one(
-                        para, instruction, use_cloud=use_cloud,
+                        unit, instruction, use_cloud=use_cloud,
                         retriever=retriever, min_sim=min_sim,
                         max_ratio=max_ratio, timeout_sec=_budget(),
                         voice_profile=prof, model=strong, temperature=temperature)
@@ -2005,7 +2078,7 @@ class Cleaner:
             if polish and st in ("ok", "warn_meaning") and rw \
                     and aitells.score(rw) > 0 and _budget() >= MIN_CALL_BUDGET:
                 polished = self._polish_tells(
-                    rw, para, retriever=retriever, min_sim=min_sim,
+                    rw, unit, retriever=retriever, min_sim=min_sim,
                     max_ratio=max_ratio, timeout_sec=_budget(),
                     model=model or "")
                 if polished:
@@ -2013,37 +2086,41 @@ class Cleaner:
             statuses.append(st)
 
             if st == "provider_down":
-                out_paras.append(para)
+                out_by_para[pi].append(unit)
                 if changed == 0:
                     provider_dead = True
                 else:
                     warnings.append("The model stopped responding partway, so "
                                     "the rest was kept as-is.")
-                out_paras.extend(paras[i + 1:])
+                _keep_rest(i + 1)
                 break
             if st in ("ok", "warn_number", "warn_meaning") and rw:
-                out_paras.append(rw)
+                out_by_para[pi].append(rw)
                 changed += 1
                 if st == "warn_number":
                     warnings.append(f"A number may have changed — double-check "
-                                    f"the figures in {_ref(i)}.")
+                                    f"the figures in {_ref(pi)}.")
                 elif st == "warn_meaning":
                     warnings.append(f"The wording drifted from the original in "
-                                    f"{_ref(i)} — double-check the meaning.")
+                                    f"{_ref(pi)} — double-check the meaning.")
             else:
-                # unchanged or malformed → keep the user's own paragraph.
-                out_paras.append(para)
+                # unchanged or malformed → keep the user's own words.
+                out_by_para[pi].append(unit)
                 if st == "malformed":
-                    warnings.append(f"Couldn't cleanly rewrite {_ref(i)}, so "
+                    warnings.append(f"Couldn't cleanly rewrite {_ref(pi)}, so "
                                     f"your original was kept.")
 
         # Provider never produced anything usable → surface that, not a no-op.
         if provider_dead and changed == 0:
             return HumanizeOutcome(None, "provider_down", total=total, cut=cut)
 
-        result_text = "\n\n".join(out_paras)
+        result_text = "\n\n".join(
+            " ".join(pieces).strip() for pieces in out_by_para if pieces)
         all_warnings = info + warnings
-        if changed == 0:
+        if total == 0:
+            # Every unit was protected content — nothing was eligible to rewrite.
+            reason = "unchanged"
+        elif changed == 0:
             reason = ("unchanged" if statuses and all(
                 s == "unchanged" for s in statuses) else "kept")
         elif warnings:            # any risk/partial warning (info alone is fine)
