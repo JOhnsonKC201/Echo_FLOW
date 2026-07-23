@@ -47,8 +47,22 @@
         </div>
         <label class="set-field">
           <span class="set-field-label">Whisper language</span>
-          <span class="set-input-affix"><input type="text" name="whisper_language" value="{{ values.whisper_language }}" placeholder="en"></span>
-          <span class="set-field-hint">Two-letter code (e.g. <code>en</code>). Pinning it skips language detection for a small speed win.</span>
+          {% set langs = [
+            ("auto", "Auto-detect"), ("en", "English"), ("es", "Spanish"),
+            ("fr", "French"), ("de", "German"), ("it", "Italian"),
+            ("pt", "Portuguese"), ("nl", "Dutch"), ("ru", "Russian"),
+            ("zh", "Chinese"), ("ja", "Japanese"), ("ko", "Korean"),
+            ("hi", "Hindi"), ("ar", "Arabic"), ("pl", "Polish"),
+            ("tr", "Turkish"), ("uk", "Ukrainian")
+          ] %}
+          <span class="set-input-affix">
+            <select name="whisper_language">
+              {% for code, label in langs %}
+                <option value="{{ code }}" {{ 'selected' if values.whisper_language == code else '' }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </span>
+          <span class="set-field-hint">Pinning a language skips detection for a small speed win. <strong>Auto-detect</strong> picks it per dictation — needed for non-English or code-switching, at a small latency cost. Applies on your next dictation, no restart.</span>
         </label>
       </div>
 

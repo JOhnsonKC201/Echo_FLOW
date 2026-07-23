@@ -7,6 +7,16 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Speaker adaptation, Phase 2 — language selection & auto-detect.** Echo Flow
+  was pinned to English. Settings → General now has a **language dropdown**
+  (Auto-detect + 16 languages); picking **Auto-detect** writes `whisper.language:
+  null` so Whisper detects the language per dictation (needed for non-English or
+  code-switching), and pinning a language keeps the ~20ms detect-skip speed win.
+  The change is **hot-applied** — `reload_config` now refreshes
+  `transcriber.cfg.language` alongside the decoder bias, so it takes effect on
+  your next dictation with no restart. (Per-language vocabulary filtering is
+  deferred: it only helps pinned bilingual setups, and language-neutral terms
+  like "Kubernetes" don't meaningfully bias other languages.)
 - **Speaker adaptation, Phase 1 — Echo Flow learns your voice's recurring errors
   faster and visibly.** An accent isn't tuned at the acoustic level (Whisper is
   already accent-robust, and it's a single-user app); it shows up as the *same

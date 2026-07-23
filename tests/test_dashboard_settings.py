@@ -80,6 +80,44 @@ def test_general_save_persists_to_yaml(tmp_path):
     assert reparsed["whisper"]["language"] == "es"
 
 
+# --- Language: auto-detect (null) round-trip + hot-reload --------------------
+
+def _save_general(client, **overrides):
+    data = {"hotkey_combo": "ctrl+shift", "hotkey_mode": "hold",
+            "paste_last_combo": "", "whisper_language": "en"}
+    data.update(overrides)
+    return client.post("/settings/general/save", headers=HOST, data=data)
+
+
+def test_general_save_auto_writes_null_language(tmp_path):
+    client, app_ref = _client(tmp_path)
+    _save_general(client, whisper_language="auto")
+    reparsed = yaml.safe_load(app_ref.cfg_path.read_text(encoding="utf-8"))
+    assert reparsed["whisper"]["language"] is None       # null = auto-detect
+
+
+def test_general_save_pins_language(tmp_path):
+    client, app_ref = _client(tmp_path)
+    _save_general(client, whisper_language="fr")
+    reparsed = yaml.safe_load(app_ref.cfg_path.read_text(encoding="utf-8"))
+    assert reparsed["whisper"]["language"] == "fr"
+
+
+def test_general_save_triggers_reload(tmp_path):
+    client, app_ref = _client(tmp_path)
+    _save_general(client, whisper_language="es")
+    assert app_ref._reload_calls >= 1                    # language hot-applied
+
+
+def test_general_language_dropdown_renders_and_selects_current(tmp_path):
+    client, app_ref = _client(tmp_path)
+    app_ref.cfg.setdefault("whisper", {})["language"] = None   # auto
+    r = client.get("/settings/general", headers=HOST)
+    assert b'<select name="whisper_language"' in r.data
+    # The Auto-detect option is the selected one when language is null.
+    assert b'value="auto" selected' in r.data
+
+
 def test_general_save_rejects_invalid_mode(tmp_path):
     client, app_ref = _client(tmp_path)
     r = client.post("/settings/general/save", headers=HOST, data={

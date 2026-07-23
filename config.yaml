@@ -37,7 +37,7 @@ whisper:
   model: "auto"             # auto = base on CPU, large-v3-turbo on CUDA. Or pin: tiny, base, small, medium, large-v3-turbo
   device: "auto"            # auto, cuda, cpu
   compute_type: "auto"      # auto, float16, int8_float16, int8
-  language: "en"            # English-only; pinning skips Whisper's language-detect step (~20ms win)
+  language: "en"            # pinned 2-letter code skips Whisper's language-detect step (~20ms win); null = auto-detect per dictation (needed for non-English / code-switching). Set from Settings → General.
   beam_size: 5
   vad_filter: true
 

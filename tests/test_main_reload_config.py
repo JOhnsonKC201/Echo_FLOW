@@ -88,6 +88,18 @@ def test_reload_refreshes_prompt_pe_learner_and_cleaner():
     app.cleaner.invalidate_casing_cache.assert_called_once()
 
 
+def test_reload_hot_applies_whisper_language():
+    # Pinned language flows onto the transcriber; a later switch to auto (null)
+    # takes effect on the next reload — no daemon restart.
+    app = _make_app(_cfg(whisper={"language": "es"}))
+    app.reload_config()
+    assert app.transcriber.cfg.language == "es"
+
+    app.cfg = _cfg(whisper={"language": None})       # user chose Auto-detect
+    app.reload_config()
+    assert app.transcriber.cfg.language is None
+
+
 def test_reload_picks_up_changed_config_values():
     """Simulates the dashboard mutating config then calling reload_config:
     the second reload must reflect the NEW values, not the first ones."""

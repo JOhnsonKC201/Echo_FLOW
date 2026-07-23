@@ -550,6 +550,9 @@ class App:
             # --- derive (may raise) — touch no live state yet ---
             vocab = self._build_custom_vocabulary()
             initial_prompt = _format_initial_prompt(vocab[:80]) if vocab else None
+            # Whisper language: null ⇒ auto-detect per dictation. Hot-applied so a
+            # Settings change takes effect on the next dictation without a restart.
+            whisper_language = (self.cfg.get("whisper", {}) or {}).get("language")
             pe_cfg = self.cfg.get("prompt_engineering", {"enabled": False})
             lc = ((self.cfg.get("cleanup") or {}).get("learning") or {})
             trust_mobile = bool(lc.get("trust_mobile", False))
@@ -562,9 +565,10 @@ class App:
         # --- apply (assignments only; the fallible work is done above) ---
         if hasattr(self.transcriber, "cfg"):
             self.transcriber.cfg.initial_prompt = initial_prompt
+            self.transcriber.cfg.language = whisper_language
             _log.info(
-                "reload_config: initial_prompt refreshed with %d terms",
-                len(vocab[:80]),
+                "reload_config: initial_prompt refreshed with %d terms, language=%s",
+                len(vocab[:80]), whisper_language or "auto",
             )
         self._pe_cfg = pe_cfg
         # Refresh learner trust flags so dashboard toggles (trust_teacher,

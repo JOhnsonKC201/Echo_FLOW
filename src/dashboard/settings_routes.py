@@ -88,11 +88,13 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         hk = cfg.get("hotkey", {}) or {}
         wh = cfg.get("whisper", {}) or {}
         dc = cfg.get("dashboard", {}) or {}
+        # language==null means auto-detect; surface it to the dropdown as "auto".
+        lang_val = wh.get("language", "en")
         return _render("general", values={
             "hotkey_combo": hk.get("combo", ""),
             "hotkey_mode": hk.get("mode", "hold"),
             "paste_last_combo": hk.get("paste_last_combo", "") or "",
-            "whisper_language": wh.get("language", "en"),
+            "whisper_language": "auto" if lang_val in (None, "", "auto") else lang_val,
             "accent_color": dc.get("accent_color", "#3eaf6f"),
         })
 
@@ -103,7 +105,9 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         combo = f.get("hotkey_combo", "").strip()
         mode = f.get("hotkey_mode", "hold").strip()
         paste = f.get("paste_last_combo", "").strip()
-        lang = f.get("whisper_language", "en").strip() or "en"
+        lang_raw = f.get("whisper_language", "en").strip().lower()
+        # "auto"/empty → null (Whisper detects per dictation); else a pinned code.
+        lang: str | None = None if lang_raw in ("", "auto") else lang_raw
         accent = f.get("accent_color", "").strip()
         if mode not in ("hold", "toggle"):
             return redirect("/settings/general?flash=mode must be hold or toggle")
@@ -123,7 +127,10 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         errs = _save_scalars(app_ref, pairs, log)
         if errs:
             return redirect("/settings/general?flash=" + "; ".join(errs))
-        return redirect("/settings/general?flash=Saved. Restart Echo Flow for hotkey changes; theme changes apply on next page load.")
+        # Language is hot-applied via reload_config; hotkey/mic still need a restart.
+        from .app import _maybe_reload_config
+        _maybe_reload_config(app_ref)
+        return redirect("/settings/general?flash=Saved. Language applies on your next dictation; restart Echo Flow for hotkey changes.")
 
     # ---- System ------------------------------------------------------------
     @flask_app.get("/settings/system")
