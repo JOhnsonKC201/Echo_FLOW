@@ -94,17 +94,31 @@ def _is_simple_title(w: str) -> bool:
 
 
 SYSTEM_PROMPTS = {
+    # Default: LIGHT-TOUCH proofread. The speaker's raw, improvised voice must
+    # survive — this style is a proofreader, not a rewriter. Contrast with
+    # "polished" below, which is allowed to restructure rambling speech.
     "default": (
-        "You rewrite voice dictation into clean text.\n"
-        "Rules:\n"
+        "You are a proofreader for voice dictation. Tidy the transcript "
+        "LIGHTLY — the speaker's own words, order, and improvised feel must "
+        "survive. You fix mechanics; you never rewrite.\n"
+        "DO:\n"
         "- Fix punctuation and capitalization\n"
+        "- Fix small, obvious grammar slips ONLY where clearly wrong: "
+        "subject-verb agreement, a/an, plurals, an obviously wrong verb form\n"
         "- Remove filler words: um, uh, like, you know, sort of, kind of, "
         "basically, well, I mean, I guess, you know what\n"
         "- Collapse immediate word repeats\n"
-        "- Preserve the speaker's exact word choice and meaning\n"
-        "- Do not add, remove, or rephrase content\n"
-        "- Match tone: midformal\n"
-        "- Output ONLY the rewritten text, nothing else, no preamble"
+        "DO NOT:\n"
+        "- Rephrase, reorder, merge, split, or restructure sentences\n"
+        "- Swap the speaker's words for 'better' or more formal ones\n"
+        "- Add, remove, or summarize content\n"
+        "If a sentence already reads fine, leave it exactly as spoken.\n"
+        "Output ONLY the tidied text, nothing else, no preamble.\n"
+        "EXAMPLE:\n"
+        "RAW: um so the numbers they looks right to me and i think we can "
+        "send it\n"
+        "TIDIED: So the numbers, they look right to me, and I think we can "
+        "send it."
     ),
     "code": (
         "You are a code dictation cleanup engine. The user is dictating code or "

@@ -150,20 +150,22 @@ cleanup:
 
   # Profile picked based on focused window title (substring match, first hit wins)
   # Styles: polished | default | code | casual | email
-  #   polished — everyday default: fixes grammar + restructures rambling speech
-  #              into clean sentences, preserving meaning (recommended).
-  #   default  — minimal-touch: punctuation + fillers only, never rephrases.
-  # All profiles use "polished" (grammar + punctuation everywhere) per user
-  # preference. Re-differentiate per-app styles in Dashboard → Style if wanted.
+  #   polished — fixes grammar + restructures rambling speech into clean
+  #              sentences, preserving meaning.
+  #   default  — light-touch proofread: punctuation, casing, small obvious
+  #              grammar slips, fillers. Keeps your wording and sentence
+  #              structure — never rephrases or restructures.
+  # 2026-07-26: all profiles use "default" per user preference — the polished
+  # rewrite felt too AI. Re-differentiate per-app styles in Dashboard → Style.
   profiles:
     - match: ["Code", "Cursor", "Sublime", "PyCharm", "Vim"]
-      style: "polished"
+      style: "default"
     - match: ["Slack", "Discord", "Teams", "WhatsApp"]
-      style: "polished"
+      style: "default"
     - match: ["Gmail", "Outlook", "Mail"]
-      style: "polished"
+      style: "default"
     - match: []
-      style: "polished"
+      style: "default"
 
 # Prompt Engineering mode — when enabled via tray toggle or one-shot hotkey,
 # the next dictation is rewritten into a full engineered prompt (constraints,
