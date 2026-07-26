@@ -1,0 +1,55 @@
+name: Bug report
+description: Something broke or behaved wrong
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: Held Ctrl+Shift and said "...", expected "...", got "..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Echo Flow version
+      description: Release version, or the commit hash if you run from source.
+      placeholder: v0.3.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Only needed for from-source installs.
+      placeholder: "3.12"
+  - type: dropdown
+    id: cleanup
+    attributes:
+      label: Cleanup provider
+      options:
+        - ollama (default)
+        - learned
+        - none (raw Whisper)
+        - groq
+        - anthropic
+        - not sure
+  - type: input
+    id: whisper-model
+    attributes:
+      label: Whisper model
+      placeholder: auto / base / large-v3-turbo
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: >-
+        The daemon log is at data/wispr.log. Careful: it can contain text you
+        dictated, so read what you paste and trim anything personal.
+      render: text

@@ -1,0 +1,27 @@
+name: Feature request
+description: An idea that would make Echo Flow better
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that is currently annoying or impossible?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What you would like
+      description: How should it work? Rough ideas are fine.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: >-
+        Alternatives you considered, apps that do this well, or constraints
+        worth knowing about. Note that features whose only implementation would
+        send audio or text off-device by default will be declined; local-first
+        is the point.

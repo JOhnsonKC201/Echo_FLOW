@@ -8,7 +8,7 @@
   <img alt="audio" src="https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a">
   <img alt="cloud" src="https://img.shields.io/badge/cloud-opt--in%20only-6c6a62">
   <a href="https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml/badge.svg"></a>
-  <img alt="version" src="https://img.shields.io/badge/version-0.2.0-58c77a">
+  <img alt="version" src="https://img.shields.io/badge/version-0.3.0-58c77a">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
@@ -24,6 +24,10 @@ No subscription, no account, and your audio never leaves your machine unless you
 ```
 Hold Ctrl+Shift → talk → release → polished text appears at your cursor.
 ```
+
+<p align="center">
+  <img src="assets/demo.svg" width="760" alt="Animated illustration: hold Ctrl+Shift, speak with filler words, release, and the polished sentence is pasted at the cursor">
+</p>
 
 A green microphone in the system tray means it's ready. First launch downloads
 the Whisper model once; after that it works fully offline.
@@ -233,6 +237,12 @@ sequenceDiagram
 ---
 
 ## Installation
+
+**Fastest path:** download `EchoFlow-Daemon-Setup-<version>.exe` from the
+[latest release](https://github.com/JOhnsonKC201/Echo_FLOW/releases/latest) and
+run it. It installs the daemon with optional Windows autostart, and a `.sha256`
+sits next to every asset so you can verify the download. The from-source path
+below is what CI tests and is the way to go if you want to hack on it.
 
 ### Prerequisites
 - **Windows 10/11**

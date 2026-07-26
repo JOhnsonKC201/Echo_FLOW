@@ -6,6 +6,10 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+(nothing yet)
+
+## 0.3.0 — 2026-07-25
+
 ### Added
 - **Speaker adaptation, Phase 3 — guided voice calibration.** A new **Calibrate**
   page: read ~8 known sentences aloud (with your normal dictation hotkey), and
