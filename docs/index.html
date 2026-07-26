@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Echo Flow · local-first voice dictation for Windows</title>
+<meta name="description" content="Hold a hotkey, talk, release: polished text lands at your cursor. Whisper plus a local LLM, entirely on your machine. Free, MIT, no account, no telemetry.">
+<meta property="og:title" content="Echo Flow: local-first voice dictation for Windows">
+<meta property="og:description" content="Dictation on your hardware, not their servers. Free and MIT-licensed.">
+<meta property="og:image" content="https://raw.githubusercontent.com/JOhnsonKC201/Echo_FLOW/main/assets/social-preview.png">
+<meta name="theme-color" content="#0a0f1a">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2358c77a' stroke-width='2' stroke-linecap='round'%3E%3Crect x='8.5' y='2.5' width='7' height='11' rx='3.5'/%3E%3Cpath d='M5 10a7 7 0 0 0 14 0'/%3E%3Cline x1='12' y1='17' x2='12' y2='21'/%3E%3Cline x1='8.5' y1='21' x2='15.5' y2='21'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0a0f1a; --bg2:#0d2018; --panel:#0e1622; --panel2:#101c26;
+    --line:#1c2b33; --green:#58c77a; --green-deep:#3eaf6f; --green-dim:#7fae97;
+    --text:#e6ede9; --muted:#9db3a8; --faint:#5c7268;
+    --mono:"Cascadia Code","Cascadia Mono",Consolas,ui-monospace,monospace;
+    --sans:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:
+      radial-gradient(60rem 40rem at 18% 10%, rgba(88,199,122,.07), transparent 60%),
+      linear-gradient(135deg,var(--bg),var(--bg2));
+    color:var(--text); font-family:var(--sans); line-height:1.6; min-height:100vh;
+  }
+  body::after{ /* whisper-subtle scanlines */
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:9;
+    background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(255,255,255,.012) 2px 4px);
+  }
+  a{color:var(--green); text-decoration:none}
+  a:hover,a:focus-visible{text-decoration:underline; outline-offset:3px}
+  :focus-visible{outline:2px solid var(--green)}
+  .wrap{max-width:1060px; margin:0 auto; padding:0 24px}
+  .mono{font-family:var(--mono)}
+
+  header{position:sticky; top:0; z-index:20; backdrop-filter:blur(10px);
+    background:rgba(10,15,26,.82); border-bottom:1px solid var(--line)}
+  .nav{display:flex; align-items:center; gap:20px; padding:14px 24px; max-width:1060px; margin:0 auto}
+  .mark{display:flex; align-items:center; gap:10px; font-family:var(--mono); font-weight:700; font-size:1.05rem; color:var(--text)}
+  .mark svg{display:block}
+  .mark b{color:var(--green); font-weight:700}
+  .nav .links{margin-left:auto; display:flex; gap:22px; font-size:.92rem}
+  .nav .links a{color:var(--muted)}
+  .nav .links a:hover{color:var(--text)}
+  .btn{display:inline-block; font-family:var(--mono); font-size:.95rem; padding:11px 20px;
+    border-radius:8px; border:1px solid var(--green-deep); color:var(--green); transition:transform .15s ease, background .15s ease}
+  .btn:hover{background:rgba(88,199,122,.1); text-decoration:none; transform:translateY(-1px)}
+  .btn.solid{background:var(--green); color:#07130c; font-weight:700}
+  .btn.solid:hover{background:#6cd58b}
+
+  .hero{padding:84px 0 40px}
+  .hero h1{font-family:var(--mono); font-weight:700; letter-spacing:-.02em;
+    font-size:clamp(2.1rem,1.2rem + 3.6vw,3.6rem); line-height:1.12; max-width:19ch}
+  .hero h1 em{font-style:normal; color:var(--green)}
+  .hero .sub{margin-top:20px; max-width:52ch; color:var(--muted); font-size:1.08rem}
+  .hero .cta{margin-top:30px; display:flex; gap:14px; flex-wrap:wrap; align-items:center}
+  .hero .fine{font-family:var(--mono); font-size:.8rem; color:var(--faint)}
+
+  /* ------- live demo card ------- */
+  .demo{margin:56px 0 0; border:1px solid var(--line); border-radius:14px; overflow:hidden;
+    background:var(--panel); box-shadow:0 30px 70px rgba(0,0,0,.45)}
+  .demo .bar{display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--line);
+    background:var(--panel2); font-family:var(--mono); font-size:.78rem; color:var(--faint)}
+  .demo .bar i{width:10px; height:10px; border-radius:50%; background:#22313b; font-style:normal}
+  .demo .bar .title{margin-left:8px}
+  .demo .body{display:grid; grid-template-columns:1fr 250px; min-height:190px}
+  @media (max-width:700px){.demo .body{grid-template-columns:1fr}}
+  .demo .doc{padding:26px 28px; font-size:1.06rem; line-height:1.75}
+  .demo .doc .out{white-space:pre-wrap}
+  .demo .doc .raw{color:var(--green-dim); font-style:italic}
+  .demo .doc .caret{display:inline-block; width:2px; height:1.15em; background:var(--green);
+    vertical-align:text-bottom; animation:blink 1.05s steps(1) infinite}
+  .demo .side{border-left:1px solid var(--line); padding:20px; display:flex; flex-direction:column; gap:16px;
+    background:linear-gradient(180deg,var(--panel2),transparent)}
+  @media (max-width:700px){.demo .side{border-left:0; border-top:1px solid var(--line)}}
+  .keys{display:flex; gap:8px; align-items:center; font-family:var(--mono); font-size:.85rem}
+  .key{padding:7px 12px; border:1px solid var(--line); border-bottom-width:3px; border-radius:7px;
+    background:#0c141f; color:var(--muted); transition:all .12s ease}
+  .keys.held .key{border-color:var(--green-deep); border-bottom-width:1px; transform:translateY(2px);
+    color:var(--green); background:rgba(88,199,122,.08)}
+  .wave{display:flex; gap:5px; align-items:center; height:44px}
+  .wave b{width:6px; border-radius:3px; background:var(--green); height:6px; opacity:.28; transition:opacity .2s}
+  .wave.live b{opacity:1; animation:wob .7s ease-in-out infinite alternate}
+  .wave b:nth-child(2n){animation-delay:.12s}.wave b:nth-child(3n){animation-delay:.24s}
+  .wave b:nth-child(4n){animation-delay:.06s}.wave b:nth-child(5n){animation-delay:.3s}
+  .stat{font-family:var(--mono); font-size:.78rem; color:var(--faint); min-height:1.2em}
+  .stat .ok{color:var(--green)}
+  @keyframes wob{from{height:6px}to{height:34px}}
+  @keyframes blink{50%{opacity:0}}
+
+  section{padding:72px 0; border-top:1px solid var(--line)}
+  .kicker{font-family:var(--mono); font-size:.8rem; letter-spacing:.14em; text-transform:uppercase; color:var(--green-dim)}
+  h2{font-family:var(--mono); font-size:clamp(1.5rem,1.1rem + 1.6vw,2.2rem); letter-spacing:-.01em; margin:10px 0 14px}
+  .lead{color:var(--muted); max-width:60ch}
+
+  .zero{display:grid; grid-template-columns:minmax(200px,300px) 1fr; gap:44px; align-items:center}
+  @media (max-width:760px){.zero{grid-template-columns:1fr}}
+  .zero .big{font-family:var(--mono); font-weight:700; font-size:clamp(6rem,4rem + 10vw,11rem);
+    line-height:1; color:var(--green); text-shadow:0 0 44px rgba(88,199,122,.35)}
+  .zero .cap{font-family:var(--mono); font-size:.85rem; color:var(--faint); margin-top:6px}
+  .ledger{border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:8px 0;
+    font-family:var(--mono); font-size:.88rem}
+  .ledger .row{display:flex; justify-content:space-between; gap:16px; padding:10px 18px; border-bottom:1px solid rgba(28,43,51,.6)}
+  .ledger .row:last-child{border-bottom:0}
+  .ledger .what{color:var(--muted)}
+  .ledger .where{color:var(--green)}
+  .ledger .where.cloud{color:var(--faint)}
+
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:34px}
+  @media (max-width:760px){.steps{grid-template-columns:1fr}}
+  .step{border:1px solid var(--line); border-radius:12px; padding:22px; background:var(--panel); position:relative}
+  .step .n{position:absolute; top:-14px; left:18px; font-family:var(--mono); font-size:.78rem; color:var(--green);
+    background:var(--bg); border:1px solid var(--green-deep); border-radius:999px; padding:2px 12px}
+  .step h3{font-family:var(--mono); font-size:1.02rem; margin-bottom:8px}
+  .step p{color:var(--muted); font-size:.95rem}
+
+  .pipeline{margin-top:36px; border:1px dashed var(--green-deep); border-radius:14px; padding:24px;
+    position:relative; background:rgba(88,199,122,.03)}
+  .pipeline .tag{position:absolute; top:-12px; left:22px; font-family:var(--mono); font-size:.75rem;
+    color:var(--green); background:var(--bg); padding:0 10px}
+  .pipeline .flow{display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-family:var(--mono); font-size:.9rem}
+  .node{border:1px solid var(--line); background:var(--panel); border-radius:9px; padding:10px 16px}
+  .arrow{color:var(--green-dim)}
+  .pipeline .note{margin-top:14px; font-size:.85rem; color:var(--faint); font-family:var(--mono)}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:34px}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+  .card{border:1px solid var(--line); border-radius:12px; padding:24px; background:var(--panel)}
+  .card h3{font-family:var(--mono); font-size:1.05rem; margin-bottom:10px}
+  .card p{color:var(--muted); font-size:.95rem}
+  .card .ex{margin-top:14px; font-family:var(--mono); font-size:.85rem; background:#0b1320;
+    border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow-x:auto}
+  .ex .del{color:#c98a7a; text-decoration:line-through}
+  .ex .add{color:var(--green)}
+  .ex .dim{color:var(--faint)}
+
+  table{width:100%; border-collapse:collapse; margin-top:30px; font-size:.95rem}
+  th,td{text-align:left; padding:12px 14px; border-bottom:1px solid var(--line)}
+  th{font-family:var(--mono); font-size:.8rem; letter-spacing:.08em; text-transform:uppercase; color:var(--green-dim)}
+  td:first-child{color:var(--muted)}
+  td .y{color:var(--green); font-family:var(--mono)}
+  td .n2{color:var(--faint); font-family:var(--mono)}
+  .tscroll{overflow-x:auto}
+
+  .install .card{margin-top:0}
+  .code{position:relative; margin-top:14px; font-family:var(--mono); font-size:.88rem; background:#0b1320;
+    border:1px solid var(--line); border-radius:8px; padding:14px 88px 14px 16px; overflow-x:auto; white-space:pre}
+  .copy{position:absolute; top:8px; right:8px; font-family:var(--mono); font-size:.72rem; color:var(--muted);
+    background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:5px 10px; cursor:pointer}
+  .copy:hover{color:var(--green); border-color:var(--green-deep)}
+
+  details{border:1px solid var(--line); border-radius:10px; background:var(--panel); margin-top:12px}
+  summary{cursor:pointer; padding:16px 20px; font-family:var(--mono); font-size:.95rem; list-style:none}
+  summary::before{content:"+ "; color:var(--green)}
+  details[open] summary::before{content:"- "}
+  details p{padding:0 20px 16px; color:var(--muted); font-size:.95rem}
+
+  footer{border-top:1px solid var(--line); padding:44px 0 64px; color:var(--faint); font-size:.9rem}
+  footer .cols{display:flex; gap:40px; flex-wrap:wrap; justify-content:space-between; align-items:center}
+  footer nav{display:flex; gap:22px; flex-wrap:wrap}
+  footer a{color:var(--muted)}
+
+  .reveal{opacity:0; transform:translateY(14px); transition:opacity .6s ease, transform .6s ease}
+  .reveal.in{opacity:1; transform:none}
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important; transition:none!important; scroll-behavior:auto}
+    .reveal{opacity:1; transform:none}
+  }
+  .skip{position:absolute; left:-9999px; top:0; background:var(--green); color:#07130c; padding:10px 16px; z-index:99}
+  .skip:focus{left:12px}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header>
+  <div class="nav">
+    <span class="mark" aria-label="Echo Flow">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#58c77a" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <rect x="8.5" y="2.5" width="7" height="11" rx="3.5"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="8.5" y1="21" x2="15.5" y2="21"/>
+      </svg>
+      Echo&nbsp;<b>Flow</b>
+    </span>
+    <nav class="links" aria-label="Site">
+      <a href="#privacy">Privacy</a><a href="#how">How it works</a><a href="#install">Install</a>
+      <a href="https://github.com/JOhnsonKC201/Echo_FLOW">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <div class="hero">
+    <p class="kicker reveal">Free · MIT · Windows 10/11</p>
+    <h1 class="reveal">Dictation on <em>your hardware</em>, not their servers.</h1>
+    <p class="sub reveal">Hold a hotkey, talk, release. Whisper transcribes on your own
+      CPU or GPU, a local model polishes the text, and it lands at your cursor about a
+      second later. No subscription, no account, no telemetry.</p>
+    <div class="cta reveal">
+      <a class="btn solid" href="https://github.com/JOhnsonKC201/Echo_FLOW/releases/latest">Download for Windows</a>
+      <a class="btn" href="https://github.com/JOhnsonKC201/Echo_FLOW">View source</a>
+      <span class="fine">MIT licensed · 1445 tests</span>
+    </div>
+
+    <div class="demo reveal" aria-label="Animated illustration of dictation: hold the hotkey, speak, release, polished text appears">
+      <div class="bar"><i></i><i></i><i></i><span class="title">any app, wherever your cursor is</span></div>
+      <div class="body">
+        <div class="doc"><span class="out" id="out"></span><span class="caret" aria-hidden="true"></span></div>
+        <div class="side">
+          <div class="keys" id="keys" aria-hidden="true">
+            <span class="key">Ctrl</span><span class="key">Shift</span><span style="color:var(--faint);font-size:.78rem">hold to talk</span>
+          </div>
+          <div class="wave" id="wave" aria-hidden="true"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div>
+          <div class="stat" id="stat">idle · 100% local</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section id="privacy">
+    <p class="kicker">The privacy ledger</p>
+    <h2>Network calls per dictation:</h2>
+    <div class="zero">
+      <div>
+        <div class="big" aria-label="zero">0</div>
+        <p class="cap">by default. measured, not promised.</p>
+      </div>
+      <div>
+        <p class="lead">The dashboard keeps a local audit of everything that touches the
+        network. Out of the box that list is empty: audio, transcripts, embeddings, and
+        everything Echo Flow learns about you live in a SQLite file on your disk. The
+        only cloud paths are opt-in, need your own API key, and are off until you flip
+        them.</p>
+        <div class="ledger" style="margin-top:22px" aria-label="Data locations">
+          <div class="row"><span class="what">your audio</span><span class="where">this machine</span></div>
+          <div class="row"><span class="what">transcripts + history</span><span class="where">this machine · data/history.db</span></div>
+          <div class="row"><span class="what">everything it learns about you</span><span class="where">this machine</span></div>
+          <div class="row"><span class="what">cloud cleanup</span><span class="where cloud">opt-in only · your key · off by default</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <p class="kicker">How it works</p>
+    <h2>Three moves. One second.</h2>
+    <div class="steps">
+      <div class="step"><span class="n">01</span><h3>Hold Ctrl+Shift</h3>
+        <p>A global push-to-talk hotkey that works in any focused window: email, Slack, your editor, a form.</p></div>
+      <div class="step"><span class="n">02</span><h3>Talk</h3>
+        <p>Whisper runs locally, sized to your hardware (tiny through large-v3-turbo). CPU works; an NVIDIA GPU gets used automatically.</p></div>
+      <div class="step"><span class="n">03</span><h3>Release</h3>
+        <p>A small local model strips the "um"s, fixes punctuation and casing, and pastes polished text at your cursor.</p></div>
+    </div>
+    <div class="pipeline">
+      <span class="tag">your machine · no network</span>
+      <div class="flow">
+        <span class="node">mic</span><span class="arrow">-&gt;</span>
+        <span class="node">Whisper</span><span class="arrow">-&gt;</span>
+        <span class="node">local LLM cleanup</span><span class="arrow">-&gt;</span>
+        <span class="node">your cursor</span><span class="arrow">-&gt;</span>
+        <span class="node">history.db</span>
+      </div>
+      <p class="note">no Ollama installed? you still get raw Whisper text. offline either way.</p>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">The part the others can't copy</p>
+    <h2>It learns you. Locally. Forever.</h2>
+    <p class="lead">Cloud dictation learns everyone a little. Echo Flow learns one person
+    deeply, because all of your corrections stay on your disk where it can keep using them.</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>Fix it once, it sticks</h3>
+        <p>Corrections you make feed a local pattern miner. Casing sticks after a single
+        edit, recurring mishearings get learned (with a phonetic gate so paraphrases
+        don't), and given enough history it can clean up with no LLM in the loop at all.</p>
+        <div class="ex"><span class="del">tiktok</span> <span class="add">TikTok</span> <span class="dim">learned from 1 edit</span><br><span class="del">note to vec</span> <span class="add">node2vec</span> <span class="dim">phrase mishearing, learned</span></div>
+      </div>
+      <div class="card">
+        <h3>Calibrate to your voice</h3>
+        <p>Read eight known sentences aloud and Echo Flow compares what Whisper heard
+        against ground truth, pinning the words it fumbled straight into your
+        dictionary. Accent adaptation at the text layer, no model fine-tuning.</p>
+        <div class="ex"><span class="dim">heard</span> "cooper netties" <span class="arrow">-&gt;</span> <span class="add">Kubernetes</span> <span class="dim">pinned</span></div>
+      </div>
+      <div class="card">
+        <h3>Humanize anything</h3>
+        <p>Paste AI-written text, get plain prose back: dead openers cut, hedging
+        stripped, long dashes gone. Sentences carrying numbers, citations, or quotes
+        are never sent to the model, so your facts survive byte-for-byte.</p>
+        <div class="ex"><span class="del">It is important to note that results delve into significant improvements.</span><br><span class="add">Accuracy went from 0.81 to 0.88.</span> <span class="dim">🔒 figures kept exact</span></div>
+      </div>
+      <div class="card">
+        <h3>Voice actions, allowlist-only</h3>
+        <p>"computer, open spotify" launches apps from a list you configured. URLs are
+        restricted to http, https, and mailto. Nothing in the action layer deletes,
+        sends, or pays, no matter what proposed the action.</p>
+        <div class="ex"><span class="dim">$</span> "open downloads folder" <span class="arrow">-&gt;</span> <span class="add">allowed · on your list</span><br><span class="dim">$</span> "run this script" <span class="arrow">-&gt;</span> <span class="del">no such path exists</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Compared</p>
+    <h2>Echo Flow vs. the subscription apps</h2>
+    <div class="tscroll">
+    <table>
+      <thead><tr><th></th><th>Echo Flow</th><th>Typical cloud dictation app</th></tr></thead>
+      <tbody>
+        <tr><td>Price</td><td><span class="y">free · MIT</span></td><td><span class="n2">$10 to $30 / month</span></td></tr>
+        <tr><td>Your audio</td><td><span class="y">stays on device</span></td><td><span class="n2">uploaded every time</span></td></tr>
+        <tr><td>Works offline</td><td><span class="y">yes</span></td><td><span class="n2">no</span></td></tr>
+        <tr><td>Account required</td><td><span class="y">none</span></td><td><span class="n2">sign-up</span></td></tr>
+        <tr><td>Learns your corrections</td><td><span class="y">locally, forever</span></td><td><span class="n2">limited, cloud-side</span></td></tr>
+        <tr><td>Auditable</td><td><span class="y">MIT source + privacy ledger</span></td><td><span class="n2">a policy page</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section id="install" class="install">
+    <p class="kicker">Install</p>
+    <h2>Two ways in.</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Installer</h3>
+        <p>Download the setup exe, run it, and hold Ctrl+Shift when the green mic
+        appears in your tray. First launch fetches the Whisper model once; after that
+        it works fully offline. SHA256 files sit next to every download.</p>
+        <p style="margin-top:16px"><a class="btn solid" href="https://github.com/JOhnsonKC201/Echo_FLOW/releases/latest">Get the installer</a></p>
+      </div>
+      <div class="card">
+        <h3>From source</h3>
+        <p>What CI tests, and the way to go if you want to hack on it. Python 3.11+.</p>
+        <div class="code" id="src-cmd">git clone https://github.com/JOhnsonKC201/Echo_FLOW.git
+cd Echo_FLOW
+scripts\setup.bat
+run.bat<button class="copy" data-for="src-cmd" type="button">copy</button></div>
+        <p style="margin-top:12px; font-size:.85rem; color:var(--faint)">Recommended:
+        <a href="https://ollama.com">Ollama</a> + <span class="mono">ollama pull qwen2.5:3b-instruct</span> for local cleanup.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="kicker">Questions people actually ask</p>
+    <h2>FAQ</h2>
+    <details><summary>Is my audio really never uploaded?</summary>
+      <p>By default, nothing is. The only cloud paths are an opt-in prompt-engineering
+      mode and an opt-in teacher loop, both requiring your own API key and both off
+      until you enable them. The code is MIT, and the dashboard's privacy page lists
+      every network touch so you can verify instead of trusting.</p></details>
+    <details><summary>Do I need a GPU?</summary>
+      <p>No. Whisper model size is picked automatically for your hardware and runs fine
+      on CPU. If an NVIDIA GPU is present it gets used, which mostly buys you headroom
+      for the larger, more accurate models.</p></details>
+    <details><summary>What does it cost?</summary>
+      <p>Nothing. It is MIT-licensed and fully local. If you deliberately opt in to a
+      cloud model with your own key, you pay that provider; otherwise there is nothing
+      to pay anyone.</p></details>
+    <details><summary>How is this different from Windows built-in Win+H?</summary>
+      <p>Win+H is fine for short bursts. It does not clean up filler, learn your jargon
+      and casing, adapt style per app, or give you push-to-talk that pastes anywhere.
+      Echo Flow does all of that, on your hardware, with an audit trail.</p></details>
+    <details><summary>Languages other than English?</summary>
+      <p>Sixteen languages plus auto-detect. English currently gets the most of the
+      learning machinery; the rest transcribe and clean up fine.</p></details>
+  </section>
+
+  <footer>
+    <div class="cols">
+      <span class="mono">Echo <b style="color:var(--green)">Flow</b> · MIT · built for people who dictate things worth keeping private</span>
+      <nav aria-label="Footer">
+        <a href="https://github.com/JOhnsonKC201/Echo_FLOW">GitHub</a>
+        <a href="https://github.com/JOhnsonKC201/Echo_FLOW/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/JOhnsonKC201/Echo_FLOW/issues">Issues</a>
+        <a href="https://github.com/JOhnsonKC201/Echo_FLOW/blob/main/SECURITY.md">Security</a>
+      </nav>
+    </div>
+  </footer>
+</main>
+
+<script>
+(function(){
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // staggered reveal on load + scroll
+  var els=[].slice.call(document.querySelectorAll(".reveal"));
+  if(reduced){ els.forEach(function(e){e.classList.add("in")}); }
+  else{
+    var io=new IntersectionObserver(function(en){en.forEach(function(x){
+      if(x.isIntersecting){x.target.classList.add("in"); io.unobserve(x.target);}})},{threshold:.12});
+    els.forEach(function(e,i){ e.style.transitionDelay=(Math.min(i,4)*90)+"ms"; io.observe(e); });
+  }
+
+  // copy buttons
+  [].slice.call(document.querySelectorAll(".copy")).forEach(function(b){
+    b.addEventListener("click",function(){
+      var host=document.getElementById(b.getAttribute("data-for"));
+      var txt=host.childNodes[0].textContent;
+      (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(
+        function(){b.textContent="copied"; setTimeout(function(){b.textContent="copy"},1400)},
+        function(){b.textContent="select it"; setTimeout(function(){b.textContent="copy"},1400)});
+    });
+  });
+
+  // dictation re-enactment
+  var out=document.getElementById("out"), keys=document.getElementById("keys"),
+      wave=document.getElementById("wave"), stat=document.getElementById("stat");
+  var takes=[
+    {raw:"um so basically the deploy is uh blocked on the cert renewal",
+     clean:"The deploy is blocked on the cert renewal."},
+    {raw:"hey can we uh move the standup to to tuesday at nine",
+     clean:"Hey, can we move the standup to Tuesday at 9?"},
+    {raw:"note that um the client prefers the the second mockup",
+     clean:"Note that the client prefers the second mockup."}
+  ];
+  if(reduced){ out.innerHTML=takes[0].clean; stat.innerHTML='<span class="ok">pasted · 1.4s · local</span>'; return; }
+  var t=0;
+  function type(text, cls, i, speed, done){
+    if(i===0){ out.innerHTML=""; }
+    if(i>=text.length){ done(); return; }
+    out.innerHTML='<span class="'+cls+'">'+text.slice(0,i+1)+"</span>";
+    setTimeout(function(){type(text,cls,i+1,speed,done)}, speed + Math.random()*40);
+  }
+  function cycle(){
+    var take=takes[t % takes.length]; t++;
+    stat.textContent="idle · 100% local";
+    setTimeout(function(){
+      keys.classList.add("held"); wave.classList.add("live"); stat.textContent="listening…";
+      type(take.raw,"raw",0,34,function(){
+        setTimeout(function(){
+          keys.classList.remove("held"); wave.classList.remove("live");
+          stat.textContent="cleaning up, locally…";
+          setTimeout(function(){
+            type(take.clean,"",0,12,function(){
+              stat.innerHTML='<span class="ok">pasted · 1.4s · local</span>';
+              setTimeout(cycle, 3400);
+            });
+          },420);
+        },500);
+      });
+    },1100);
+  }
+  cycle();
+})();
+</script>
+</body>
+</html>
