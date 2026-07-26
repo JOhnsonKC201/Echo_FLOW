@@ -120,6 +120,46 @@ SYSTEM_PROMPTS = {
         "TIDIED: So the numbers, they look right to me, and I think we can "
         "send it."
     ),
+    # Medium: the middle tier between "default" (proofread only) and
+    # "polished" (free restructuring). Fixes grammar PROPERLY — agreement,
+    # tense, articles, word forms, small in-sentence word-order slips — but
+    # keeps the speaker's word choice, sentence boundaries, and order of
+    # ideas. Polished may compress rambling speech into tighter prose;
+    # medium never compresses and never drops hedges ("maybe", "I think").
+    "medium": (
+        "You clean up voice dictation into correct English while keeping the "
+        "speaker's own voice. Fix the grammar for real, but do not rewrite.\n"
+        "DO:\n"
+        "- Fix grammar throughout: subject-verb agreement, verb tense, "
+        "articles (a/an/the), plurals, wrong word forms, and small "
+        "word-order slips inside a sentence\n"
+        "- Fix punctuation and capitalization; add a sentence break where a "
+        "run-on clearly needs one\n"
+        "- Remove filler words (um, uh, like, you know, sort of, kind of, "
+        "basically, I mean, I guess) and false starts; collapse immediate "
+        "word repeats\n"
+        "DO NOT:\n"
+        "- Compress, tighten, or summarize. Keep every hedge and softener "
+        "the speaker used: maybe, I think, or something, probably\n"
+        "- Reorder sentences or merge them; keep the speaker's flow of "
+        "ideas in the order they said them\n"
+        "- Swap the speaker's words for more formal or 'better' ones\n"
+        "- Add content, or resolve vague references (\"it\" stays \"it\")\n"
+        "If a sentence is already correct, leave it exactly as spoken.\n"
+        "Output ONLY the cleaned text, nothing else, no preamble.\n"
+        "EXAMPLES (grammar fixed, voice and hedges kept):\n"
+        "RAW: um so basically i was thinking like we could maybe go to the "
+        "store later and then after that you know grab some food or something\n"
+        "CLEANED: So I was thinking we could maybe go to the store later, and "
+        "then after that grab some food or something.\n"
+        "RAW: he dont know where the the meeting at and i aint got the link\n"
+        "CLEANED: He doesn't know where the meeting is, and I don't have the "
+        "link.\n"
+        "RAW: the report it need to be done by friday because the client they "
+        "are waiting\n"
+        "CLEANED: The report needs to be done by Friday because the client is "
+        "waiting."
+    ),
     "code": (
         "You are a code dictation cleanup engine. The user is dictating code or "
         "technical instructions. Convert spoken symbols to syntax: 'open paren' -> '(', "
@@ -1007,11 +1047,11 @@ class Cleaner:
         if (
             skip_when_clean
             and style != "prompt"
-            # Polished is allowed to fix grammar/structure, which the
+            # Polished and medium are allowed to fix grammar, which the
             # punctuation-only _is_already_clean() heuristic can't detect — a
             # short, capitalized, punctuated sentence can still be ungrammatical.
-            # So never skip the LLM for polished; let it actually do its job.
-            and style != "polished"
+            # So never skip the LLM for these; let them actually do their job.
+            and style not in ("polished", "medium")
             and provider_override is None
             and self._is_already_clean(text)
         ):

@@ -970,7 +970,7 @@ def make_app(app_ref, bound_port: int | None = None):
             "style.html", sections=SECTIONS, active="style",
             theme=dcfg.get("theme", "dark"),
             profiles=profiles,
-            valid_styles=("polished", "default", "code", "casual", "email", "prompt"),
+            valid_styles=_sp._VALID_STYLES,
             flash=_req.args.get("flash", ""),
         )
 

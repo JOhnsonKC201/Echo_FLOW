@@ -31,7 +31,7 @@ from .dashboard import voice_samples as _vs
 
 # Styles the humanize pass applies to. Excludes 'code' (never reword code) and
 # 'prompt' (PE mode owns its output). A person's voice belongs in prose.
-HUMANIZE_STYLES = frozenset({"polished", "default", "casual", "email"})
+HUMANIZE_STYLES = frozenset({"polished", "medium", "default", "casual", "email"})
 
 # Budgets — keep the profile small so a local model stays fast and on-task.
 SAMPLE_CHAR_BUDGET = 4000     # total across enabled writing samples
