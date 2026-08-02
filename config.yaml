@@ -262,7 +262,7 @@ experimental:
   # dictation, this governs rewriting AI-written text you paste in. That is real
   # rewriting, so it needs looser guards and far more time than a one-sentence
   # cleanup. Always on — it only ever runs when you click the button.
-  humanize_text_model: ""           # Ollama model for the paste-in rewrite; blank uses cleanup.ollama.model. The dictation model is kept at 3B to leave VRAM for Whisper, but this pass runs off the hot path (you press a button), so a stronger local model is usually worth it — e.g. "qwen3.5:latest". Run `ollama list` to see what you have.
+  humanize_text_model: "qwen3.5:latest"  # Ollama model for the paste-in rewrite; blank uses cleanup.ollama.model. The dictation model is kept at 3B to leave VRAM for Whisper, but this pass runs off the hot path (you press a button), so a stronger local model is usually worth it — e.g. "qwen3.5:latest". Run `ollama list` to see what you have.
   humanize_text_timeout_sec: 45.0   # total budget for the whole paste. Text is rewritten one paragraph at a time; when the budget runs out the remaining paragraphs come back unchanged rather than half-written. Bigger models need more.
   humanize_text_min_sim: 0.65       # meaning floor for the paste-in rewrite. Lower than humanize_min_sim because de-AI-ing text legitimately changes far more wording. Raise it if rewrites drift.
   humanize_text_max_chars: 6000     # largest single paste accepted. Bigger pastes are refused up front rather than silently truncated.

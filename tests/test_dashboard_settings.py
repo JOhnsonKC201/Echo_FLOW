@@ -392,13 +392,17 @@ def test_humanizer_model_rejects_a_command_string(tmp_path):
     """The value reaches an HTTP payload, not a shell — but a name with spaces
     is a mistake worth catching at the boundary rather than at call time."""
     client, app_ref = _client(tmp_path)
+    before = _reparse(app_ref)["experimental"].get("humanize_text_model")
     r = client.post("/settings/experimental/save", headers=HOST, data={
         "command_prefix": "computer", "humanize": "off",
         "humanize_text_model": "qwen2.5 && rm -rf /",
     })
     assert r.status_code == 302
     assert "flash=" in r.headers["Location"]
-    assert not _reparse(app_ref)["experimental"].get("humanize_text_model")
+    # Rejected at the boundary, so the setting is left exactly as it was. Compare
+    # against the prior value rather than asserting emptiness: the shipped default
+    # is free to be a real model name, and a rejected save must not disturb it.
+    assert _reparse(app_ref)["experimental"].get("humanize_text_model") == before
 
 
 def test_humanizer_meaning_floor_is_bounded(tmp_path):
