@@ -477,6 +477,7 @@ for deeper specs (start at [`docs/README.md`](docs/README.md)).
 | **Whisper invents "thank you for watching" on silence** | Already guarded (length + RMS); very short/quiet clips are dropped. |
 | **Recording starts when I only wanted to re-paste** | The Ctrl+Shift+Win combo has a veto — add Win within a frame and recording aborts, paste fires instead. |
 | **Ollama "connection refused"** | Start the Ollama app or run `ollama serve`. |
+| **"Couldn't reach the local model" after every reboot** | Echo Flow autostarts at login but Ollama does not, so the daemon comes up with its model backend down. Add Ollama to startup (no admin needed): `Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name Ollama -Value "\"$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe\""`. Undo with `Remove-ItemProperty` on the same key. No daemon restart needed once Ollama is up; the model is re-checked per request. |
 | **Hotkey dead after a Windows update** | pynput's global listener sometimes needs a restart — `RESTART.bat`. |
 | **Pasting lags in some Electron apps** | Clipboard restore runs in a background thread; usually fine, occasionally a ~100ms hiccup. |
 | **Every word comes out Capitalized** | Fixed in current code; if you still see it, `RESTART.bat` so the running daemon picks up the casing pass. |
