@@ -50,13 +50,10 @@ _AUTH_FAIL_THRESHOLD = 10
 _AUTH_LOCKOUT_S = 300.0  # 5 minutes
 
 
-# Mirrors the silence/hallucination guards in main._do_dictation so mobile
-# dictations don't poison the learning loop with Whisper artifacts.
-_HALLUCINATIONS = {
-    "thank you.", "thanks for watching.", "thanks for watching!",
-    "you", ".", "thank you", "thanks.", "bye.", "you're welcome.",
-    "i'm sorry.", "thank you so much.",
-}
+# Same silence/hallucination guard as main._do_dictation, so mobile dictations
+# don't poison the learning loop with Whisper artifacts. Shared rather than
+# mirrored — the two copies used to be kept in sync by hand.
+from .asr_artifacts import HALLUCINATIONS as _HALLUCINATIONS
 _MIN_DURATION_MS = 400
 _MIN_RMS = 0.003
 

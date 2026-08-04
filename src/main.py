@@ -40,6 +40,7 @@ from .history import History
 from .hotkey import HotkeyListener
 from .learn import Learner, LearningConfig, PatternMiner
 from .retrieval import Retriever, RetrievalConfig
+from .asr_artifacts import HALLUCINATIONS
 from . import voice_profile
 from . import phase as phase_mod
 from . import grade as grade_mod
@@ -685,12 +686,9 @@ class App:
             if self.tray:
                 self.tray.set_state("idle")
             return
-        # Whisper hallucination filter: very common phrases on silence/noise
-        HALLUCINATIONS = {
-            "thank you.", "thanks for watching.", "thanks for watching!",
-            "you", ".", "thank you", "thanks.", "bye.", "you're welcome.",
-            "i'm sorry.", "thank you so much.",
-        }
+        # Whisper hallucination filter: very common phrases on silence/noise.
+        # The set lives in `asr_artifacts` — calibration peels the same phrases
+        # off the END of an otherwise-real utterance.
         if raw.strip().lower() in HALLUCINATIONS and duration_ms < 2000:
             console.print(f"[yellow]Likely Whisper hallucination on silence — dropped.[/yellow]")
             if self.tray: self.tray.set_state("ok")

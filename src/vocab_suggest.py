@@ -24,19 +24,34 @@ def _core(token: str) -> str:
     return _STRIP_RE.sub("", token or "")
 
 
-def _looks_like_term(tok: str) -> bool:
+def _looks_like_term(tok: str, *, allow_leading_cap: bool = True,
+                     min_len: int = 3) -> bool:
     """True for tokens the dictionary is actually for: proper nouns and
-    technical/product names — not plain lowercase words."""
+    technical/product names — not plain lowercase words.
+
+    The defaults are the historical behavior and what `filter_candidates` (the
+    dictation hot path) uses; both knobs exist for callers that know more than
+    a lone token reveals:
+
+    `allow_leading_cap=False` refuses to accept a bare leading capital as
+    evidence. A word is only capitalized *because it is a name* in the middle of
+    a sentence — at the start of one, or right after an opening quote, the
+    capital says nothing, and trusting it pins ordinary words like "Turn".
+
+    `min_len` lowers the 3-character floor. That floor is right when guessing
+    from a low-confidence word, but it also discards Q3, S3, AI and ML — which
+    a caller holding ground truth knows really are terms.
+    """
     core = _core(tok)
     # Drop a trailing possessive so "Kubernetes's" is judged as "Kubernetes".
     for ap in ("'s", "’s"):
         if core.lower().endswith(ap):
             core = core[:-2]
-    if len(core) < 3 or not any(c.isalpha() for c in core):
+    if len(core) < min_len or not any(c.isalpha() for c in core):
         return False
     has_internal_caps = any(c.isupper() for c in core[1:])
     has_digit = any(c.isdigit() for c in core)
-    is_proper = core[:1].isupper()
+    is_proper = core[:1].isupper() and allow_leading_cap
     return is_proper or has_internal_caps or has_digit
 
 

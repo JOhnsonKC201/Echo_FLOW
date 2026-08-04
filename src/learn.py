@@ -425,7 +425,8 @@ class PatternMiner:
     def _conn(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
-    def record(self, raw: str, cleaned: str, source: str = "user") -> int:
+    def record(self, raw: str, cleaned: str, source: str = "user", *,
+               drop_number_format: bool = False, weight: int = 1) -> int:
         """Increment success/total counts for every 1↔1 substitution observed.
 
         `source` is "user" for desktop/mobile dictations (where the cleanup is
@@ -433,15 +434,36 @@ class PatternMiner:
         cleanups from a stronger model. Both contribute to confidence equally;
         the breakdown is tracked in user_count / teacher_count for auditing.
 
+        `drop_number_format` discards pairs that are the same number written two
+        ways ("4th" → "fourth"). Off by default: on the dictation path the LLM
+        rewriting a numeral is a style preference worth learning. Calibration
+        turns it ON, because there the target sentence is read aloud and its
+        spelled-out numbers are an artifact of *writing a sentence to be read*,
+        not a preference — learning them would make every later dictation spell
+        its numerals out.
+
+        `weight` scales how much one call counts. Calibration passes 2: a
+        sentence read against known ground truth is worth more than one
+        incidental observation, and `confident_patterns` requires `total >= 2`
+        before a pattern is ever applied — so at weight 1 a calibration run
+        would store corrections that stay inert until the same error happened
+        again by chance, which is the wait calibration exists to skip.
+
         Returns count of pairs recorded. Called after every dictation.
         """
         if not raw or not cleaned or raw == cleaned:
             return 0
+        weight = max(1, int(weight))
         pairs = _diff_token_pairs(raw, cleaned)
         # Multi-word mishearings produce NO 1↔1 pair ("note to vec" → "node2vec"
         # collapses 3 tokens into 1), so they must be gathered independently —
         # an early return on empty `pairs` alone would drop every n-gram fix.
         ngram_pairs = _diff_ngram_pairs(raw, cleaned)
+        if drop_number_format:
+            from . import numwords
+            pairs = [(a, b) for a, b in pairs if not numwords.same_number(a, b)]
+            ngram_pairs = [(a, b) for a, b in ngram_pairs
+                           if not numwords.same_number(a, b)]
         if not pairs and not ngram_pairs:
             return 0
         import time as _t
@@ -449,6 +471,8 @@ class PatternMiner:
         with closing(self._conn()) as conn:
             _ensure_patterns_table(conn)
             is_teacher = (source == "teacher")
+            user_inc = 0 if is_teacher else weight
+            teacher_inc = weight if is_teacher else 0
             for a, b in pairs:
                 trigger = a.lower()
                 # success = how often THIS replacement was the cleaned form
@@ -456,22 +480,22 @@ class PatternMiner:
                     """
                     INSERT INTO learned_patterns
                         (trigger, replacement, success, total, updated_at, user_count, teacher_count)
-                    VALUES (?, ?, 1, 1, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(trigger, replacement) DO UPDATE SET
-                        success = success + 1,
-                        total = total + 1,
+                        success = success + ?,
+                        total = total + ?,
                         updated_at = excluded.updated_at,
                         user_count = user_count + ?,
                         teacher_count = teacher_count + ?
                     """,
-                    (trigger, b, now, 0 if is_teacher else 1, 1 if is_teacher else 0,
-                     0 if is_teacher else 1, 1 if is_teacher else 0),
+                    (trigger, b, weight, weight, now, user_inc, teacher_inc,
+                     weight, weight, user_inc, teacher_inc),
                 )
                 # All OTHER replacements for the same trigger see total++ but not success.
                 conn.execute(
-                    "UPDATE learned_patterns SET total = total + 1, updated_at = ? "
+                    "UPDATE learned_patterns SET total = total + ?, updated_at = ? "
                     "WHERE trigger = ? AND replacement != ?",
-                    (now, trigger, b),
+                    (weight, now, trigger, b),
                 )
             if ngram_pairs:
                 _ensure_ngrams_table(conn)
@@ -481,18 +505,18 @@ class PatternMiner:
                         """
                         INSERT INTO learned_ngrams
                             (trigger, replacement, success, total, updated_at)
-                        VALUES (?, ?, 1, 1, ?)
+                        VALUES (?, ?, ?, ?, ?)
                         ON CONFLICT(trigger, replacement) DO UPDATE SET
-                            success = success + 1,
-                            total = total + 1,
+                            success = success + ?,
+                            total = total + ?,
                             updated_at = excluded.updated_at
                         """,
-                        (trigger, b, now),
+                        (trigger, b, weight, weight, now, weight, weight),
                     )
                     conn.execute(
-                        "UPDATE learned_ngrams SET total = total + 1, updated_at = ? "
+                        "UPDATE learned_ngrams SET total = total + ?, updated_at = ? "
                         "WHERE trigger = ? AND replacement != ?",
-                        (now, trigger, b),
+                        (weight, now, trigger, b),
                     )
             conn.commit()
         return len(pairs) + len(ngram_pairs)
