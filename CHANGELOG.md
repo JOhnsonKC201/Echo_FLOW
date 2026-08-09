@@ -6,7 +6,41 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
-(nothing yet)
+### Fixed
+- **The Privacy page could tell you nothing was leaving the machine while every
+  dictation was going to Groq.** The ledger only ever looked for cloud egress via
+  the *humanize* feature, so a config with `cleanup.provider: groq` plus
+  `cleanup.allow_cloud_cleanup: true` and humanize off produced an empty exception
+  list, and the page then printed its reassuring default: "Echo Flow only opens
+  sockets to 127.0.0.1 ... No telemetry, no cloud sync." The ledger is the app's
+  own transparency tool, so understating egress there is worse than not shipping
+  one. It now detects the ordinary cleanup path independently and names the host.
+- **`ollama pull` in the setup docs fetched a model the app never asks for.**
+  Every instruction said `qwen2.5:3b-instruct` while `config.yaml` requests
+  `qwen2.5:3b-instruct-q4_K_M`. Following the documented setup left Ollama without
+  the tag it was about to be asked for, and cleanup silently fell back to raw
+  Whisper text. README, `INSTALL.bat`, `scripts/setup.bat`, `PRODUCT_OVERVIEW.md`
+  and the docs site now all pull the tag the app actually calls.
+- **`dist_nuitka/` was not ignored by git**, unlike `build/` and `dist/`, so
+  running `build_nuitka.ps1` left a compiled binary tree staged for accidental
+  commit to a public repo.
+
+### Changed
+- **The privacy docs now describe the third cloud path.** README and
+  `PRODUCT_OVERVIEW.md` said the only paths off the machine were PE mode and the
+  teacher loop; `cleanup.allow_cloud_cleanup` is a third, and unlike those two it
+  applies to every dictation rather than a deliberate keystroke.
+- **Documented that dictation transcripts are written to `data/wispr.log`** in
+  plain text, raw and cleaned, on every dictation. The privacy section previously
+  named only `history.db`. Also noted that the Wipe button and the export zip both
+  cover the database only, so the log outlives a wipe.
+- **Stopped calling the dashboard "zero CDN".** The knowledge-graph page pulls D3
+  from `d3js.org` at render time, and the module's own docstring called its output
+  "self-contained". Both now say what actually happens; vendoring `d3.v7.min.js`
+  would close it properly.
+- Corrected `PRODUCT_OVERVIEW.md`'s stale version (`0.1.0` → `0.3.0`) and test
+  count (833 → 1502), and stopped it claiming audio is stored in `history.db`:
+  audio is never written to disk.
 
 ## 0.3.0 — 2026-07-25
 

@@ -60,7 +60,7 @@ After a few hundred dictations it knows your jargon, names, and writing style.
 
 ## The desktop dashboard
 
-A native local window (Flask + PyWebView, server-rendered, zero CDN/telemetry) for
+A native local window (Flask + PyWebView, server-rendered, no telemetry) for
 managing everything: history, insights, custom vocabulary, snippets, style profiles,
 transforms, scratchpads, settings, and notification sounds.
 
@@ -114,13 +114,19 @@ arguments redacted at-rest unless verbose logging is opted into.
 
 This is the whole point, so it's explicit:
 
-- **Local by default.** No telemetry, no analytics, no auto-update phone-home. All
-  audio, transcripts, embeddings, and learning data live in `data/history.db` on
-  your machine.
-- **Cloud is opt-in and gated.** The *only* paths that call a cloud API are
+- **Local by default.** No telemetry, no analytics, no auto-update phone-home.
+  Transcripts, embeddings, and learning data live in `data/history.db` on your
+  machine; audio is never written to disk at all.
+- **Three paths can call a cloud API**, each behind a key you set yourself:
   **Prompt-Engineering mode** (`Ctrl+Shift+Alt`, rewrites a spoken idea into a full
-  prompt via Groq) and the optional **teacher-distillation loop**. Both require a key
-  you set yourself and both are off until you flip the toggle.
+  prompt via Groq), the optional **teacher-distillation loop**, and
+  **`cleanup.allow_cloud_cleanup`**. The third is the one to watch: unlike the
+  other two it applies to *every* dictation rather than a deliberate keystroke.
+  The dashboard's Privacy page names whichever are live.
+- **Your speech is also written in plain text** to `data/wispr.log` (raw and
+  cleaned, every dictation). It stays on the machine, but the Wipe button and the
+  export zip both cover `history.db` only, so delete the log by hand if you need it
+  gone.
 - **No keys are ever logged.** Startup audits which cloud features are enabled and
   warns on a missing key — without printing the key.
 - **Bridge & dashboard stay loopback-only** unless you deliberately change the bind
@@ -142,7 +148,7 @@ This is the whole point, so it's explicit:
 ```bat
 scripts\setup.bat        :: creates the venv, installs deps
 run.bat                  :: launch (first run downloads the Whisper model)
-ollama pull qwen2.5:3b-instruct   :: optional local cleanup LLM (recommended)
+ollama pull qwen2.5:3b-instruct-q4_K_M   :: optional local cleanup LLM (recommended)
 ```
 
 Health check: `curl http://127.0.0.1:8766/api/healthz` returns daemon liveness, current
@@ -152,9 +158,10 @@ phase, and which optional features are wired — without exposing keys.
 
 ## Maturity
 
-- **Current line:** `0.1.0` (2026-05-20) plus an unreleased line that enforces
-  local-only by default and ships the Phase 14 Action Layer.
-- **Tests:** 833 passing, covering dictation, cleanup/casing fallback paths,
+- **Current line:** `0.3.0` (2026-07-25). See [CHANGELOG.md](CHANGELOG.md) for
+  what shipped; `src/__init__.py` holds the version the release workflow checks
+  the tag against, so that file is the one to trust.
+- **Tests:** 1502 passing, covering dictation, cleanup/casing fallback paths,
   actions, tags, notes, grading, snippet expansion, A/B logging, veto behavior,
   and the action-layer security model.
 - **Cost:** nothing when run fully local. Groq is free at single-human speaking

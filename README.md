@@ -136,7 +136,7 @@ to the next-larger model you have installed. All local by default.
 | **Review queue** | Worst-quality-first list of un-edited dictations, one click from the tray. |
 
 ### Desktop dashboard
-A native local window (Flask + PyWebView, server-rendered, zero CDN/telemetry) at
+A native local window (Flask + PyWebView, server-rendered, no telemetry) at
 `http://127.0.0.1:8766` for managing everything: history, insights, custom
 vocabulary, snippets, learned casings, style profiles, transforms, scratchpads,
 voice-action shortcuts, settings, light/dark theme, and notification sounds.
@@ -207,6 +207,7 @@ sequenceDiagram
 
 ## Screenshots
 
+> [!NOTE]
 > Captured against a **seeded demo database** — no real dictation data.
 
 **Home** — your dictation inbox, quality-scored, with live time-saved / acceptance / latency stats.
@@ -274,7 +275,7 @@ microphone appears in your system tray, you're ready. Transcription runs
 Raw Whisper output gets a light polish from a local LLM via Ollama. Install
 Ollama, then pull the default model:
 ```bat
-ollama pull qwen2.5:3b-instruct
+ollama pull qwen2.5:3b-instruct-q4_K_M
 ```
 This is the default (`cleanup.provider: ollama`). If Ollama isn't running, you
 simply get Whisper's raw text — no internet required either way.
@@ -300,6 +301,7 @@ local Ollama. The same key powers the optional teacher-distillation loop.
 | `UNINSTALL.bat` | Remove the autostart shortcut and optionally wipe data |
 | `scripts\run_tests.bat` | Run the pytest suite |
 
+> [!IMPORTANT]
 > **After pulling new code, run `RESTART.bat`.** The daemon loads code once at
 > startup, so fixes don't take effect until the running tray process is relaunched.
 
@@ -420,11 +422,22 @@ Review the pairs at <http://127.0.0.1:8766/teacher> before trusting the loop.
 ## Privacy & data flow
 
 - **Local by default.** No telemetry, no analytics, no auto-update phone-home.
-  All audio, transcripts, embeddings, and learning data live in
-  `data/history.db` on your machine.
-- **Cloud is opt-in and gated.** The only paths that call a cloud API are
-  Prompt-Engineering mode (`Ctrl+Shift+Alt`) and the teacher loop — both require
-  a key you set yourself and both are off until you flip the toggle.
+  Transcripts, embeddings, and learning data live in `data/history.db` on your
+  machine. Audio is never written to disk at all: it stays in memory for the
+  length of the utterance and is dropped.
+- **Three paths can call a cloud API**, all gated behind a key you set yourself:
+  Prompt-Engineering mode (`Ctrl+Shift+Alt`), the teacher loop, and
+  `cleanup.allow_cloud_cleanup`. That third one is the one to watch, because
+  unlike the other two it applies to **every dictation** rather than to a
+  deliberate keystroke. Check which are live on the dashboard's Privacy page,
+  or read `cleanup.provider` and `cleanup.allow_cloud_cleanup` in `config.yaml`.
+- **Your speech is written to a log in plain text.** Every dictation appends its
+  raw transcript and its cleaned output to `data/wispr.log` (rotating, 5 MB x 5)
+  at INFO level. It never leaves the machine and it is covered by `.gitignore`,
+  but note that the dashboard's **Wipe** button clears the `dictations` table
+  only, and the export zip contains `config.yaml` and `history.db` only:
+  neither one touches this log. Delete `data/wispr.log` by hand if you want a
+  transcript gone from the disk entirely.
 - **No keys are ever logged.** Startup audits which cloud features are enabled and
   warns on a missing key, without printing the key.
 - **Bridge & dashboard stay loopback-only** unless you deliberately change the

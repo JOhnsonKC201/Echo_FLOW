@@ -4,8 +4,11 @@ Reuses src.graph data builders (build_dictation_graph / concept / notes) and
 emits a minimal black-canvas D3 force layout. Hovering a node highlights its
 1-hop neighborhood in purple and dims the rest — the Obsidian interaction.
 
-The output is a single self-contained HTML document, suitable for serving
-directly from Flask or saving as a file.
+The output is a single HTML document, suitable for serving directly from Flask
+or saving as a file. It is NOT self-contained: the page pulls D3 from
+https://d3js.org at render time, which is the one place the otherwise
+zero-CDN dashboard reaches the public internet. Vendoring d3.v7.min.js next to
+this module would close that hole and make the graph work offline.
 """
 from __future__ import annotations
 
