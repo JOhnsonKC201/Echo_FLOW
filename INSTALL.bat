@@ -97,10 +97,10 @@ if errorlevel 1 (
 
 where ollama >nul 2>&1
 if not errorlevel 1 (
-    echo Pulling qwen2.5:3b-instruct ^(~1.9 GB, CPU-friendly^)...
-    ollama pull qwen2.5:3b-instruct
+    echo Pulling qwen2.5:3b-instruct-q4_K_M ^(~1.9 GB, CPU-friendly^)...
+    ollama pull qwen2.5:3b-instruct-q4_K_M
     if errorlevel 1 (
-        echo [!] Model pull failed. Ollama may need a restart. Try: ollama pull qwen2.5:3b-instruct
+        echo [!] Model pull failed. Ollama may need a restart. Try: ollama pull qwen2.5:3b-instruct-q4_K_M
     ) else (
         echo [OK] Ollama model ready.
     )

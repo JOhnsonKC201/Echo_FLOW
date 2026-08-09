@@ -1572,7 +1572,7 @@ def make_app(app_ref, bound_port: int | None = None):
 
     # --- Knowledge graph -------------------------------------------------
     # /graph     — dashboard-wrapped view (iframe shell, preserves sidebar)
-    # /graph/raw — self-contained D3 HTML produced by graph_obsidian.render
+    # /graph/raw - D3 HTML from graph_obsidian.render (pulls D3 from d3js.org)
     # Cached by db mtime; lock prevents duplicate expensive renders under
     # concurrent first-page-loads on the threaded Werkzeug server.
     import threading as _threading

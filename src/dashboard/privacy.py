@@ -85,6 +85,34 @@ def humanize_state(cfg: dict) -> dict:
     }
 
 
+def cleanup_cloud_state(cfg: dict) -> dict:
+    """Describe whether ORDINARY dictation cleanup leaves the machine.
+
+    This is the path that runs on EVERY dictation, which makes it the one the
+    ledger most needs to be honest about. It was previously invisible here:
+    humanize_state() checks allow_cloud_cleanup, but only in combination with
+    the humanize feature, so a config with cloud cleanup on and humanize off
+    produced an empty exception list and the page then claimed Echo Flow "only
+    opens sockets to 127.0.0.1" while every dictation went to Groq.
+
+    Live when a cloud provider is selected AND the cloud opt-in is set. The
+    code's own default provider is local Ollama (see Cleaner.__init__), so an
+    absent key reads as local.
+
+    Returns {"enabled": bool, "provider": str, "endpoint": str | None, "warn": bool}.
+    """
+    cl = (cfg or {}).get("cleanup", {}) or {}
+    provider = str(cl.get("provider") or "ollama").lower()
+    hosts = {"groq": "api.groq.com", "anthropic": "api.anthropic.com"}
+    cloud = provider in hosts and bool(cl.get("allow_cloud_cleanup"))
+    return {
+        "enabled": cloud,
+        "provider": provider,
+        "endpoint": hosts[provider] if cloud else None,
+        "warn": cloud,
+    }
+
+
 def dir_size_bytes(path: Path) -> int:
     """Recursive size of a directory in bytes. Returns 0 if missing."""
     if not path.exists():
@@ -121,10 +149,15 @@ def ledger(cfg: dict, history_db: Path, cfg_path: Path, data_dir: Path) -> dict:
         last_cfg_write = None
     upd = update_check_state(cfg)
     hz = humanize_state(cfg)
+    cc = cleanup_cloud_state(cfg)
     exceptions = []
     if upd["enabled"]:
         exceptions.append(
             "the startup update check contacts api.github.com once per launch")
+    if cc["enabled"]:
+        exceptions.append(
+            "cloud cleanup is ON: the text of EVERY dictation is sent to "
+            f"{cc['endpoint']}")
     if hz["cloud"]:
         exceptions.append(
             "My Voice (humanize) sends the CLEANED text to Groq/Anthropic when it rewrites")
@@ -141,6 +174,7 @@ def ledger(cfg: dict, history_db: Path, cfg_path: Path, data_dir: Path) -> dict:
         )
     return {
         "humanize": hz,
+        "cleanup_cloud": cc,
         # The Big Truth — architectural, not measured. If you want to verify,
         # run Wireshark or `netstat -an | findstr ESTABLISHED` and confirm
         # Echo Flow's PID only talks to 127.0.0.1 (plus api.github.com once at

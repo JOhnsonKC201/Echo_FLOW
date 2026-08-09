@@ -79,6 +79,53 @@ def test_ledger_flags_humanize_cloud_egress(tmp_path):
     assert out["egress_30d"] == 0        # still zero measured; note explains opt-in
 
 
+def test_cleanup_cloud_state_local_by_default():
+    # No config at all, and a config that names no provider, both read as local:
+    # Cleaner.__init__ defaults to ollama, so absence must not imply cloud.
+    assert priv.cleanup_cloud_state({})["enabled"] is False
+    assert priv.cleanup_cloud_state({"cleanup": {}})["enabled"] is False
+    # A cloud provider WITHOUT the opt-in is still local.
+    assert priv.cleanup_cloud_state({"cleanup": {"provider": "groq"}})["enabled"] is False
+    # The opt-in WITHOUT a cloud provider is still local.
+    st = priv.cleanup_cloud_state({"cleanup": {"provider": "ollama", "allow_cloud_cleanup": True}})
+    assert st["enabled"] is False and st["endpoint"] is None
+
+
+def test_cleanup_cloud_state_needs_provider_and_optin():
+    for provider, host in (("groq", "api.groq.com"), ("anthropic", "api.anthropic.com")):
+        st = priv.cleanup_cloud_state(
+            {"cleanup": {"provider": provider, "allow_cloud_cleanup": True}})
+        assert st["enabled"] is True and st["warn"] is True
+        assert st["endpoint"] == host
+
+
+def test_ledger_flags_cloud_cleanup_even_when_humanize_is_off(tmp_path):
+    """Regression: this is the config the repo actually shipped.
+
+    cleanup.provider=groq + allow_cloud_cleanup=true with humanize OFF used to
+    produce an empty exception list, so the /privacy page told the user Echo
+    Flow "only opens sockets to 127.0.0.1 ... No telemetry, no cloud sync" while
+    the text of every dictation was going to Groq. The ledger is the app's own
+    transparency tool; it understating egress is worse than not having one.
+    """
+    cfg = {"cleanup": {"provider": "groq", "allow_cloud_cleanup": True}}
+    out = priv.ledger(cfg, tmp_path / "m.db", tmp_path / "c.yaml", tmp_path)
+    assert out["cleanup_cloud"]["enabled"] is True
+    assert out["humanize"]["cloud"] is False          # humanize is off; that is the point
+    assert "EVERY dictation" in out["egress_provenance"]
+    assert "api.groq.com" in out["egress_provenance"]
+    assert "no cloud sync" not in out["egress_provenance"].lower()
+    assert out["egress_30d"] == 0        # still zero MEASURED; the note carries the truth
+
+
+def test_ledger_stays_quiet_when_cleanup_is_local(tmp_path):
+    out = priv.ledger({"cleanup": {"provider": "ollama"}},
+                      tmp_path / "m.db", tmp_path / "c.yaml", tmp_path)
+    assert out["cleanup_cloud"]["enabled"] is False
+    assert "EVERY dictation" not in out["egress_provenance"]
+    assert "no cloud sync" in out["egress_provenance"].lower()
+
+
 def test_humanize_bytes_thresholds():
     assert priv.humanize_bytes(0) == "0 B"
     assert priv.humanize_bytes(500) == "500 B"

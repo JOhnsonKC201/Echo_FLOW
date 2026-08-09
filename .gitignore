@@ -24,6 +24,7 @@ Thumbs.db
 .vscode/
 build/
 dist/
+dist_nuitka/
 .claude/
 *.spec.bak
 
