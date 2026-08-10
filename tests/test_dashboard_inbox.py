@@ -34,6 +34,108 @@ def _client(tmp_path):
     return make_app(app_ref).test_client(), app_ref
 
 
+# --- Triage: which cards want a human look ---------------------------------
+
+def _row(text, *, q=98.0, rating=None, original=None):
+    return {"cleaned_text": text, "quality_score": q,
+            "user_rating": rating, "original_cleaned": original}
+
+
+def test_review_reasons_clean_sentence_is_quiet():
+    """The 94% case: a normal, well-scored dictation asks nothing of the user."""
+    assert inbox.review_reasons(
+        _row("I think we can have a better visual on this slide. What do you think?")) == []
+
+
+def test_review_reasons_flags_the_real_world_false_positives():
+    """Regression against the two rows that motivated this feature.
+
+    Both are grammatically complete sentences and both scored 96+, which is why
+    "auto-approve if it is a complete sentence" would have approved exactly the
+    dictations the user rejected. Length and the missing terminal stop are what
+    actually catch them.
+    """
+    assert "very short" in inbox.review_reasons(_row("Again.", q=99.0))
+    assert "very short" in inbox.review_reasons(_row("LinkedIn is.", q=97.0))
+
+
+def test_review_reasons_flags_truncation_and_low_quality():
+    assert "looks cut off" in inbox.review_reasons(
+        _row("I was about to say that the whole thing"))
+    assert "low quality score" in inbox.review_reasons(
+        _row("A perfectly ordinary sentence that simply scored badly.", q=41.0))
+    # At/above the UI's own "good" line, quality alone must not flag.
+    assert "low quality score" not in inbox.review_reasons(
+        _row("A perfectly ordinary sentence that scored fine.", q=75.0))
+
+
+def test_needs_review_keeps_acted_on_rows_visible():
+    """Acting on a card must not make it vanish into the collapsed pile.
+
+    These stay visible via needs_review, NOT via review_reasons: the card is
+    already wearing a "marked bad" pill, so repeating it as a reason would print
+    the same fact twice side by side.
+    """
+    long_ok = "This is a long and perfectly ordinary dictation that ends properly."
+    assert inbox.needs_review(_row(long_ok)) is False
+    assert inbox.needs_review(_row(long_ok, rating=-1)) is True
+    assert inbox.review_reasons(_row(long_ok, rating=-1)) == []      # pill says it
+    assert inbox.needs_review(
+        _row(long_ok, original="Something the model originally produced.")) is True
+    # Approving is not a reason to keep nagging.
+    assert inbox.needs_review(_row(long_ok, rating=1)) is False
+
+
+def test_needs_review_follows_detection_reasons():
+    assert inbox.needs_review(_row("Again.", q=99.0)) is True
+    assert inbox.needs_review(
+        _row("A long and complete sentence that ends properly.")) is False
+
+
+def test_review_reasons_ignores_empty_and_missing_score():
+    assert inbox.review_reasons(_row("")) == []
+    assert inbox.review_reasons(_row("   ")) == []
+    # quality_score is nullable; absence must not read as zero.
+    assert "low quality score" not in inbox.review_reasons(
+        _row("A sentence with no score recorded at all.", q=None))
+
+
+def test_inbox_rows_attaches_reasons(tmp_path):
+    h = History(str(tmp_path / "h.db"))
+    h.log(window_title="t", style="default", language="en", duration_ms=100,
+          raw_text="again", cleaned_text="Again.", quality_score=99.0)
+    h.log(window_title="t", style="default", language="en", duration_ms=100,
+          raw_text="a long one", cleaned_text="A long and complete sentence here.",
+          quality_score=98.0)
+    rows = inbox.inbox_rows(h.conn, n=10)
+    by_text = {r["cleaned_text"]: r for r in rows}
+    assert "very short" in by_text["Again."]["reasons"]
+    assert by_text["Again."]["needs_review"] is True
+    assert by_text["A long and complete sentence here."]["reasons"] == []
+    assert by_text["A long and complete sentence here."]["needs_review"] is False
+
+
+def test_home_splits_into_two_groups(tmp_path):
+    client, app_ref = _client(tmp_path)
+    app_ref.history.log(window_title="t", style="default", language="en",
+                        duration_ms=100, raw_text="again", cleaned_text="Again.",
+                        quality_score=99.0)
+    app_ref.history.log(window_title="t", style="default", language="en",
+                        duration_ms=100, raw_text="fine",
+                        cleaned_text="A long and complete sentence that is fine.",
+                        quality_score=98.0)
+    r = client.get("/", headers=HOST)
+    assert r.status_code == 200
+    body = r.data.decode("utf-8")
+    assert "Needs a look" in body
+    assert "Looks fine" in body
+    # The flagged card explains itself rather than showing an opaque badge.
+    assert "very short" in body
+    # Both cards still render, and the quiet one keeps its actions.
+    assert "Again." in body and "A long and complete sentence that is fine." in body
+    assert body.count("/inbox/rate") >= 4
+
+
 # --- Pure helpers ----------------------------------------------------------
 
 def test_render_diff_empty_returns_empty():

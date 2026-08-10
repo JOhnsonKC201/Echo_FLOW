@@ -515,7 +515,13 @@ def test_uses_the_passed_timeout_and_model(monkeypatch):
     monkeypatch.setattr(cleaner, "_via_ollama",
                         lambda s, t, *a, **k: seen.update(k) or AI_HUMANIZED)
     _human(cleaner, timeout_sec=45.0, model="qwen3.5:latest")
-    assert 40.0 < seen["timeout_sec"] <= 45.0
+    # The budget is computed as (monotonic() + 45.0) - monotonic(), so the two
+    # reads only cancel exactly when the clock's magnitude happens to leave the
+    # sum representable. On a runner whose monotonic() sits at a less friendly
+    # value it lands a few ulps high (seen: 45.00000000000006), which is a
+    # rounding artifact and not a real over-budget. Assert the intent - close to
+    # the full budget, none of it eaten - rather than an exact float ceiling.
+    assert 40.0 < seen["timeout_sec"] <= 45.0 + 1e-6
     assert seen["model_override"] == "qwen3.5:latest"
 
 

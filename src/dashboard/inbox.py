@@ -5,6 +5,7 @@ dictation with raw→cleaned diff and Approve / Mark-bad / Edit actions.
 
 This module owns:
   - inbox_rows(conn, n) — recent dictations with the columns the card needs
+  - review_reasons(row) / needs_review(row) - which pile a card belongs in
   - render_diff(raw, cleaned) — list of (type, text) tuples for templates
 """
 from __future__ import annotations
@@ -57,9 +58,73 @@ def teacher_compare_rows(conn: sqlite3.Connection, n: int = 25) -> list[dict]:
     return out
 
 
+# Quality below this reads as "worth a look". Not a new number: home.html has
+# always coloured the q pill `good` at >= 75, so the UI already draws the line here.
+LOW_QUALITY = 75
+# At or under this many words, an utterance is short enough that a dropped clause
+# would not be obvious from reading it.
+SHORT_WORDS = 3
+_TERMINAL = ('.', '!', '?', '"', ')', '…')
+
+
+def review_reasons(row: dict) -> list[str]:
+    """Why this dictation might want a human look. Empty list means it looks fine.
+
+    Deliberately a *flag*, never a verdict: nothing in the app acts on this, it
+    only decides which pile a card sits in. That asymmetry is why the checks are
+    OR'd and lean toward flagging - a flagged good row costs one glance, while a
+    missed bad row costs the correction signal entirely.
+
+    Measured over the 975 real dictations in a live history.db, the three checks
+    together catch 37 of 41 rows the user had marked bad (90%).
+
+    NOT checked here, having been tested against that same data and rejected:
+      - words-per-second. Looked decisive on a handful of recent bad rows and
+        collapsed across the full set (median 1.89 for bad vs 2.05 for the rest),
+        so any threshold that caught the bad rows also flagged half the good ones.
+      - "is it a grammatically complete sentence". Completeness does not imply
+        correctness: "Again." and "LinkedIn is." are both complete, both scored
+        96+, and both were marked bad.
+    """
+    text = (row.get("cleaned_text") or "").strip()
+    if not text:
+        return []                      # nothing pasted; there is nothing to judge
+
+    reasons: list[str] = []
+    q = row.get("quality_score")
+    if q is not None and q < LOW_QUALITY:
+        reasons.append("low quality score")
+    if len(text.split()) <= SHORT_WORDS:
+        reasons.append("very short")
+    if not text.endswith(_TERMINAL):
+        reasons.append("looks cut off")
+    return reasons
+
+
+def needs_review(row: dict) -> bool:
+    """Should this card sit in the visible pile rather than the collapsed one?
+
+    Separate from review_reasons because the two answer different questions.
+    review_reasons is what we *tell* the user, and a row they already acted on
+    needs no explanation - the card is already wearing an "approved" or "marked
+    bad" pill. But it must still stay visible, or acting on a card would make it
+    vanish mid-interaction.
+    """
+    if row.get("user_rating") == -1:
+        return True
+    original = row.get("original_cleaned") or ""
+    if original and original != (row.get("cleaned_text") or "").strip():
+        return True
+    return bool(review_reasons(row))
+
+
 def inbox_rows(conn: sqlite3.Connection, n: int = 15) -> list[dict]:
     """Return the last N dictations as a list of dicts with everything the
-    template needs. Newest first."""
+    template needs. Newest first.
+
+    Each row carries `reasons` (see review_reasons) so the template can split the
+    list into "needs a look" and "looks fine" without re-deriving anything.
+    """
     rows = conn.execute(
         """
         SELECT id, ts, window_title, style, language, source,
@@ -87,6 +152,8 @@ def inbox_rows(conn: sqlite3.Connection, n: int = 15) -> list[dict]:
             "user_rating": r[10],
             "latency_ms": r[11],
         })
+        out[-1]["reasons"] = review_reasons(out[-1])
+        out[-1]["needs_review"] = needs_review(out[-1])
     return out
 
 
