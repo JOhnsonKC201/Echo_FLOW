@@ -617,6 +617,22 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .diff-toggle:hover { color: var(--text); }
 .inbox-actions { display: flex; gap: 6px; margin-top: 10px; }
 .inbox-actions .btn { padding: 5px 10px; font-size: 11.5px; }
+
+/* Inbox triage groups. Without these the "Needs a look" h2 falls through to the
+   UA stylesheet (~1.5em, big margins) in a UI that runs at 13px, and the two
+   groups sit flush against each other with no separation. */
+.inbox-group-h {
+  margin: 0 0 10px; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+  display: flex; align-items: baseline; gap: 6px;
+}
+.inbox-group-h .num { font-size: 12px; font-variant-numeric: tabular-nums; }
+.inbox-quiet { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+/* The quiet pile is the normal outcome, so its summary carries a little more
+   weight than the per-card diff toggle it borrows its class from. */
+.inbox-quiet > summary { font-size: 12px; padding: 2px 0 8px; }
+.inbox-quiet > summary:hover { color: var(--text); }
+.why { color: var(--muted); }
 .btn.ok { color: var(--accent); border-color: var(--accent); }
 .btn.bad { color: var(--danger); border-color: var(--danger); }
 
