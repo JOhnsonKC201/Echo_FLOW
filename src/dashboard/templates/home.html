@@ -16,16 +16,9 @@
       </div>
     {% endif %}
 
-    {% if not items %}
-      <div class="placeholder">
-        <div>
-          <div class="ph-title">No dictations yet</div>
-          <div class="ph-body">Hold your dictation hotkey and speak. Your inbox will populate here with raw → cleaned diffs and one-click approve / mark-bad actions.</div>
-        </div>
-      </div>
-    {% else %}
-      <ul class="inbox-list">
-        {% for it in items %}
+    {# One card, rendered into either pile. Kept as a macro so the two groups can
+       never drift apart in markup or actions. #}
+    {% macro inbox_card(it) %}
           <li class="inbox-card" id="d-{{ it.id }}">
             <div class="inbox-meta">
               <span class="ts">{{ it.ts_human }}</span>
@@ -41,6 +34,9 @@
                 <span class="rating approved">✓ approved</span>
               {% elif it.user_rating == -1 %}
                 <span class="rating bad">✕ marked bad</span>
+              {% endif %}
+              {% if it.reasons %}
+                <span class="why muted small">{{ it.reasons|join(' · ') }}</span>
               {% endif %}
             </div>
 
@@ -83,8 +79,37 @@
               <a class="btn" href="/inbox/{{ it.id }}/edit">Edit</a>
             </div>
           </li>
-        {% endfor %}
-      </ul>
+    {% endmacro %}
+
+    {% if not items %}
+      <div class="placeholder">
+        <div>
+          <div class="ph-title">No dictations yet</div>
+          <div class="ph-body">Hold your dictation hotkey and speak. Your inbox will populate here with raw → cleaned diffs and one-click approve / mark-bad actions.</div>
+        </div>
+      </div>
+    {% else %}
+      {% set needs = items | selectattr('needs_review') | list %}
+      {% set fine = items | rejectattr('needs_review') | list %}
+
+      {% if needs %}
+        <h2 class="inbox-group-h">Needs a look <span class="num muted">{{ needs|length }}</span></h2>
+        <ul class="inbox-list">
+          {% for it in needs %}{{ inbox_card(it) }}{% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if fine %}
+        {# Collapsed by default, because leaving these alone IS the normal outcome:
+           an untouched row already counts as accepted (analytics.acceptance_rate).
+           Opened when there is nothing flagged, so the page is never just a stub. #}
+        <details class="inbox-quiet"{% if not needs %} open{% endif %}>
+          <summary class="diff-toggle">Looks fine ({{ fine|length }}) - nothing to do</summary>
+          <ul class="inbox-list">
+            {% for it in fine %}{{ inbox_card(it) }}{% endfor %}
+          </ul>
+        </details>
+      {% endif %}
     {% endif %}
   </section>
 

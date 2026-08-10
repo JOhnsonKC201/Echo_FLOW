@@ -6,6 +6,35 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Changed
+- **The inbox triages itself instead of asking for a verdict on every dictation.**
+  Cards split into "Needs a look" and a collapsed "Looks fine", and a flagged card
+  says why it was flagged rather than showing an opaque badge. Nothing is hidden:
+  the quiet group keeps every action on expand.
+
+  The starting request was to auto-approve anything that was "a complete correct
+  sentence". Two things ruled that out. First, completeness does not imply
+  correctness: `"Again."` and `"LinkedIn is."` are both complete sentences, both
+  scored 96+, and both had been marked bad, so that rule would have auto-approved
+  precisely the rows a user rejected. Second, Approve is already close to a no-op
+  - `analytics.acceptance_rate` counts an untouched row and an approved row
+  identically, and no learning path reads `user_rating` except the opt-in My Voice
+  exemplar pool. Automating it would have automated nothing, while quietly
+  arranging for bad dictations to become few-shot examples of "how you write" the
+  day My Voice is switched on.
+
+  A row is flagged when its quality is under 75 (the threshold the UI already
+  treats as good), or it is three words or fewer, or it does not end in terminal
+  punctuation. Measured against 975 real dictations that catches 37 of the 41 rows
+  the user had marked bad. Rows already marked bad or edited stay visible so that
+  acting on a card never makes it disappear. **No verdict is ever written
+  automatically.**
+
+  Words-per-second was tried as a truncation signal and rejected: convincing on a
+  handful of recent bad rows, useless across the full set (median 1.89 for bad vs
+  2.05 for the rest), where any threshold catching the bad rows also flagged half
+  the good ones.
+
 ### Fixed
 - **The Privacy page could tell you nothing was leaving the machine while every
   dictation was going to Groq.** The ledger only ever looked for cloud egress via
