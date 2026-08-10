@@ -11,6 +11,7 @@ This module owns:
 from __future__ import annotations
 
 import difflib
+import re as _re
 import sqlite3
 import time
 
@@ -64,7 +65,52 @@ LOW_QUALITY = 75
 # At or under this many words, an utterance is short enough that a dropped clause
 # would not be obvious from reading it.
 SHORT_WORDS = 3
-_TERMINAL = ('.', '!', '?', '"', ')', '…')
+
+# Sentence-final punctuation, deliberately NOT ASCII-only. whisper.language offers
+# 16 languages plus auto-detect (settings/general.html), and an ASCII tuple flagged
+# every correctly-punctuated Chinese, Japanese, Hindi and Arabic sentence as "looks
+# cut off" - along with any English one closing on a curly quote.
+#   . ! ? …   latin
+#   。！？    CJK fullwidth
+#   । ॥       Devanagari danda
+#   ؟ ۔       Arabic question mark / full stop
+#   " ' » ) ] } 」』  closers that legitimately follow the stop
+_TERMINAL = (
+    '.', '!', '?', '…',
+    '。', '！', '？', '．',
+    '।', '॥', '؟', '۔',
+    '"', "'", '”', '’', '»', '›',
+    ')', ']', '}', '）', '】', '」', '』',
+)
+# NOTE: ',', ';' and ':' are deliberately absent, even though cleanup.py's
+# _polish_text treats them as "already punctuated" and skips adding a period.
+# That answers a different question. Trailing on a comma is exactly what a
+# truncated dictation looks like, so here it should still flag.
+
+# Scripts that do not put spaces between words, where str.split() returns 1 for a
+# whole sentence and every dictation would otherwise read as "very short".
+_UNSPACED = _re.compile(
+    r'[぀-ヿ'      # hiragana, katakana
+    r'㐀-䶿'       # CJK ext A
+    r'一-鿿'       # CJK unified
+    r'豈-﫿'       # CJK compatibility
+    r'가-힯]'      # hangul syllables
+)
+
+
+def _word_count(text: str) -> int:
+    """Length in word-equivalents, for scripts with and without spaces.
+
+    Chinese and Japanese write without inter-word spaces, so `len(text.split())`
+    is 1 for almost any sentence in them. Counting roughly two characters to the
+    word keeps a real sentence out of the "very short" bucket while still
+    catching a genuinely clipped one.
+    """
+    spaced = len(text.split())
+    dense = len(_UNSPACED.findall(text))
+    if dense:
+        return max(spaced, (dense + 1) // 2)
+    return spaced
 
 
 def review_reasons(row: dict) -> list[str]:
@@ -86,15 +132,19 @@ def review_reasons(row: dict) -> list[str]:
         correctness: "Again." and "LinkedIn is." are both complete, both scored
         96+, and both were marked bad.
     """
-    text = (row.get("cleaned_text") or "").strip()
+    raw_text = row.get("cleaned_text") or ""
+    text = raw_text.strip()
     if not text:
-        return []                      # nothing pasted; there is nothing to judge
+        # An all-whitespace result is a broken row, not an absent one, and the
+        # edit route writes form input straight through with no validation. Only
+        # a genuinely empty cell means "nothing happened here, nothing to judge".
+        return ["empty result"] if raw_text else []
 
     reasons: list[str] = []
     q = row.get("quality_score")
     if q is not None and q < LOW_QUALITY:
         reasons.append("low quality score")
-    if len(text.split()) <= SHORT_WORDS:
+    if _word_count(text) <= SHORT_WORDS:
         reasons.append("very short")
     if not text.endswith(_TERMINAL):
         reasons.append("looks cut off")
@@ -112,7 +162,12 @@ def needs_review(row: dict) -> bool:
     """
     if row.get("user_rating") == -1:
         return True
-    original = row.get("original_cleaned") or ""
+    # Strip BOTH sides. history.log writes the same string into cleaned_text and
+    # original_cleaned, so an unedited row is byte-identical - but stripping only
+    # one of them made any text carrying outer whitespace look permanently edited.
+    # Reachable today: cleanup.provider "none" is a documented setting and returns
+    # the transcript verbatim, and Whisper segments routinely start with a space.
+    original = (row.get("original_cleaned") or "").strip()
     if original and original != (row.get("cleaned_text") or "").strip():
         return True
     return bool(review_reasons(row))

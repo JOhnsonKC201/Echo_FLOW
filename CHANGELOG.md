@@ -6,6 +6,32 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Fixed
+- **Inbox triage flagged every correctly-written Chinese, Japanese, Hindi and
+  Arabic dictation.** The terminator list was ASCII-only, so a sentence closing on
+  `。`, `।` or `؟` read as "looks cut off"; and because CJK has no inter-word
+  spaces, `str.split()` scored a whole Chinese sentence as one word, so it read as
+  "very short" as well. For those users every row landed in "Needs a look" and the
+  quiet pile was permanently empty, which defeats the entire feature. The
+  terminator set now covers CJK, Devanagari and Arabic stops plus closing quotes
+  and guillemets (an English sentence ending in a curly quote was mis-flagged
+  too), and length is measured in word-equivalents so unspaced scripts are counted
+  by character. English detection is unchanged: still 37 of 41 known-bad rows.
+  `,` `;` `:` are still deliberately not terminators, unlike `cleanup.py`'s
+  punctuation rule, because trailing on a comma is what truncation looks like.
+- **An unedited dictation could look permanently edited.** `needs_review`
+  stripped `cleaned_text` but compared `original_cleaned` raw, so any transcript
+  carrying outer whitespace never matched itself. Reachable today: the documented
+  `cleanup.provider: none` returns the transcript verbatim, and Whisper segments
+  routinely start with a space.
+- **A whitespace-only result was filed under "looks fine".** The edit route writes
+  form input through with no validation, so a blank save vanished from view rather
+  than being surfaced as the broken row it is.
+- **The two group headings had no CSS.** `.inbox-group-h` and `.inbox-quiet`
+  matched no rule, so the heading fell through to the browser default (~1.5em with
+  large margins) in a UI that runs at 13px, and the groups sat flush together with
+  no separation.
+
 ### Changed
 - **The inbox triages itself instead of asking for a verdict on every dictation.**
   Cards split into "Needs a look" and a collapsed "Looks fine", and a flagged card
