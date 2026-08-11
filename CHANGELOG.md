@@ -7,6 +7,22 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Security
+- **The installers shipped the maintainer's working config as the factory
+  default.** `config.yaml` at the repo root does two incompatible jobs: it is
+  what the daemon reads from a source checkout, and it was also bundled into the
+  builds and copied to `%LOCALAPPDATA%\EchoFlow\config.yaml` on a frozen
+  install's first run. So a clean install started with `cleanup.provider: groq`
+  and `allow_cloud_cleanup: true`, meaning **every dictation of every new user
+  went to a cloud API** while the README described local-by-default; with Action
+  Mode and command mode live; with `command_prefix: jarvis`, so every documented
+  "computer, ..." example did nothing; with the paste-in humanizer pointed at a
+  model no installer pulls; and with the first-run tour already marked complete.
+  In each case the code's own default was correct and only the shipped file
+  diverged. The builds now bundle `packaging/default/config.yaml`, generated
+  from `config.yaml` by `scripts/make_default_config.py`, which inherits every
+  comment and value and overrides only the keys that are unsafe as a stranger's
+  starting point. A test runs the generator's `--check` mode, so the two cannot
+  drift and a newly added setting is picked up automatically.
 - **The mobile bridge's code defaults were `0.0.0.0` plus mDNS-on**, the exact
   combination `docs/MOBILE_BRIDGE.md` warns against. `config.yaml` ships
   loopback with mDNS off and `dashboard/privacy.py` reports `127.0.0.1` for a

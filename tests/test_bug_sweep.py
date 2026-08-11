@@ -481,6 +481,80 @@ def test_mobile_trust_for_rag_is_actually_wired():
 
 
 # ---------------------------------------------------------------------------
+# the shipped factory default
+# ---------------------------------------------------------------------------
+
+def _repo() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def test_factory_default_is_in_sync_with_config_yaml():
+    """packaging/default/config.yaml is generated FROM config.yaml so a newly
+    added setting is inherited automatically. If this fails, run
+    `python scripts/make_default_config.py`."""
+    import subprocess
+    import sys as _sys
+    r = subprocess.run(
+        [_sys.executable, "scripts/make_default_config.py", "--check"],
+        cwd=str(_repo()), capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+    )
+    assert r.returncode == 0, (r.stdout or "") + (r.stderr or "")
+
+
+def test_factory_default_is_local_only_and_opt_in():
+    """config.yaml is the maintainer's WORKING config and is also what gets
+    bundled and copied to %LOCALAPPDATA% on a frozen install's first run. It
+    shipped provider=groq + allow_cloud_cleanup=true, so every dictation of
+    every new user went to a cloud API while the README said local-by-default;
+    Action Mode was live; and command_prefix was a word no doc mentions."""
+    import yaml
+    cfg = yaml.safe_load((_repo() / "packaging" / "default" / "config.yaml")
+                         .read_text(encoding="utf-8"))
+    assert cfg["cleanup"]["provider"] == "ollama"
+    assert cfg["cleanup"]["allow_cloud_cleanup"] is False
+    assert cfg["cleanup"]["verify"]["escalate_cloud"] is False
+    assert cfg["cleanup"]["learning"]["teacher_enabled"] is False
+    assert cfg["experimental"]["humanize_use_cloud"] is False
+    assert cfg["experimental"]["humanize"] is False
+    exp = cfg["experimental"]
+    assert exp["command_mode"] is False and exp["action_mode"] is False
+    assert exp["press_enter_command"] is False
+    assert exp["action_require_prefix"] is True
+    assert exp["command_prefix"] == "computer", "every doc example says 'computer, ...'"
+    assert exp["humanize_text_model"] == "", "must fall back to the model the installer pulls"
+    assert cfg["dashboard"]["onboarded"] is False, "a new install should get the tour"
+    assert cfg["mobile"]["bind_address"] == "127.0.0.1"
+    assert cfg["mobile"]["advertise_mdns"] is False
+    assert not (cfg["dashboard"].get("accent_color") or "")
+
+
+def test_factory_default_carries_no_secrets():
+    """It ships to every user, so nothing machine-specific may ride along."""
+    import re
+    import yaml
+    text = (_repo() / "packaging" / "default" / "config.yaml").read_text(encoding="utf-8")
+    cfg = yaml.safe_load(text)
+    assert not (cfg["mobile"].get("shared_key") or ""), "bridge key must be generated per install"
+    # No inline credential-looking literals (keys are read from the environment).
+    for pat in (r"sk-[A-Za-z0-9]{8,}", r"gsk_[A-Za-z0-9]{8,}",
+                r"xox[baprs]-[A-Za-z0-9-]{8,}", r"ghp_[A-Za-z0-9]{8,}"):
+        assert not re.search(pat, text), f"possible secret matching {pat}"
+
+
+def test_installers_bundle_the_factory_default_not_the_working_config():
+    daemon = (_repo() / "EchoFlow-Daemon.spec").read_text(encoding="utf-8")
+    shell = (_repo() / "EchoFlow.spec").read_text(encoding="utf-8")
+    nuitka = (_repo() / "build_nuitka.ps1").read_text(encoding="utf-8")
+    assert '("config.yaml", ".")' not in daemon
+    assert '("packaging/default/config.yaml", ".")' in daemon
+    assert "REPO / 'config.yaml'" not in shell
+    assert "'packaging' / 'default' / 'config.yaml'" in shell
+    assert "--include-data-files=config.yaml=config.yaml" not in nuitka
+    assert "packaging/default/config.yaml=config.yaml" in nuitka
+
+
+# ---------------------------------------------------------------------------
 # wave 2: privacy / security surface
 # ---------------------------------------------------------------------------
 

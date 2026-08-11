@@ -20,6 +20,29 @@ manual local builds). Update the README badge if you want it exact (cosmetic).
 
 Add a dated section to `CHANGELOG.md` describing the release.
 
+## 1b. Refresh the factory-default config
+
+`config.yaml` at the repo root is the **working** config: it is what the daemon
+reads when you run from source, so it carries whatever you have switched on. It
+is *not* what ships. The installers bundle
+`packaging/default/config.yaml`, which `main.load_config` copies to
+`%LOCALAPPDATA%\EchoFlow\config.yaml` on a frozen install's first run.
+
+That file is generated, never hand-edited:
+
+```bash
+python scripts/make_default_config.py
+```
+
+It inherits every comment and value from `config.yaml` and overrides only the
+keys listed in `FACTORY_OVERRIDES` (cloud cleanup off, voice control opt-in,
+`command_prefix: computer`, onboarding tour on). A new setting is picked up
+automatically; it only needs an entry there if the value you committed is not a
+safe default for a stranger's machine.
+
+`python scripts/make_default_config.py --check` fails if the two have drifted,
+and the test suite runs exactly that, so CI blocks a stale default.
+
 ## 2. Tag and push
 
 ```bash

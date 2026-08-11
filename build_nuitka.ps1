@@ -51,7 +51,7 @@ Write-Host "[nuitka] Compiling app.py -> dist_nuitka\ (v$fileVersion) ..." -Fore
     --assume-yes-for-downloads `
     --include-data-dir=src/dashboard/templates=src/dashboard/templates `
     --include-data-dir=src/dashboard/static=src/dashboard/static `
-    --include-data-files=config.yaml=config.yaml `
+    --include-data-files=packaging/default/config.yaml=config.yaml `
     --include-data-files=assets/icon.ico=assets/icon.ico `
     --include-data-files=assets/icon.png=assets/icon.png `
     --include-package=webview `

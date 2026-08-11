@@ -136,7 +136,11 @@ for pkg in ("sentence_transformers", "huggingface_hub", "tqdm", "filelock"):
 datas += [
     ("src/dashboard/templates", "src/dashboard/templates"),
     ("src/dashboard/static", "src/dashboard/static"),
-    ("config.yaml", "."),
+    # The FACTORY default, not the repo-root working config. Bundles as plain
+    # "config.yaml" (PyInstaller keeps the basename), which is what
+    # main.load_config seeds from on a frozen install's first run. Regenerate
+    # with scripts/make_default_config.py after changing config.yaml.
+    ("packaging/default/config.yaml", "."),
     ("assets", "assets"),
 ]
 

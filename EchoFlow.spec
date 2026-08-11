@@ -20,7 +20,9 @@ REPO = Path('.').resolve()
 datas = [
     (str(REPO / 'src' / 'dashboard' / 'templates'), 'src/dashboard/templates'),
     (str(REPO / 'src' / 'dashboard' / 'static'),    'src/dashboard/static'),
-    (str(REPO / 'config.yaml'),                     '.'),
+    # Factory default, not the repo-root working config (see
+    # scripts/make_default_config.py). Bundles as plain "config.yaml".
+    (str(REPO / 'packaging' / 'default' / 'config.yaml'), '.'),
     (str(REPO / 'assets' / 'icon.png'),             'assets'),
     (str(REPO / 'assets' / 'icon.ico'),             'assets'),
 ]
