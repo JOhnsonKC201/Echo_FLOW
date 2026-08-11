@@ -106,9 +106,17 @@ def backlinks_for(history, retriever, note_id: int,
 
     # B. Lexical — title appears in cleaned_text
     title = (note.title or "").strip()
+    # _auto_title marks truncation with a trailing "…" that appears in no source
+    # text, so the LIKE below could never match a long auto-titled note, it
+    # silently reported zero lexical backlinks forever. The cut also lands
+    # mid-word ("…pipeline configurati…"), so for a truncated title the closing
+    # word boundary can never match either: anchor only the opening one.
+    truncated = title.endswith("…")
+    if truncated:
+        title = title.rstrip("…").rstrip()
     if title and len(title) >= 4:
         try:
-            pattern = re.escape(title)
+            pattern = re.escape(title) + ("" if truncated else r"\b")
             rows = history.conn.execute(
                 "SELECT id, cleaned_text FROM dictations "
                 "WHERE cleaned_text LIKE ? AND id != ? "
@@ -117,7 +125,7 @@ def backlinks_for(history, retriever, note_id: int,
             ).fetchall()
             for did, cleaned in rows:
                 # Word-boundary check to avoid substring noise
-                if re.search(r"\b" + pattern + r"\b", cleaned or "", re.IGNORECASE):
+                if re.search(r"\b" + pattern, cleaned or "", re.IGNORECASE):
                     did = int(did)
                     if did not in out:
                         out[did] = (did, cleaned, 1.0, "lexical")

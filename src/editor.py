@@ -416,7 +416,7 @@ def pin_last_dialog(db_path: str) -> None:
     root.destroy()
 
 
-def open_review_queue(db_path: str, n: int = 20) -> None:
+def open_review_queue(db_path: str, n: int = 20, learn_casing: bool = True) -> None:
     """Show the N lowest-quality un-edited dictations; double-click to edit one.
 
     "Un-edited" means cleaned_text still equals original_cleaned (i.e. the user
@@ -468,7 +468,7 @@ def open_review_queue(db_path: str, n: int = 20) -> None:
             return
         root.destroy()
         # Reuse the existing single-row editor.
-        open_editor(db_path, rid)
+        open_editor(db_path, rid, learn_casing=learn_casing)
 
     btn_row = ttk.Frame(root)
     btn_row.pack(fill="x", **pad)

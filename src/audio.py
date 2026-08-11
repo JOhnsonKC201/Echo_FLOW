@@ -35,6 +35,7 @@ class Recorder:
         self._stream: sd.InputStream | None = None
         self._recording = False
         self._vad = None
+        self._vad_warned = False
         if cfg.vad_enabled:
             try:
                 from silero_vad import load_silero_vad
@@ -61,7 +62,20 @@ class Recorder:
             callback=self._callback,
             blocksize=int(self.cfg.sample_rate * 0.03),  # 30ms
         )
-        self._stream.start()
+        # try/except: InputStream(...) already opened the device, so if start()
+        # raises (exclusive-mode conflict, sample-rate mismatch) we must close
+        # the handle ourselves, sounddevice's stream defines no __del__, so a
+        # dropped reference orphans the device and its callback thread for the
+        # life of the process.
+        try:
+            self._stream.start()
+        except Exception:
+            try:
+                self._stream.close()
+            except Exception as e:
+                _log.warning("audio stream close after failed start: %s", e)
+            self._stream = None
+            raise
         self._recording = True
 
     def stop(self) -> np.ndarray:
@@ -133,15 +147,41 @@ class Recorder:
             return head
         return tail
 
+    def _rms_voiced(self, sample: np.ndarray) -> bool:
+        return float(np.sqrt(np.mean(sample**2))) > 0.01
+
     def _is_voiced(self, sample: np.ndarray, vad) -> bool:
         if vad is None:
-            return float(np.sqrt(np.mean(sample**2))) > 0.01
+            return self._rms_voiced(sample)
         try:
             import torch
-            t = torch.from_numpy(sample[-512 * 4:])
-            if t.numel() < 512:
+            # Silero v5+ accepts EXACTLY one window per call: 512 samples at
+            # 16 kHz, 256 at 8 kHz. Anything else raises. Our capture blocks are
+            # 30 ms (480 frames at 16 kHz) and the rolling window is 1-10 of
+            # them, so the old code's flat `sample[-2048:]` was never a legal
+            # size, every call raised and fell through to the RMS branch, which
+            # meant Silero never actually ran despite being loaded at startup.
+            win = 256 if self.cfg.sample_rate < 16000 else 512
+            tail = sample[-win * 4:]
+            if tail.size < win:
                 return True
-            prob = vad(t.unsqueeze(0) if t.ndim == 1 else t, self.cfg.sample_rate).item()
-            return prob > 0.5
-        except Exception:
-            return float(np.sqrt(np.mean(sample**2))) > 0.01
+            n_win = tail.size // win
+            frames = tail[tail.size - n_win * win:].reshape(n_win, win)
+            # Silero is stateful across calls; reset so a rolling window that
+            # re-feeds overlapping audio each tick can't poison the LSTM state.
+            try:
+                vad.reset_states()
+            except Exception:
+                pass
+            best = 0.0
+            for f in frames:
+                t = torch.from_numpy(np.ascontiguousarray(f))
+                best = max(best, float(vad(t.unsqueeze(0), self.cfg.sample_rate).item()))
+            return best > 0.5
+        except Exception as e:
+            # Warn once, this runs every 50 ms, so logging each failure would
+            # flood the log, which is how the size bug above stayed invisible.
+            if not self._vad_warned:
+                self._vad_warned = True
+                _log.warning("silero VAD failed, falling back to RMS: %s", e)
+            return self._rms_voiced(sample)

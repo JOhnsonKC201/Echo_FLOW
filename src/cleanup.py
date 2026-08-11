@@ -638,7 +638,15 @@ def _collapse_repeats(s: str, max_ngram: int = 6) -> str:
                 while keys[j:j + n] == block:
                     reps += 1
                     j += n
-                if reps >= 2 and _should_collapse(block, n, reps):
+                # A repeat that STARTS A NEW SENTENCE and is followed by more
+                # content is deliberate, not a Whisper stutter: dropping it
+                # leaves an orphaned fragment ("I don't know. I don't know what
+                # to do." -> "I don't know. What to do."). The terminal double
+                # ("Open the browser. Open the browser.") has nothing after it,
+                # so it still collapses.
+                last_tok = tokens[i + n - 1].rstrip("'\"”’)]}")
+                spans_sentence = last_tok.endswith((".", "!", "?")) and j < len(keys)
+                if reps >= 2 and not spans_sentence and _should_collapse(block, n, reps):
                     out_t.extend(tokens[i:i + n])  # keep one copy
                     out_k.extend(keys[i:i + n])
                     i = j
@@ -678,7 +686,7 @@ def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -
     # word capitalized + comma-separated ("Hello, World, Today."). Heuristic:
     # ≥4 commas AND the average gap between commas is ≤2 words AND a high
     # fraction of words are Capitalized → flatten the commas back to spaces.
-    if s.count(",") >= 3:
+    if s.count(",") >= 4:
         # Strip trailing terminator so the last cell is comparable.
         body = s.rstrip(".?!").rstrip()
         cells = [c.strip() for c in body.split(",") if c.strip()]
@@ -705,14 +713,26 @@ def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -
                     return False
             return len(stripped) <= 14
         storm_cells = sum(1 for c in cells if _is_storm_cell(c))
-        if cells and storm_cells / len(cells) >= 0.8:
+        # The decoder artifact always leaves at least one cell capitalized where
+        # prose would not be, that IS the "every word Capitalized" signature the
+        # docstring describes. An all-lowercase run of short cells is an ordinary
+        # list ("Add salt, pepper, cumin, paprika, oregano"), so leave it alone;
+        # without this test the heuristic ate real lists.
+        has_mid_cap = any(c[:1].isupper() for c in cells[1:])
+        if cells and has_mid_cap and storm_cells / len(cells) >= 0.8:
             s = _re.sub(r"\s*,\s*", " ", s)
             s = _re.sub(r"\s+", " ", s).strip()
             # Re-lowercase mid-sentence Title Case so the sentence cap below
             # is the only thing assigning capitalization. The negative lookahead
             # keeps internal-caps brands intact ("TikTok", not "tikTok").
+            # ...and keep allowlisted proper nouns capitalized: without the
+            # `protected` check this pass lowercased known names, so a genuine
+            # storm over "Sarah, Michael, Daniel" came out all lowercase.
             def _lower_mid(m: "_re.Match[str]") -> str:
-                return m.group(1) + m.group(2).lower()
+                word = m.group(2)
+                if protected is not None and word.lower() in protected:
+                    return m.group(1) + word
+                return m.group(1) + word.lower()
             s = _re.sub(r"(\s)([A-Z][a-z]+)(?![A-Za-z])", _lower_mid, s)
     # Collapse internal whitespace.
     s = _re.sub(r"\s+", " ", s)
@@ -764,8 +784,10 @@ def _polish_text(s: str, protected: "frozenset[str] | set[str] | None" = None) -
             return lead + opener + word          # iOS, mRNA, iPhone15
         return lead + opener + word[:1].upper() + word[1:]
     s = _SENT_RE.sub(_cap, s)
-    # Standalone "i" → "I".
-    s = _re.sub(r"\bi\b", "I", s)
+    # Standalone "i" → "I". Not the "i" of an abbreviation the _ABBREV table
+    # already protects ("i.e." must not become "I.e."), and not one that is
+    # part of a URL or path ("bit.ly/i").
+    s = _re.sub(r"(?<![\w./\\])i\b(?!\.\w)", "I", s)
     # Ensure end punctuation (skip for very short utterances and code-like content).
     if len(s) > 3 and s[-1] not in ".!?;:,\"')]}…":
         s += "."
@@ -1656,8 +1678,12 @@ class Cleaner:
         text = re.sub(r"\s+,", ",", text)
         text = re.sub(r",\s*,", ",", text)
         text = re.sub(r",\s*(?=[.!?;:])", "", text)
-        text = re.sub(r"(?m)^\s*,\s*", "", text)   # leading comma on a line
-        text = re.sub(r"(?m)\s*,\s*$", "", text)   # trailing comma on a line
+        # These two are line-local on purpose: `\s` spans newlines, so the old
+        # `(?m)\s*,\s*$` ate the blank line in "one,\n\ntwo" and merged the
+        # paragraphs, right before the guard that exists to reject a model
+        # reply for changing the paragraph count.
+        text = re.sub(r"(?m)^[ \t]*,[ \t]*", "", text)   # leading comma on a line
+        text = re.sub(r"(?m)[ \t]*,[ \t]*$", "", text)   # trailing comma on a line
         text = re.sub(r"[ \t]{2,}", " ", text)
         return text
 

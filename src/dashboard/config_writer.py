@@ -125,32 +125,52 @@ def _replace_scalar_value(text: str, parts: list[str], value: Any) -> str:
     """Locate `<indent_for_depth>key:` and replace its scalar value in-line.
 
     Walks line by line, tracking the indent at which each part of the dotted
-    path was matched. To match part[N], the current line's indent must be
-    DEEPER than the indent that matched part[N-1] (one nesting level in).
+    path was matched. To match part[N], the current line's indent must sit at
+    part[N-1]'s DIRECT-CHILD level, deeper than the parent, and no deeper than
+    the first child seen there, so a grandchild can't satisfy a shallower path.
     """
     lines = text.splitlines(keepends=True)
-    # indent_at_depth[N] = indent at which parts[N] was matched. None until
-    # matched. Root keys live at indent 0 so indent_at_depth[-1] starts as -1.
+    # matched_indents[d] = the indent at which parts[d-1] was matched, with a
+    # sentinel at [0] meaning "above the root". So the parent of the part we are
+    # currently looking for is always matched_indents[depth], NOT [depth - 1],
+    # which read one level too shallow and let a key from a nested sub-block
+    # satisfy a shallower path ("cleanup.enabled" resolving to
+    # "cleanup.learning.enabled" and silently rewriting the wrong setting).
     matched_indents: list[int] = [-1]  # sentinel: "above the root"
+    # child_indents[d] = the exact indent of DIRECT children at this depth,
+    # learned from the first line deeper than the parent (YAML guarantees the
+    # first nested line sits at the child level). Without pinning this, any
+    # grandchild also counts as "deeper than the parent" and can match first.
+    child_indents: list[int | None] = [None]
     depth = 0
     target_idx: int | None = None
 
     for i, raw_line in enumerate(lines):
         stripped = raw_line.lstrip(" ")
-        if not stripped or stripped.startswith("#"):
+        # NB: a blank line lstrips to "\n", which is truthy, so `not stripped`
+        # let blank lines through as indent-0 entries that closed every open
+        # block. (The old off-by-one indexing hid this by never popping at
+        # depth 1; with the indexing corrected it has to be handled properly.)
+        if not stripped.strip() or stripped.startswith("#"):
             continue
         indent = len(raw_line) - len(stripped)
         # If indent dropped to or below an already-matched ancestor's indent,
         # that ancestor's scope has ended — pop back.
-        while depth > 0 and indent <= matched_indents[depth - 1]:
+        while depth > 0 and indent <= matched_indents[depth]:
             matched_indents.pop()
+            child_indents.pop()
             depth -= 1
-        # To match the next part of the path, this line must be DEEPER than
-        # the indent at which the previous part was matched.
-        parent_indent = matched_indents[depth - 1] if depth > 0 else -1
         if depth >= len(parts):
             continue
+        # To match the next part of the path, this line must be DEEPER than
+        # the indent at which the previous part was matched...
+        parent_indent = matched_indents[depth]
         if indent <= parent_indent:
+            continue
+        # ...and at the direct-child level, not deeper.
+        if child_indents[depth] is None:
+            child_indents[depth] = indent
+        if indent != child_indents[depth]:
             continue
         m = re.match(rf"^{re.escape(parts[depth])}\s*:", stripped)
         if not m:
@@ -160,6 +180,7 @@ def _replace_scalar_value(text: str, parts: list[str], value: Any) -> str:
             break
         # Descend.
         matched_indents.append(indent)
+        child_indents.append(None)
         depth += 1
 
     if target_idx is None:

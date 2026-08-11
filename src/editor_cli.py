@@ -13,7 +13,7 @@ def main():
     db = args[0]
     arg = args[1]
     if arg == "queue":
-        open_review_queue(db)
+        open_review_queue(db, learn_casing=learn_casing)
     elif arg == "pin-last":
         pin_last_dialog(db)
     elif arg == "last":

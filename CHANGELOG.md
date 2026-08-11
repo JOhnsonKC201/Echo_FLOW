@@ -7,6 +7,78 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Fixed
+- **Silero VAD had never actually run.** `_is_voiced` handed the model a
+  2048-sample slice, but Silero v5 accepts exactly 512 samples at 16 kHz and
+  raises on anything else, and the bare `except` swallowed it, so every call
+  silently fell back to the crude RMS threshold while the model was still loaded
+  at each startup. In toggle mode that meant a room above the RMS floor (a fan,
+  an AC unit) never auto-stopped and ran to the 120 s cap, while a 1.5 s pause
+  mid-sentence cut the user off. The tail is now scored in 512-sample windows,
+  Silero's state is reset per window, and a genuine failure warns once instead of
+  going quiet forever.
+- **An unplugged mic wedged the hotkey until restart.** The toggle-mode worker
+  had no `try/finally`, so a PortAudio error left `_active` stuck at `True` and
+  every later hotkey press became a silent no-op.
+- **The veto did not abort in toggle mode.** Holding Ctrl+Shift on the way to
+  the re-paste combo logged "dictation aborted" and then transcribed and pasted
+  the audio anyway, because the recording thread never consulted the cancel.
+- **The tray icon lied about recording.** Every reject gate (no audio, under
+  400 ms, below the RMS floor) returned with the icon still red, and an empty
+  transcript left it spinning on "thinking". A sub-400 ms tap of Ctrl+Shift left
+  a red mic claiming to record the user indefinitely. Calibration also set a
+  bogus `"idle"` state that was never one of the four the tray accepts.
+- **`Recorder.start()` leaked the device on the error path.** If `stream.start()`
+  raised after the stream was opened, the handle was never closed, and
+  sounddevice defines no `__del__`, so each retry orphaned another device handle
+  and its callback thread for the life of the process.
+- **The comma-storm heuristic ate real comma lists.** It fired at 3 commas (the
+  docstring said 4) and never checked the Title-Case signature it documented, so
+  "Add salt, pepper, cumin, paprika, oregano." lost its commas. The re-lowercase
+  pass also ignored the proper-noun allowlist, so a genuine storm over real names
+  came out as "sarah michael daniel".
+- **Repeat collapsing deleted across sentence boundaries.** Punctuation was
+  stripped before comparison, so "I don't know. I don't know what to do." became
+  "I don't know. What to do." Whisper's actual stutter still collapses.
+- **The delete-first pass flattened bulleted lists.** `trim` preserved only
+  blank-line separators, so "- First item.\n- Second item." was joined into one
+  run-on line before the model ever saw it, and the markdown guard downstream
+  could not undo it.
+- **`_normalize_dashes` swallowed paragraph breaks.** `(?m)\s*,\s*$` crossed the
+  newline, merging "one,\n\ntwo" into one paragraph immediately before the guard
+  that exists to reject exactly that change.
+- **`i.e.` became `I.e.`** The standalone-"i" rule ran over abbreviations the
+  `_ABBREV` table already protects, and over URLs like `bit.ly/i`.
+- **Learned casings silently expired after 14 days.** The read path filtered at
+  `count >= 1` while decay deletes at `< 0.25`, so a casing taught once went dark
+  after a single half-life while still sitting in the table, and the word then
+  lost its protection from the de-Title-Case pass and got actively lowercased.
+- **`cleanup.casing.learn_from_edits: false` was ignored by the review queue.**
+  Edit Last honored it; saving from the review queue mined casings anyway.
+- **Settings → General could never save.** `dashboard.accent_color` had no key in
+  `config.yaml` and a colour input always submits, so every save failed on a key
+  the writer refuses to create, after already persisting the earlier fields, and
+  skipping the hot-reload that applies the language.
+- **The Style page could never be saved.** The two blank "add a profile" rows
+  were submitted as `style=""` and rejected the whole form.
+- **`config_writer` could rewrite the wrong setting.** The indent tracker read
+  one level too shallow and accepted any deeper line, so `cleanup.enabled`
+  resolved to `cleanup.learning.enabled` in a config that nests them that way.
+  Blank lines were also treated as indent-0 entries that closed every open block.
+- **The RAG backfill starved the dictation logger.** It held one write
+  transaction across every row, so dictations logged during a multi-thousand-row
+  backfill failed with "database is locked" and were lost. It now commits in
+  batches, with a longer busy timeout.
+- **`mobile.trust_for_rag` did nothing.** The documented, shipped config knob was
+  never read, so phone dictations stayed filtered out of RAG whatever it was set
+  to.
+- **The Outcomes "Mobile" filter showed desktop and mobile combined**, identical
+  to "All", because the source clause took a boolean that cannot express
+  "mobile only".
+- **Backlinks never worked for a long auto-titled note.** `_auto_title` marks
+  truncation with "…", a character in no source text, and cuts mid-word, so
+  neither the `LIKE` nor the word-boundary regex could ever match.
+- **Editing a dictation that no longer exists reported success.** The `UPDATE`
+  affected zero rows and the handler still redirected as if it had saved.
 - **Inbox triage flagged every correctly-written Chinese, Japanese, Hindi and
   Arabic dictation.** The terminator list was ASCII-only, so a sentence closing on
   `。`, `।` or `؟` read as "looks cut off"; and because CJK has no inter-word

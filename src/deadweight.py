@@ -92,6 +92,40 @@ def _is_dead(sentence: str, i: int, n: int) -> bool:
 
 
 def _trim_paragraph(para: str) -> tuple[str, list[str]]:
+    # Single newlines carry structure (bullet lists, dictated line breaks) and
+    # `trim` only restores BLANK-line separators, so a plain " ".join across
+    # them turned "- First item.\n- Second item." into one run-on line before
+    # the model was ever consulted. Keep the breaks; run the dead-sentence
+    # analysis across the whole block so position (i, n) still means what it
+    # meant when a block was a single line.
+    lines = para.split("\n")
+    if len(lines) == 1:
+        return _trim_line(para)
+    per_line = [_SENT_SPLIT.split(ln.strip()) if ln.strip() else [] for ln in lines]
+    flat = [s for group in per_line for s in group]
+    n = len(flat)
+    if n == 0:
+        return para, []
+    dead = {k for k, s in enumerate(flat) if _is_dead(s, k, n)}
+    if len(dead) == n:                       # never empty the whole block
+        dead.discard(max(range(n), key=lambda k: len(flat[k])))
+    out_lines: list[str] = []
+    cuts: list[str] = []
+    k = 0
+    for group in per_line:
+        if not group:
+            out_lines.append("")
+            continue
+        kept = []
+        for s in group:
+            (cuts if k in dead else kept).append(s)
+            k += 1
+        if kept:                             # a fully-dead line disappears
+            out_lines.append(" ".join(kept))
+    return "\n".join(out_lines), [c.strip() for c in cuts if c.strip()]
+
+
+def _trim_line(para: str) -> tuple[str, list[str]]:
     sents = _SENT_SPLIT.split(para.strip())
     n = len(sents)
     kept, cuts = [], []

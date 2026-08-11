@@ -30,8 +30,23 @@ def _word_count(s: str | None) -> int:
     return len(s.split())
 
 
-def _source_clause(include_mobile: bool) -> str:
-    """SQL fragment for filtering by source. WAL-safe (no parameters needed)."""
+def _source_clause(include_mobile: "bool | str") -> str:
+    """SQL fragment for filtering by source. WAL-safe (no parameters needed).
+
+    Accepts either the historical boolean (False = desktop only, True = every
+    source) or an explicit source name: "desktop" | "mobile" | "all". The
+    boolean has no way to say "mobile only", which is why the Outcomes page's
+    Mobile filter used to return desktop and mobile combined, byte-identical
+    to All. Every helper forwards its `include_mobile` argument here unchanged,
+    so passing a string through them selects a single source.
+    """
+    if isinstance(include_mobile, str):
+        source = include_mobile.lower()
+        if source == "mobile":
+            return " AND source = 'mobile'"
+        if source == "desktop":
+            return " AND source = 'desktop'"
+        return ""                      # "all"
     return "" if include_mobile else " AND source = 'desktop'"
 
 
@@ -388,7 +403,8 @@ def quality_trend(
     return rows
 
 
-def insights_payload(conn: sqlite3.Connection, *, include_mobile: bool = False) -> dict:
+def insights_payload(conn: sqlite3.Connection, *,
+                     include_mobile: "bool | str" = False) -> dict:
     """One call for the Insights route.
 
     `include_mobile` follows the same convention as the lower-level helpers:

@@ -313,6 +313,10 @@ class App:
                     k=lc.get("max_examples", 6),
                     min_similarity=rc.get("min_similarity", 0.35),
                     backfill_on_startup=rc.get("backfill_on_startup", True),
+                    # Documented in docs/MOBILE_BRIDGE.md and shipped in
+                    # config.yaml, but never actually read, phone dictations
+                    # stayed filtered out of RAG no matter what the user set.
+                    trust_mobile=bool((cfg.get("mobile") or {}).get("trust_for_rag", False)),
                 ),
             )
             threading.Thread(target=self.retriever.warm, daemon=True).start()
@@ -404,6 +408,9 @@ class App:
         self._record_thread: threading.Thread | None = None
         self._active = False
         self._paused = False
+        # Set by on_cancel_hold so the toggle-mode recording thread knows the
+        # user vetoed and must DROP its audio instead of dictating it.
+        self._cancelled = False
         # Active voice-calibration session (src/calibration.py), or None. When
         # set, _do_dictation feeds each utterance to it instead of pasting.
         self._calibration = None
@@ -641,12 +648,21 @@ class App:
 
         return terms[:80]
 
+    def _tray_idle(self):
+        """Return the tray to its resting state. Every path that leaves 'rec'
+        or 'thinking' must call this, or the icon lies about what the app is
+        doing, a red mic that says 'recording you' when it isn't."""
+        if self.tray:
+            self.tray.set_state("paused" if self._paused else "ok")
+
     def _do_dictation(self, audio, t_release: float | None = None):
         if self._paused:
             console.print("[dim]Paused — discarding audio.[/dim]")
+            self._tray_idle()
             return
         if audio.size == 0:
             console.print("[yellow]No audio captured.[/yellow]")
+            self._tray_idle()
             return
         # Bug fix: reject too-short clips before sending to Whisper.
         # Whisper hallucinates "Thank you" / "Thanks for watching" on silence.
@@ -654,6 +670,7 @@ class App:
         duration_ms = int(len(audio) / sr * 1000)
         if duration_ms < 400:
             console.print(f"[yellow]Too short ({duration_ms}ms) — ignored.[/yellow]")
+            self._tray_idle()
             return
         import numpy as np
         # Recorder.stop() already returns float32; skip the redundant copy.
@@ -661,6 +678,7 @@ class App:
         rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
         if rms < 0.003:
             console.print(f"[yellow]Too quiet (RMS={rms:.4f}) — likely silence, ignored.[/yellow]")
+            self._tray_idle()
             return
         if self.tray:
             self.tray.set_state("thinking")
@@ -672,6 +690,7 @@ class App:
         console.print(f"[green]Raw ({lang}, {t1-t0:.2f}s):[/green] {raw}")
         _log.info("raw (%s, %.2fs): %s", lang, t1 - t0, raw)
         if not raw.strip():
+            self._tray_idle()
             return
         # CALIBRATION MODE: a read-aloud session is active, so this utterance is
         # a spoken TARGET sentence, not a dictation. Feed the RAW transcript
@@ -683,8 +702,10 @@ class App:
             console.print(f"[cyan]Calibration: recorded sentence {idx} of "
                           f"{len(cal.sentences)}.[/cyan]")
             _log.info("calibration: recorded sentence %d/%d", idx, len(cal.sentences))
-            if self.tray:
-                self.tray.set_state("idle")
+            # "idle" was never one of the four states tray.set_state accepts
+            # (ok | paused | rec | thinking); it only rendered green by falling
+            # through the palette's default.
+            self._tray_idle()
             return
         # Whisper hallucination filter: very common phrases on silence/noise.
         # The set lives in `asr_artifacts` — calibration peels the same phrases
@@ -1386,6 +1407,10 @@ class App:
             if not self._active:
                 return
             self._active = False
+            # Toggle mode records on a worker thread that does not consult
+            # _active; without this flag it would happily dictate and paste the
+            # audio we just "aborted".
+            self._cancelled = True
         try:
             self.recorder.stop()   # discard whatever was captured
         except Exception as e:
@@ -1401,6 +1426,7 @@ class App:
             if self._active or self._paused:
                 return
             self._active = True
+            self._cancelled = False
         # M8: cache focused title at press time (see on_press_hold).
         try:
             self._press_title = self.injector.focused_title()
@@ -1411,11 +1437,26 @@ class App:
         if self.tray: self.tray.set_state("rec")
 
         def _run():
-            audio = self.recorder.record_until_silence(max_seconds=120.0)
-            with self._state_lock:
-                self._active = False
+            audio = None
+            try:
+                audio = self.recorder.record_until_silence(max_seconds=120.0)
+            except Exception as e:
+                # Without this, an unplugged mic (PortAudioError out of
+                # Recorder.start) killed the thread with _active still True,
+                # and every later hotkey press became a silent no-op until the
+                # daemon was restarted.
+                _log.exception("toggle recording failed: %s", e)
+                console.print(f"[red]Recording failed: {e}[/red]")
+            finally:
+                with self._state_lock:
+                    self._active = False
+                    cancelled = self._cancelled
+                    self._cancelled = False
             wsound.play("stop", self.cfg.get("sound"))
             console.print("[bold]■ stop[/bold]")
+            if audio is None or cancelled:
+                self._tray_idle()
+                return
             self._do_dictation(audio)
         threading.Thread(target=_run, daemon=True).start()
 
@@ -1688,9 +1729,15 @@ class App:
     def tray_open_review_queue(self):
         # Tk must run on its own main thread; subprocess gives it one.
         db = self.cfg["history"]["db_path"]
+        cmd = [sys.executable, "-m", "src.editor_cli", db, "queue"]
+        # Same end-to-end honoring of cleanup.casing.learn_from_edits as
+        # tray_edit_last: saving from the review queue used to mine casings
+        # into the canon even with learning switched off.
+        if not ((self.cfg.get("cleanup", {}).get("casing") or {}).get("learn_from_edits", True)):
+            cmd.append("--no-learn-casing")
         import subprocess
         subprocess.Popen(
-            [sys.executable, "-m", "src.editor_cli", db, "queue"],
+            cmd,
             cwd=str(Path(__file__).resolve().parent.parent),
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )

@@ -90,7 +90,9 @@ class Retriever:
         self._lock = threading.Lock()
 
     def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        # Generous busy timeout: the backfill writes in batches, so a dictation
+        # landing mid-batch should wait a moment rather than fail outright.
+        return sqlite3.connect(self.db_path, timeout=30.0)
 
     def warm(self) -> None:
         """Pre-load the model + backfill embeddings for old rows. Run in a thread."""
@@ -121,7 +123,7 @@ class Retriever:
                     len(rows), _model_name,
                 )
                 t0 = time.time()
-                for row_id, raw in rows:
+                for i, (row_id, raw) in enumerate(rows, 1):
                     try:
                         vec = embed(raw)
                         conn.execute(
@@ -130,6 +132,13 @@ class Retriever:
                         )
                     except Exception:
                         continue
+                    # Commit in batches. sqlite3 opens an implicit write
+                    # transaction on the first UPDATE and holds it until commit;
+                    # over a few thousand rows at ~10ms each that is a minute of
+                    # exclusive write lock, and every dictation logged in that
+                    # window died with "database is locked" and was lost.
+                    if i % 50 == 0:
+                        conn.commit()
                 conn.commit()
                 _log.info("backfill done in %.1fs", time.time() - t0)
         except Exception:

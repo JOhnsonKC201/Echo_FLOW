@@ -670,7 +670,13 @@ class PatternMiner:
             with closing(self._conn()) as conn:
                 _ensure_casing_table(conn)
                 rows = conn.execute(
-                    "SELECT word_lc, canonical FROM casing_canon WHERE count >= 1"
+                    # Floor must match decay_stale's DELETE floor (0.25). With
+                    # `>= 1`, an entry taught once (count = 1) went dark after a
+                    # single 14-day half-life while still sitting in the table:
+                    # "edit once, apply forever" quietly became "apply for two
+                    # weeks", and the word then lost its protection from the
+                    # de-Title-Case pass and got actively lowercased.
+                    "SELECT word_lc, canonical FROM casing_canon WHERE count >= 0.25"
                 ).fetchall()
         except Exception:
             return {}

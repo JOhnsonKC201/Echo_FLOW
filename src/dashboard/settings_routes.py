@@ -122,7 +122,12 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             ("hotkey.paste_last_combo", paste),
             ("whisper.language", lang),
         ]
-        if accent:
+        # An <input type="color"> ALWAYS submits a value, so this fired on every
+        # save. Only write when it actually changed, otherwise a config that
+        # predates the key fails the whole save (and, because the error return
+        # below precedes the hot-reload, silently skips applying the language).
+        cur_accent = str((app_ref.cfg.get("dashboard") or {}).get("accent_color", "") or "")
+        if accent and accent.lower() != cur_accent.lower():
             pairs.append(("dashboard.accent_color", accent.lower()))
         errs = _save_scalars(app_ref, pairs, log)
         if errs:

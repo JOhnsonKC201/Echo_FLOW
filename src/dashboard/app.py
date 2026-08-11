@@ -266,13 +266,17 @@ def make_app(app_ref, bound_port: int | None = None):
         new_cleaned = _req.form.get("cleaned_text", "")
         try:
             with history.conn:
-                history.conn.execute(
+                cur = history.conn.execute(
                     "UPDATE dictations SET cleaned_text = ? WHERE id = ?",
                     (new_cleaned, did),
                 )
         except Exception as e:
             _log.warning("inbox edit save failed: %s", e)
             return redirect(f"/inbox/{did}/edit?flash=" + _qp(f"Error: {e}"))
+        # A row that no longer exists updates nothing; reporting "saved" sent
+        # the user back to an anchor for a dictation that was never written.
+        if cur.rowcount == 0:
+            return redirect("/?flash=" + _qp("Dictation not found, nothing saved."))
         return redirect(f"/#d-{did}")
 
     def _insights_render(tab: str):
@@ -284,12 +288,6 @@ def make_app(app_ref, bound_port: int | None = None):
         if source not in ("desktop", "mobile", "all"):
             source = "desktop"
         include_mobile = source in ("mobile", "all")
-        # When "mobile" is selected we want mobile-only stats. The analytics
-        # helpers don't expose a mobile-only mode, so flip the source clause
-        # via a temporary monkey of the include_mobile flag is unsafe; instead
-        # we surface "all" semantics for include_mobile=True and rely on the
-        # active button to communicate the intent. For mobile-only, swap by
-        # rewriting clauses below.
         payload = {
             "wpm": 0, "total_words": 0, "streak": 0,
             "fixes": {"words_corrected": 0, "dictionary_fixes": 0, "total": 0},
@@ -306,16 +304,9 @@ def make_app(app_ref, bound_port: int | None = None):
         history = getattr(app_ref, "history", None)
         if history is not None and getattr(history, "conn", None) is not None:
             try:
-                if source == "mobile":
-                    # Mobile-only view: pull stats over a connection-scoped
-                    # subset by passing include_mobile=True and then zeroing
-                    # the desktop contribution isn't supported in pure SQL
-                    # without per-call source params. For now mobile==all so
-                    # the toggle still surfaces useful numbers even on a
-                    # phone-heavy install. Mark explicitly for the template.
-                    payload = analytics.insights_payload(history.conn, include_mobile=True)
-                else:
-                    payload = analytics.insights_payload(history.conn, include_mobile=include_mobile)
+                # Pass the source name, not the boolean: "mobile" now really
+                # means mobile-only instead of silently falling back to "all".
+                payload = analytics.insights_payload(history.conn, include_mobile=source)
                 outcomes["time_saved_ms"] = analytics.time_saved_ms(history.conn, days=30)
                 outcomes["acceptance"] = analytics.acceptance_rate(history.conn, days=7)
                 outcomes["latency"] = analytics.latency_percentiles(history.conn, n=200)
@@ -989,10 +980,18 @@ def make_app(app_ref, bound_port: int | None = None):
         # Form: parallel arrays style[] and matchers[] (one matcher line per profile).
         styles = _req.form.getlist("style")
         matchers_raw = _req.form.getlist("matchers")
+        # The page always renders two blank "add a profile" rows, so a normal
+        # save posts style="" twice. Passing those through made replace_all
+        # reject the whole submission, the page could never be saved at all.
+        if not styles:
+            # No style field whatsoever = malformed post, not "delete everything".
+            return redirect("/style?flash=Nothing submitted.")
         new_profiles = []
         for s, m in zip(styles, matchers_raw):
+            if not (s or "").strip():
+                continue
             matchers = [piece.strip() for piece in m.replace(",", "\n").splitlines() if piece.strip()]
-            new_profiles.append({"style": s, "matchers": matchers})
+            new_profiles.append({"style": s.strip(), "matchers": matchers})
         try:
             _sp.replace_all(history.conn, new_profiles)
             _maybe_reload_config(app_ref)
