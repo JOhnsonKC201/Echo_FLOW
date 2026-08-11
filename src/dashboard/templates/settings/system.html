@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings — System{% endblock %}
+{% block title %}Settings · System{% endblock %}
 {% block content %}
   {% set s_title = "System" %}
   {% set s_desc = "Audio cues, voice-activity detection, and silence timeout." %}
@@ -33,7 +33,7 @@
               <span class="set-sound-ico">🎙️</span>
               <div>
                 <div class="set-sound-name">Start listening</div>
-                <div class="set-sound-sub">The “I’m recording” cue — make this one unmistakable.</div>
+                <div class="set-sound-sub">The “I’m recording” cue. Make this one unmistakable.</div>
               </div>
             </div>
             <div class="set-sound-pick">
@@ -123,7 +123,7 @@
 
   <datalist id="snd-options">
     {% for c in sound_choices %}
-      <option value="{{ c.value }}">{{ c.label }}{% if not c.available %} — (not found on this PC){% endif %}</option>
+      <option value="{{ c.value }}">{{ c.label }}{% if not c.available %} (not found on this PC){% endif %}</option>
     {% endfor %}
   </datalist>
 

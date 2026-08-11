@@ -358,7 +358,7 @@ def _h_open_app(args: dict, ctx: ActionContext) -> tuple[bool, str]:
         if k in norm:
             try:
                 ctx.notify("Echo Flow",
-                           f"action_apps has a duplicate key “{k}” — using the first.",
+                           f"action_apps has a duplicate key “{k}”, using the first.",
                            "warning")
             except Exception:
                 pass
@@ -481,7 +481,7 @@ def _h_summarize_focused(args: dict, ctx: ActionContext) -> tuple[bool, str]:
         return (False, "The summarizer isn't available right now.")
     sys_prompt = (
         "You are a concise summarizer. Summarize the following document in "
-        "3–5 sentences. Output only the summary, no preamble."
+        "3 to 5 sentences. Output only the summary, no preamble."
     )
     try:
         # provider_override='ollama' pins local; system_prompt_override swaps
@@ -561,7 +561,7 @@ def _h_draft_event(args: dict, ctx: ActionContext) -> tuple[bool, str]:
             os.startfile(os.path.abspath(fname))  # type: ignore[attr-defined]
         except Exception:  # noqa: BLE001
             pass
-    note = " (defaulted to tomorrow 9am — couldn't parse a time)" if used_default else ""
+    note = " (defaulted to tomorrow 9am, could not parse a time)" if used_default else ""
     return (True,
             f"Drafted “{details[:40]}” for "
             f"{when.strftime('%a %b %d, %I:%M %p')}{note}.")
@@ -805,7 +805,7 @@ def list_supported(cfg: dict) -> list[str]:
         "Open a website  (“open <site>” / “go to <site>”)",
         "Search the web  (“search the web for <query>”)",
         "Summarize the focused document  (“summarize this pdf”)",
-        "Draft a calendar event  (“create an event …”) — local .ics draft",
+        "Draft a calendar event  (“create an event …”): local .ics draft",
         "Take a note  (“take a note that …”)",
         "Media controls  (“play”, “pause”, “next track”, “previous track”)",
         "Volume  (“volume up” / “volume down” / “mute”)",

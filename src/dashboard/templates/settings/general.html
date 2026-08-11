@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings — General{% endblock %}
+{% block title %}Settings · General{% endblock %}
 {% block content %}
   {% set s_title = "General" %}
   {% set s_desc = "Hotkeys, language, and appearance." %}
@@ -27,8 +27,8 @@
         <label class="set-field">
           <span class="set-field-label">Hotkey mode</span>
           <select name="hotkey_mode">
-            <option value="hold" {% if values.hotkey_mode == "hold" %}selected{% endif %}>Hold — push-to-talk</option>
-            <option value="toggle" {% if values.hotkey_mode == "toggle" %}selected{% endif %}>Toggle — tap, auto-stop on silence</option>
+            <option value="hold" {% if values.hotkey_mode == "hold" %}selected{% endif %}>Hold (push-to-talk)</option>
+            <option value="toggle" {% if values.hotkey_mode == "toggle" %}selected{% endif %}>Toggle (tap, auto-stop on silence)</option>
           </select>
           <span class="set-field-hint">Hold is safer (no accidental recordings); toggle is hands-free.</span>
         </label>
@@ -62,7 +62,7 @@
               {% endfor %}
             </select>
           </span>
-          <span class="set-field-hint">Pinning a language skips detection for a small speed win. <strong>Auto-detect</strong> picks it per dictation — needed for non-English or code-switching, at a small latency cost. Applies on your next dictation, no restart.</span>
+          <span class="set-field-hint">Pinning a language skips detection for a small speed win. <strong>Auto-detect</strong> picks it per dictation. Needed for non-English or code-switching, at a small latency cost. Applies on your next dictation, no restart.</span>
         </label>
       </div>
 

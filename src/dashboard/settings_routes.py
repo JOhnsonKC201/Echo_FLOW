@@ -271,7 +271,7 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         if errs:
             return redirect("/settings/vibe?flash=" + "; ".join(errs))
         maybe_reload_config(app_ref)
-        return redirect(f"/settings/vibe?flash=Saved — PE audience: {audience}, provider: {provider}.")
+        return redirect(f"/settings/vibe?flash=Saved. PE audience: {audience}, provider: {provider}.")
 
     # ---- Experimental ------------------------------------------------------
     @flask_app.get("/settings/experimental")
@@ -316,7 +316,7 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         if not prefix.isalpha() or len(prefix) < 3 or prefix.lower() in _BAD_PREFIXES:
             return redirect(
                 "/settings/experimental?flash=command prefix must be 3+ letters "
-                "and not a common English word — try 'computer' or 'jarvis'."
+                "and not a common English word. Try 'computer' or 'jarvis'."
             )
         # `experimental:` block may not exist in config.yaml on older installs;
         # we attempt the write and surface the error rather than silently
@@ -429,14 +429,14 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
     def settings_privacy_wipe():
         f = request.form
         if f.get("confirm", "").strip() != "WIPE":
-            return redirect('/settings/privacy?flash=Type "WIPE" in the confirm box to proceed.')
+            return redirect('/privacy?flash=Type "WIPE" in the confirm box to proceed.')
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
-            return redirect("/settings/privacy?flash=History disabled — nothing to wipe.")
+            return redirect("/privacy?flash=History is disabled, so there is nothing to wipe.")
         try:
             with history.conn:
                 history.conn.execute("DELETE FROM dictations")
-            return redirect("/settings/privacy?flash=Dictation history wiped.")
+            return redirect("/privacy?flash=Dictation history wiped.")
         except Exception as e:
             log.warning("privacy wipe failed: %s", e)
-            return redirect("/settings/privacy?flash=" + _qp(f"Error: {e}"))
+            return redirect("/privacy?flash=" + _qp(f"Error: {e}"))

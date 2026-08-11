@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Calibrate — Echo Flow{% endblock %}
+{% block title %}Calibrate · Echo Flow{% endblock %}
 {% block content %}
 <h1 class="welcome">Calibrate your voice</h1>
 <div class="muted small" style="margin-bottom: 14px;">
   Read a few known sentences aloud. Echo Flow compares what it heard to the real
-  text, pins the names it fumbled, and learns your recurring mishearings — so
-  recognition gets better for <em>your</em> voice, faster than waiting for it to
+  text, pins the names it fumbled, and learns your recurring mishearings.
+  Recognition gets better for <em>your</em> voice faster than waiting for it to
   learn on its own.
 </div>
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 
-{# ---- State 3: finished — show results + apply ---------------------------- #}
+{# ---- State 3: finished. Show results + apply ----------------------------- #}
 {% if pairs %}
   <div class="card">
     <h2>Results
@@ -21,7 +21,7 @@
     </h2>
     <div class="muted small" style="margin-bottom: 10px;">
       How each sentence came through. “Apply” pins the fumbled names to your
-      dictionary and teaches the corrections — nothing is changed until you do.
+      dictionary and teaches the corrections. Nothing changes until you press it.
     </div>
     <ul class="term-list" style="display: block;">
       {% for p in pairs %}
@@ -39,7 +39,7 @@
     </ul>
     <div style="display: flex; gap: 10px; margin-top: 14px;">
       <form method="post" action="/calibration/apply" class="inline">
-        <button type="submit" class="primary">Apply — pin terms &amp; learn corrections</button>
+        <button type="submit" class="primary">Apply: pin terms &amp; learn corrections</button>
       </form>
       <form method="post" action="/calibration/cancel" class="inline">
         <button type="submit" class="link-danger">Discard</button>
@@ -47,13 +47,13 @@
     </div>
   </div>
 
-{# ---- State 2: in progress — read the current sentence -------------------- #}
+{# ---- State 2: in progress. Read the current sentence --------------------- #}
 {% elif progress and not progress.done %}
   <div class="card">
     <h2>Reading <span class="muted small" id="cal-count">{{ progress.recorded }} of {{ progress.total }}</span></h2>
     <div class="muted small" style="margin-bottom: 12px;">
       Press <kbd>{{ hotkey }}</kbd>, read the sentence below out loud, then release.
-      It won’t paste anywhere — Echo Flow just listens.
+      It won’t paste anywhere. Echo Flow just listens.
     </div>
     <div id="cal-current" style="font-size: 1.35rem; line-height: 1.5; padding: 18px 20px;
          background: rgba(91,141,239,0.08); border-left: 3px solid #5b8def; border-radius: 4px;">
@@ -67,7 +67,7 @@
 
   <script>
     // Poll the session so the sentence advances the moment the daemon records
-    // one — no page reload between sentences; reload once when the run is done.
+    // one. No page reload between sentences; reload once when the run is done.
     (function () {
       var poll = setInterval(async function () {
         try {
@@ -80,9 +80,9 @@
           var cur = document.getElementById('cal-current');
           if (cur && s.current && cur.textContent.trim() !== s.current) {
             cur.textContent = s.current;
-            document.getElementById('cal-hint').textContent = 'Got it. Next sentence — read this one…';
+            document.getElementById('cal-hint').textContent = 'Got it. Read the next one…';
           }
-        } catch (e) { /* transient — keep polling */ }
+        } catch (e) { /* transient, keep polling */ }
       }, 1200);
     })();
   </script>

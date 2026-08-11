@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Commands — Echo Flow{% endblock %}
+{% block title %}Commands · Echo Flow{% endblock %}
 {% block content %}
 <h1 class="welcome">Commands</h1>
 <div class="muted small" style="margin: 4px 0 14px;">
-  Voice-fire keyboard shortcuts. Allowlist-only — voice can never type arbitrary text.
+  Voice-fire keyboard shortcuts. Allowlist-only: voice can never type arbitrary text.
 </div>
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
@@ -36,7 +36,7 @@
     <button type="submit" class="primary">Save prefix</button>
   </form>
   <div class="muted small" style="margin-top: 8px;">
-    3+ letters, no spaces, not a common English word. Takes effect on your next command — no restart.
+    3+ letters, no spaces, not a common English word. Takes effect on your next command. No restart needed.
   </div>
 </div>
 

@@ -244,6 +244,6 @@ def build_export_zip(cfg_path: Path, history_db: Path) -> bytes:
             "This zip is everything Echo Flow stores locally:\n"
             "  - config.yaml: your settings, hotkeys, snippets\n"
             "  - history.db: SQLite log of every dictation\n"
-            "Audio recordings (data/audio/) excluded — re-include manually.\n",
+            "Audio recordings (data/audio/) excluded. Re-include them manually.\n",
         )
     return buf.getvalue()

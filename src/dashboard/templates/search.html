@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Search — Echo Flow{% endblock %}
+{% block title %}Search · Echo Flow{% endblock %}
 {% block content %}
 <div class="search-hero">
   <h1 class="welcome">Search</h1>
   <div class="muted small search-lede">
-    Search everything you've ever dictated — by <strong>meaning</strong>, not keywords.
+    Search everything you've ever dictated by <strong>meaning</strong>, not keywords.
     Describe it however you remember it; matches don't need to share the same words.
   </div>
 </div>
@@ -46,7 +46,7 @@
     </svg>
     <div class="ph-title">Find anything you've said</div>
     <div class="ph-body">Type a phrase above. Echo Flow ranks your past dictations by semantic
-      similarity using the same on-device embeddings it uses to learn your style — nothing leaves
+      similarity using the same on-device embeddings it uses to learn your style. Nothing leaves
       your machine. Hit <strong>Find similar</strong> on any result to explore its neighbors.</div>
   </div>
 </div>
@@ -73,7 +73,7 @@
   function buildCard(r, i) {
     const li = document.createElement('li');
     li.className = 'inbox-card search-card';
-    // Staggered entrance — capped so a big result set doesn't ripple forever.
+    // Staggered entrance, capped so a big result set doesn't ripple forever.
     li.style.setProperty('--d', Math.min(i, 8) * 28 + 'ms');
 
     // Similarity bar
@@ -140,7 +140,7 @@
     return li;
   }
 
-  // Skeleton placeholders shown while a query is in flight — shaped like a
+  // Skeleton placeholders shown while a query is in flight. Shaped like a
   // real result card so the layout doesn't jump when results land.
   function renderSkeletons(n) {
     showSuggestions(false);
@@ -212,7 +212,7 @@
       empty.querySelector('.ph-title').textContent = 'Find anything you’ve said';
       empty.querySelector('.ph-body').innerHTML =
         'Type a phrase above. Echo Flow ranks your past dictations by semantic ' +
-        'similarity using the same on-device embeddings it uses to learn your style — nothing ' +
+        'similarity using the same on-device embeddings it uses to learn your style. Nothing ' +
         'leaves your machine. Hit <strong>Find similar</strong> on any result to explore its neighbors.';
       showSuggestions(true);
       return;
@@ -235,7 +235,7 @@
     }
   });
 
-  // Example chips — fill the box and run immediately.
+  // Example chips fill the box and run immediately.
   if (suggestions) {
     suggestions.addEventListener('click', function (e) {
       const chip = e.target.closest('.search-chip');
@@ -259,7 +259,7 @@
   });
   if (kbd) kbd.addEventListener('click', function () { input.focus(); });
 
-  // "Find similar" — re-query by the row's stored embedding.
+  // "Find similar": re-query by the row's stored embedding.
   results.addEventListener('click', function (e) {
     const btn = e.target.closest('.js-similar');
     if (!btn) return;

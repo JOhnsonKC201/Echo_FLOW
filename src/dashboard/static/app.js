@@ -1,4 +1,4 @@
-// Echo Flow dashboard — vanilla JS shared helpers.
+// Echo Flow dashboard: vanilla JS shared helpers.
 // Intentionally tiny: no framework, no build step, no CDN dependency.
 
 function $(sel, root) { return (root || document).querySelector(sel); }
@@ -16,7 +16,7 @@ async function fetchJson(url, init) {
   return r.json();
 }
 
-// Notifications badge — Phase 9 will replace the placeholder with real polling.
+// Notifications badge: Phase 9 will replace the placeholder with real polling.
 async function refreshBell() {
   const el = document.getElementById("bell-badge");
   if (!el) return;
@@ -87,7 +87,7 @@ function setupNavDrawer() {
   });
 }
 
-// Command palette (Cmd/Ctrl+K) — keyboard-first navigation. Entries are
+// Command palette (Cmd/Ctrl+K): keyboard-first navigation. Entries are
 // derived from the sidebar nav so the palette never drifts from the menu.
 function setupCommandPalette() {
   const root = document.getElementById("cmdk");
@@ -190,12 +190,12 @@ document.addEventListener("DOMContentLoaded", () => {
 window.EF = { $, $$, escapeHtml, fetchJson };
 
 /* ====================================================================== *
- * Premium motion layer — count-up stats, fill-from-zero meters, and a
+ * Premium motion layer: count-up stats, fill-from-zero meters, and a
  * sweeping WPM gauge. The CSS entrance (app.css) handles block reveals;
  * this handles the *values inside* them.
  *
  * Flash-free by construction: cards start at opacity 0 (CSS entrance), so
- * the one-frame "real value" never shows — by the time a card fades in,
+ * the one-frame "real value" never shows, by the time a card fades in,
  * its numbers already read 0 and its bars are empty, then they animate up.
  * Triggered on scroll-into-view so below-the-fold content animates too.
  * Fully skipped under prefers-reduced-motion (values stay at final state).

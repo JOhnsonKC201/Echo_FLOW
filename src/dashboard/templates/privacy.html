@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Privacy — Echo Flow{% endblock %}
+{% block title %}Privacy · Echo Flow{% endblock %}
 {% block content %}
 <h1 class="welcome">Privacy</h1>
 <div class="muted small" style="margin: 4px 0 14px;">
-  Echo Flow is local-only. The ledger below is computed live from your machine — verify it any time with <code>netstat -an</code>.
+  Echo Flow is local-only. The ledger below is computed live from your machine. Verify it any time with <code>netstat -an</code>.
 </div>
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
@@ -23,7 +23,7 @@
       <span class="k">Mobile bridge</span>
       <span class="v">
         {% if ledger.bridge.state == "lan" %}
-          <span class="num" style="color: var(--warn);">{{ ledger.bridge.bind_address }} (LAN — warn)</span>
+          <span class="num" style="color: var(--warn);">{{ ledger.bridge.bind_address }} (LAN, warn)</span>
         {% elif ledger.bridge.state == "loopback" %}
           <span class="num" style="color: var(--accent);">loopback only ({{ ledger.bridge.bind_address }})</span>
         {% else %}
@@ -56,7 +56,7 @@
       <span class="k">Self-update check</span>
       <span class="v">
         {% if ledger.update_check.enabled %}
-          <span class="num" style="color: var(--warn);">on — contacts {{ ledger.update_check.endpoint }} at launch</span>
+          <span class="num" style="color: var(--warn);">on: contacts {{ ledger.update_check.endpoint }} at launch</span>
         {% else %}
           <span class="num muted">off (no version check, no network)</span>
         {% endif %}

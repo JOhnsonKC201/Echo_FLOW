@@ -38,7 +38,7 @@
     <div class="muted">v{{ app_version }} dashboard</div>
   </div>
 </aside>
-{# Off-canvas drawer scrim — inert on desktop (CSS display:none), fades in
+{# Off-canvas drawer scrim. Inert on desktop (CSS display:none), fades in
    under the sidebar when body.nav-open on narrow viewports. #}
 <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 <header class="topbar">
@@ -68,7 +68,17 @@
       <span class="theme-icon" aria-hidden="true">{% if theme == 'light' %}☀{% else %}☾{% endif %}</span>
     </button>
     <a class="bell" href="/notifications" title="Notifications" aria-label="Notifications">
-      <span class="bell-glyph" aria-hidden="true">🔔</span>
+      {# Inline SVG, not the 🔔 emoji it used to be: an emoji renders in the
+         system's colour font, so it ignored the theme, sat next to the SVG
+         hamburger in a completely different visual language, and needed a
+         grayscale filter to look even close to right. #}
+      <svg class="bell-glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M18 8.5a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16s-2-1.5-2-6.5Z"
+              stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M13.7 19a2 2 0 0 1-3.4 0" stroke="currentColor"
+              stroke-width="1.7" stroke-linecap="round"/>
+      </svg>
       <span class="bell-badge" id="bell-badge" hidden>0</span>
     </a>
   </div>

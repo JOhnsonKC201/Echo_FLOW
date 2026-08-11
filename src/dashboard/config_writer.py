@@ -106,7 +106,7 @@ def set_scalar(path: Path, dotted_key: str, value: Any) -> None:
         for p in parts:
             if not isinstance(cur, dict) or p not in cur:
                 raise ConfigWriteError(
-                    f"post-edit key {dotted_key!r} missing — refusing to save"
+                    f"post-edit key {dotted_key!r} missing, refusing to save"
                 )
             cur = cur[p]
         # Verify the round-tripped VALUE matches, not just that the key exists,
@@ -116,7 +116,7 @@ def set_scalar(path: Path, dotted_key: str, value: Any) -> None:
             raise ConfigWriteError(
                 f"post-edit value for {dotted_key!r} is {cur!r} "
                 f"(type {type(cur).__name__}), expected {value!r} "
-                f"(type {type(value).__name__}) — refusing to save"
+                f"(type {type(value).__name__}), refusing to save"
             )
         _atomic_write(path, new_text)
 
@@ -203,7 +203,7 @@ def _replace_scalar_value(text: str, parts: list[str], value: Any) -> str:
     if body_stripped == "" or body_stripped.startswith(("|", ">")):
         # Block scalars or empty (meaning mapping/list on next line) — not supported.
         raise ConfigWriteError(
-            f"key {'.'.join(parts)!r} is not an inline scalar — "
+            f"key {'.'.join(parts)!r} is not an inline scalar, "
             "this writer only updates inline scalar values"
         )
     new_value = _render_scalar(value)

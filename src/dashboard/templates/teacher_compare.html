@@ -40,7 +40,7 @@
                 {% endif %}
               </td>
               <td>{{ r.raw_text }}</td>
-              <td>{{ r.user_cleaned or '—' }}</td>
+              <td>{{ r.user_cleaned or '(none)' }}</td>
               <td><strong>{{ r.teacher_cleaned }}</strong></td>
             </tr>
           {% endfor %}

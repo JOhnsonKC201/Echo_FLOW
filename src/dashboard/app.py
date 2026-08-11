@@ -425,7 +425,7 @@ def make_app(app_ref, bound_port: int | None = None):
         if not term:
             msg = "Empty term ignored."
         elif history is None or getattr(history, "conn", None) is None:
-            msg = "History disabled — cannot store terms."
+            msg = "History is disabled, so terms cannot be stored."
         else:
             try:
                 _vocab.add_term(history.conn, term)
@@ -531,7 +531,7 @@ def make_app(app_ref, bound_port: int | None = None):
         pm = getattr(app_ref, "pattern_miner", None)
         msg = ""
         if pm is None:
-            msg = "Learning disabled — cannot add casings."
+            msg = "Learning is disabled, so casings cannot be added."
         elif not word:
             msg = "Empty casing ignored."
         else:
@@ -556,7 +556,7 @@ def make_app(app_ref, bound_port: int | None = None):
         pm = getattr(app_ref, "pattern_miner", None)
         msg = ""
         if pm is None:
-            msg = "Learning disabled — no casings to remove."
+            msg = "Learning is disabled, so there are no casings to remove."
         elif not word:
             msg = "No casing specified."
         else:
@@ -586,9 +586,9 @@ def make_app(app_ref, bound_port: int | None = None):
         history = getattr(app_ref, "history", None)
         msg = ""
         if history is None or getattr(history, "conn", None) is None:
-            msg = "History disabled — cannot import."
+            msg = "History is disabled, so nothing can be imported."
         elif not raw.strip():
-            msg = "Nothing to import — paste or upload some terms first."
+            msg = "Nothing to import. Paste or upload some terms first."
             return redirect("/dictionary?flash=" + _qp(msg))
         else:
             try:
@@ -627,7 +627,7 @@ def make_app(app_ref, bound_port: int | None = None):
         expansion = _req.form.get("expansion", "").strip()
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
-            return redirect("/snippets?flash=History disabled — cannot save.")
+            return redirect("/snippets?flash=History is disabled, so nothing can be saved.")
         try:
             _sn.add_snippet(history.conn, code, expansion)
             _maybe_reload_config(app_ref)
@@ -674,9 +674,9 @@ def make_app(app_ref, bound_port: int | None = None):
         raw = _bulk.merge_text(paste, upload)
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
-            return redirect("/snippets?flash=History disabled — cannot import.")
+            return redirect("/snippets?flash=History is disabled, so nothing can be imported.")
         if not raw.strip():
-            return redirect("/snippets?flash=Nothing to import — paste or upload some snippets first.")
+            return redirect("/snippets?flash=Nothing to import. Paste or upload some snippets first.")
         # CSV files use `code,expansion` per line; coerce to the parser's
         # native format. Mixed input (some `=`, some `,`) is also supported.
         raw = _bulk.csv_to_snippet_lines(raw)
@@ -861,7 +861,7 @@ def make_app(app_ref, bound_port: int | None = None):
         from flask import request as _req, redirect
         conn = _myvoice_conn()
         if conn is None:
-            return redirect("/myvoice?flash=History disabled — cannot save.")
+            return redirect("/myvoice?flash=History is disabled, so nothing can be saved.")
         try:
             _vs.add_sample(conn, _req.form.get("content", ""))
             _vp.invalidate()
@@ -902,10 +902,10 @@ def make_app(app_ref, bound_port: int | None = None):
         from flask import request as _req, redirect
         conn = _myvoice_conn()
         if conn is None:
-            return redirect("/myvoice?flash=History disabled — cannot import.")
+            return redirect("/myvoice?flash=History is disabled, so nothing can be imported.")
         raw = _req.form.get("bulk", "")
         if not raw.strip():
-            return redirect("/myvoice?flash=Nothing to import — paste some writing first.")
+            return redirect("/myvoice?flash=Nothing to import. Paste some writing first.")
         r = _vs.bulk_import(conn, raw)
         _vp.invalidate()
         return redirect("/myvoice?flash=" + _qp(
@@ -976,7 +976,7 @@ def make_app(app_ref, bound_port: int | None = None):
         from flask import request as _req, redirect
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
-            return redirect("/style?flash=History disabled — cannot save.")
+            return redirect("/style?flash=History is disabled, so nothing can be saved.")
         # Form: parallel arrays style[] and matchers[] (one matcher line per profile).
         styles = _req.form.getlist("style")
         matchers_raw = _req.form.getlist("matchers")
@@ -1025,7 +1025,7 @@ def make_app(app_ref, bound_port: int | None = None):
         from flask import request as _req, redirect
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
-            return redirect("/transforms?flash=History disabled — cannot save.")
+            return redirect("/transforms?flash=History is disabled, so nothing can be saved.")
         name = _req.form.get("name", "").strip()
         prompt = _req.form.get("system_prompt", "").strip()
         hotkey = _req.form.get("hotkey", "").strip() or None
@@ -1221,7 +1221,7 @@ def make_app(app_ref, bound_port: int | None = None):
         except Exception as e:
             _log.warning("command prefix save failed: %s", e)
             return redirect(
-                "/commands?flash=Could not save — add an `experimental:` block "
+                "/commands?flash=Could not save. Add an `experimental:` block "
                 "with `command_prefix: computer` to config.yaml first."
             )
         # Mirror into the live (shared) daemon cfg so it applies on the next
@@ -1287,14 +1287,14 @@ def make_app(app_ref, bound_port: int | None = None):
         if kind not in ("app", "folder"):
             return _back("Unknown shortcut type.")
         if not _re.fullmatch(r"[a-z0-9][a-z0-9 '\-]{0,39}", name):
-            return _back("Name must be 1–40 letters/numbers "
+            return _back("Name must be 1 to 40 letters/numbers "
                          "(the word you'll say after “open”).")
         ok, msg = _validate_action_target(kind, target)
         if not ok:
             return _back(msg)
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
-            return _back("History disabled — can't save shortcuts.")
+            return _back("History is disabled, so shortcuts cannot be saved.")
         try:
             history.set_action_target(kind, name, target)
         except Exception as e:
@@ -1348,7 +1348,7 @@ def make_app(app_ref, bound_port: int | None = None):
             return redirect('/privacy?flash=Type "WIPE" in the confirm box to proceed.')
         history = getattr(app_ref, "history", None)
         if history is None or getattr(history, "conn", None) is None:
-            return redirect("/privacy?flash=History disabled — nothing to wipe.")
+            return redirect("/privacy?flash=History is disabled, so there is nothing to wipe.")
         try:
             with history.conn:
                 history.conn.execute("DELETE FROM dictations")

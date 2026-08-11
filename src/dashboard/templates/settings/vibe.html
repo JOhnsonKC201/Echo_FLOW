@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Settings — Vibe{% endblock %}
+{% block title %}Settings · Vibe{% endblock %}
 {% block content %}
   {% set s_title = "Vibe" %}
   {% set s_desc = "How Echo cleans up and rewrites what you say. Applies on the next dictation." %}
@@ -12,7 +12,7 @@
       <div class="set-group">
         <div class="set-group-head">
           <div class="set-group-title">Cleanup</div>
-          <div class="set-group-hint">Polish raw transcription — punctuation, capitalization, filler removal.</div>
+          <div class="set-group-hint">Polish raw transcription: punctuation, capitalization, filler removal.</div>
         </div>
 
         <label class="set-toggle">
@@ -26,7 +26,7 @@
           <input type="checkbox" name="skip_when_clean" value="1" {% if values.skip_when_clean %}checked{% endif %}>
           <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
           <span class="set-toggle-label">Fast-path skip
-            <small>Skip the LLM when Whisper output is already clean — saves 200–2000ms.</small></span>
+            <small>Skip the LLM when Whisper output is already clean. Saves 200 to 2000ms.</small></span>
         </label>
 
         <label class="set-toggle">
@@ -52,7 +52,7 @@
           <input type="checkbox" name="teacher_enabled" value="1" {% if values.teacher_enabled %}checked{% endif %}>
           <span class="set-toggle-track"><span class="set-toggle-thumb"></span></span>
           <span class="set-toggle-label">Enable teacher-model distillation
-            <small>Zero added latency — runs in a daemon thread.</small></span>
+            <small>Runs in a daemon thread, so it adds no latency.</small></span>
         </label>
 
         <label class="set-toggle">
@@ -88,15 +88,15 @@
               <option value="{{ sid }}" {% if values.prompt_engineering_style == sid %}selected{% endif %}>{{ slabel }}</option>
             {% endfor %}
           </select>
-          <span class="set-field-hint"><strong>Simple</strong> cleans your dictation into a faithful request. <strong>Reflection</strong> wraps it in Draft→Reflect→Refine steps; <strong>Chain-of-Thought</strong> in brainstorm→score→build steps — so the agent reasons before answering. The scaffolds expand the prompt on purpose but never invent requirements.</span>
+          <span class="set-field-hint"><strong>Simple</strong> cleans your dictation into a faithful request. <strong>Reflection</strong> wraps it in Draft→Reflect→Refine steps; <strong>Chain-of-Thought</strong> in brainstorm→score→build steps, so the agent reasons before answering. The scaffolds expand the prompt on purpose but never invent requirements.</span>
         </label>
 
         <label class="set-field">
           <span class="set-field-label">Target audience</span>
           <select name="prompt_engineering_audience">
-            <option value="claude-code" {% if values.prompt_engineering_audience == 'claude-code' %}selected{% endif %}>Claude Code — filesystem &amp; shell aware</option>
+            <option value="claude-code" {% if values.prompt_engineering_audience == 'claude-code' %}selected{% endif %}>Claude Code: filesystem &amp; shell aware</option>
             <option value="chatgpt"     {% if values.prompt_engineering_audience == 'chatgpt'     %}selected{% endif %}>ChatGPT / general chat</option>
-            <option value="generic"     {% if values.prompt_engineering_audience == 'generic'     %}selected{% endif %}>Generic — no framing</option>
+            <option value="generic"     {% if values.prompt_engineering_audience == 'generic'     %}selected{% endif %}>Generic: no framing</option>
           </select>
           <span class="set-field-hint">Tailors the rewrite to the receiving model.</span>
         </label>
@@ -104,8 +104,8 @@
         <label class="set-field">
           <span class="set-field-label">Provider</span>
           <select name="prompt_engineering_provider">
-            <option value="groq"      {% if values.prompt_engineering_provider == 'groq'      %}selected{% endif %}>Groq — cloud, fast (recommended)</option>
-            <option value="ollama"    {% if values.prompt_engineering_provider == 'ollama'    %}selected{% endif %}>Ollama — local</option>
+            <option value="groq"      {% if values.prompt_engineering_provider == 'groq'      %}selected{% endif %}>Groq: cloud, fast (recommended)</option>
+            <option value="ollama"    {% if values.prompt_engineering_provider == 'ollama'    %}selected{% endif %}>Ollama: local</option>
             <option value="anthropic" {% if values.prompt_engineering_provider == 'anthropic' %}selected{% endif %}>Anthropic</option>
           </select>
           <span class="set-field-hint">Groq needs <code>GROQ_API_KEY</code>; otherwise it silently falls back to Ollama.</span>

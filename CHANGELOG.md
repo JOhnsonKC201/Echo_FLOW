@@ -6,7 +6,44 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Changed
+- **Removed every long dash from the interface.** 141 em and en dashes across 27
+  templates, plus 31 in strings the user actually reads (flash messages, the
+  sound picker labels, the prompt-engineering style names, the Action Mode
+  labels). Each one was repunctuated by sentence rather than swapped for a
+  comma, because mechanical comma substitution produces splices and reads worse
+  than the dash it replaced. The app's own AI-tell detector (`src/aitells.py`)
+  now scores the rendered copy of every page at zero. All 22 routes verified
+  dash-free in their rendered HTML.
+- **Page titles use one separator.** They previously joined the page name and
+  the app name with a long dash; they now use `Page · Echo Flow` throughout.
+- **The notification bell is an inline SVG instead of an emoji.** A colour-font
+  emoji ignored the theme, needed a grayscale filter to look passable, and sat
+  next to an SVG hamburger in a different visual language.
+- **Inline `code` has one treatment.** Its chrome was attached to three scoped
+  selectors, so 21 of the 29 `<code>` elements in the templates rendered with no
+  background, border or padding. `settings/vibe.html` showed both treatments on
+  a single page.
+- **Deleted the dead `settings/privacy.html`.** `GET /settings/privacy` has
+  redirected to `/privacy` for some time, so the template was unreachable, and
+  the Settings nav still pointed at it. The wipe endpoint also redirected all
+  four of its outcomes, success included, to that dead URL, where the 302 to
+  `/privacy` dropped the query string: wiping your history reported nothing at
+  all. Those redirects now target the live page.
+
 ### Accessibility
+- **Focus indicators failed WCAG 1.4.11 everywhere.** There were four different
+  translucent accent rings (35%, 30%, 18%, 16%) which, being mixed toward
+  transparent, measured between 1.28:1 and 1.90:1 against their own background
+  against a 3:1 requirement, and the command palette's input set `outline: none`
+  with no replacement at all. There is now a single `--focus-ring` token, solid
+  accent at 6.87:1 on dark and 9.23:1 on light, with an inner band so the ring
+  stays visible on a primary button whose fill is the accent colour itself.
+- **`--muted` was tuned against one surface.** It hit exactly 4.53:1 on
+  `--panel` and dropped below AA on every lighter surface, including 4.24:1 for
+  the sidebar navigation labels. Both muted tokens were re-measured across the
+  sidebar, panel, background, card and chip surfaces and now clear 4.5:1 on all
+  five.
 - **The light theme was missing half its semantic colours.** `:root` is the dark
   palette and `[data-theme="light"]` overrode only 10 of the 14 colour tokens, so
   `--warn` and `--danger` kept dark-tuned values on a near-white surface. Every

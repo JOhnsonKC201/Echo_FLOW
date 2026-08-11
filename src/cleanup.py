@@ -507,9 +507,9 @@ SYSTEM_PROMPTS = {
 # one-shot cleanup (the original behaviour); the others EXPAND the dictation
 # into a reasoning scaffold (see the pe_* prompts above).
 PE_STYLES = {
-    "simple": "Simple — clean, faithful rewrite",
-    "reflection": "Reflection — Draft, Reflect, Refine",
-    "chain_of_thought": "Chain-of-Thought — brainstorm, score, build",
+    "simple": "Simple: clean, faithful rewrite",
+    "reflection": "Reflection: Draft, Reflect, Refine",
+    "chain_of_thought": "Chain-of-Thought: brainstorm, score, build",
 }
 
 

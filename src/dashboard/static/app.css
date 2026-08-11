@@ -1,12 +1,16 @@
-/* Echo Flow dashboard — dev-tool aesthetic (Linear / Fathom-adjacent).
+/* Echo Flow dashboard: dev-tool aesthetic (Linear / Fathom-adjacent).
  * Refined dark default + Inter UI / JetBrains Mono numerics. */
 :root {
   --bg: #0d1014;
   --panel: #161a21;
   --panel-2: #1d222b;
   --border: #23282f;
-  --muted: #7a8294;
-  --muted-2: #767e8e;       /* tertiary text — WCAG AA on --bg (4.67:1) */
+  /* Both were tuned against --panel alone, where --muted landed at exactly
+     4.53:1. Every surface lighter than --panel dropped it under AA, including
+     the sidebar (4.24:1), which is the app's primary navigation. Measured
+     across sidebar, panel, bg, card and chip, these clear 4.5:1 on all five. */
+  --muted: #868ea0;
+  --muted-2: #838b9b;       /* tertiary text, 4.72:1 worst case */
   --text: #e7e9ee;
   --accent: #3eaf6f;         /* tighter, less saturated than #58c77a */
   --accent-2: #4aa9ff;
@@ -22,6 +26,14 @@
   --diff-del: #3a1f1f;
   --sidebar-w: 224px;
   --topbar-h: 52px;
+  /* One focus ring for the whole app. There were four different translucent
+     accent rings (35%, 30%, 18%, 16%), and because they were mixed toward
+     transparent they landed between 1.28:1 and 1.90:1 against their own
+     background, under the 3:1 that WCAG 1.4.11 asks of a focus indicator.
+     Solid accent is 6.87:1 on dark and 9.23:1 on light. The inner --bg band
+     is what keeps the ring visible on a primary button, whose fill is the
+     accent colour itself. */
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   --font-ui: "Inter", "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", "JetBrains Mono Variable", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
 }
@@ -31,7 +43,7 @@
   --panel-2: #f1ece0;
   --border: #e6e0d0;
   --muted: #6c6a62;
-  --muted-2: #726f5d;       /* tertiary text — WCAG AA on --bg (4.64:1) */
+  --muted-2: #726f5d;       /* tertiary text: WCAG AA on --bg (4.64:1) */
   --text: #1c2230;
   --accent: #1a4a3a;
   --accent-2: #1f6fd0;
@@ -56,6 +68,15 @@ html, body {
 }
 a { color: inherit; text-decoration: none; }
 code, kbd, .mono, .num, .ts { font-family: var(--font-mono); }
+/* Inline code chrome was attached to three scoped selectors (.kv-table code,
+   .set-sound-foot code, .set-group-hint code), so 21 of the 29 <code> elements
+   in the templates fell through to font-family only. settings/vibe.html showed
+   both treatments on one page. One rule, applied everywhere. */
+code {
+  background: color-mix(in oklab, var(--panel-2) 80%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  padding: 2px 7px; border-radius: 6px; font-size: 12px;
+}
 /* Humanize highlights set only a background. The UA default `mark { color:
    MarkText }` is black, which on the dark theme's translucent highlight lands
    at ~1.6:1, the spans the feature exists to point at were the least readable
@@ -137,7 +158,10 @@ button[aria-disabled="true"]:hover, .btn[aria-disabled="true"]:hover {
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
 .bell { position: relative; padding: 6px; border-radius: 8px; }
 .bell:hover { background: var(--panel); }
-.bell-glyph { filter: grayscale(0.2); }
+/* now an inline SVG, so it inherits the theme's text colour like every other
+   icon instead of being a fixed-palette emoji */
+.bell-glyph { width: 18px; height: 18px; display: block; color: var(--muted); }
+.bell:hover .bell-glyph, .bell:focus-visible .bell-glyph { color: var(--text); }
 .bell-badge {
   position: absolute; top: 2px; right: 2px;
   background: var(--accent); color: var(--bg);
@@ -211,7 +235,7 @@ button:hover, .btn:hover {
 button:active, .btn:active { transform: translateY(1px); }
 button:focus-visible, .btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent);
+  box-shadow: var(--focus-ring);
 }
 button.primary, .btn.primary {
   background: linear-gradient(180deg,
@@ -374,7 +398,7 @@ input[type="text"]:focus, input[type="number"]:focus, input[type="search"]:focus
 select:focus {
   outline: none;
   border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+  box-shadow: var(--focus-ring);
 }
 .row-form input[type="text"]::placeholder, textarea::placeholder { color: var(--muted-2); }
 textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; }
@@ -401,12 +425,6 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .kv-table tbody tr { transition: background .12s ease; }
 .kv-table tbody tr:hover { background: color-mix(in oklab, var(--accent) 4%, transparent); }
 .kv-table tbody tr:last-child td { border-bottom: 0; }
-.kv-table code {
-  background: color-mix(in oklab, var(--panel-2) 80%, transparent);
-  padding: 2px 7px; border-radius: 5px;
-  font-family: var(--font-mono); font-size: 12px;
-  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
-}
 .style-row { display: grid; grid-template-columns: 200px 1fr; gap: 14px; align-items: start; padding: 12px 0; border-top: 1px solid var(--border); }
 .style-row:first-of-type { border-top: none; }
 .style-row label { display: block; }
@@ -458,7 +476,7 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .pad-title:hover { color: var(--accent); }
 .pad-preview { color: var(--muted); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow: hidden; max-height: 36px; }
 
-/* Phase 8 — Settings panels */
+/* Phase 8: Settings panels */
 .settings-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 10px 0 22px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
 .settings-tab {
   padding: 9px 14px; border-radius: 10px 10px 0 0; margin-bottom: -1px;
@@ -485,7 +503,7 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .settings-form input[type=text]:focus, .settings-form input[type=number]:focus, .settings-form select:focus {
   outline: none;
   border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+  box-shadow: var(--focus-ring);
 }
 .settings-form .actions { display: flex; gap: 8px; margin-top: 8px; }
 /* --warn is always defined, so the #c0392b fallback here never applied and the
@@ -518,7 +536,7 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .kv .k { color: var(--muted); }
 .kv .v { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
 
-/* Phase 9 — Notifications inbox */
+/* Phase 9: Notifications inbox */
 .card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .card-header h2 { margin: 0; }
 .inline { display: inline; }
@@ -561,7 +579,7 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 /* (.bell-badge already styled above near .bell) */
 .empty { color: var(--muted); font-size: 13px; padding: 18px 0; text-align: center; }
 
-/* Snippets — inline edit + filter */
+/* Snippets: inline edit + filter */
 .filter-input {
   background: var(--bg); border: 1px solid var(--border); color: var(--text);
   border-radius: 8px; padding: 6px 10px; font-size: 13px; min-width: 220px;
@@ -591,12 +609,12 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .link-action.primary-link { color: var(--accent); font-weight: 600; }
 .empty-filter { padding: 14px 0 2px; text-align: center; }
 
-/* Phase 10 — Bulk import file upload */
+/* Phase 10: Bulk import file upload */
 .upload-row { display: flex; align-items: center; gap: 14px; margin-top: 10px; flex-wrap: wrap; }
 .file-pick { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .file-pick input[type=file] { color: var(--muted); font-size: 12px; }
 
-/* Phase 11 — Theme toggle + onboarding */
+/* Phase 11: Theme toggle + onboarding */
 .theme-toggle { background: transparent; border: 1px solid var(--border); color: var(--muted); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
 .theme-toggle:hover { color: var(--text); border-color: var(--accent); }
 .theme-icon { font-size: 16px; line-height: 1; }
@@ -610,11 +628,11 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .onboard-steps p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .onboard-steps kbd { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text); }
 
-/* Phase 13 — Command Mode list */
+/* Phase 13: Command Mode list */
 .cmd-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .cmd-list li { padding: 4px 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--text); }
 
-/* Senior rewrite PR-A — typography + diff + inbox surface */
+/* Senior rewrite PR-A: typography + diff + inbox surface */
 .topbar { font-family: var(--font-ui); }
 .crumb { font-weight: 600; font-size: 13px; letter-spacing: -0.01em; }
 h1, h2, h3 { letter-spacing: -0.01em; }
@@ -692,13 +710,13 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .spark-area { fill: var(--accent); opacity: 0.12; }
 
 /* ---------------------------------------------------------------------- *
- * Premium global polish — applies everywhere (Dictionary, Snippets, Style,
+ * Premium global polish: applies everywhere (Dictionary, Snippets, Style,
  * Transforms, Commands, Scratchpad, Privacy, Settings, Notifications, …).
  * Senior-grade refinements: ambient depth, refined typography, polished
  * topbar, refined scrollbars, accessible focus, reduced-motion respect.
  * ---------------------------------------------------------------------- */
 
-/* Ambient backdrop — a very-low-opacity radial glow behind the content,
+/* Ambient backdrop: a very-low-opacity radial glow behind the content,
    anchored top-center. Hardly visible at a glance, gives the page depth. */
 body {
   background:
@@ -716,7 +734,7 @@ body {
     var(--bg);
 }
 
-/* Topbar — near-solid, sits above the ambient backdrop. A nearly-opaque
+/* Topbar: near-solid, sits above the ambient backdrop. A nearly-opaque
    background reads the same as the old frosted bar but skips backdrop-filter
    blur, which is re-evaluated on every repaint and is the most expensive
    per-frame effect on weak GPUs. */
@@ -726,7 +744,7 @@ body {
   z-index: 5;
 }
 
-/* Sidebar — slightly recessed, matches frosted topbar */
+/* Sidebar: slightly recessed, matches frosted topbar */
 .sidebar {
   background: color-mix(in oklab, var(--panel-2) 90%, var(--bg));
   border-right: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
@@ -742,7 +760,7 @@ body {
   -webkit-text-fill-color: transparent; color: transparent;
 }
 
-/* Refined scrollbars — subtle, themed */
+/* Refined scrollbars: subtle, themed */
 * {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklab, var(--muted) 35%, transparent) transparent;
@@ -760,16 +778,16 @@ body {
 }
 *::-webkit-scrollbar-track { background: transparent; }
 
-/* Selection — branded */
+/* Selection: branded */
 ::selection {
   background: color-mix(in oklab, var(--accent) 32%, transparent);
   color: var(--text);
 }
 
-/* Universal focus ring — accessible, unmistakable, never ugly */
+/* Universal focus ring: accessible, unmistakable, never ugly */
 a:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent);
+  box-shadow: var(--focus-ring);
   border-radius: 6px;
 }
 
@@ -834,7 +852,7 @@ a:focus-visible {
 }
 .bell:active { transform: scale(.95); }
 
-/* Code/keyboard-style inline elements — premium mono */
+/* Code/keyboard-style inline elements, premium mono */
 kbd {
   display: inline-block;
   padding: 2px 7px;
@@ -847,7 +865,7 @@ kbd {
   box-shadow: 0 1px 0 color-mix(in oklab, var(--text) 4%, transparent) inset;
 }
 
-/* Respect prefers-reduced-motion — disable our motion globally */
+/* Respect prefers-reduced-motion: disable our motion globally */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -858,7 +876,7 @@ kbd {
 }
 
 /* ====================================================================== *
- * Settings — premium pass. Scoped to [data-page="settings"] so it lifts
+ * Settings: premium pass. Scoped to [data-page="settings"] so it lifts
  * every panel (General / System / Vibe / Experimental) at once without
  * rewiring each field. Mirrors the Outcomes masthead + card language for a
  * consistent, hand-built feel.
@@ -971,7 +989,7 @@ kbd {
 .set-field-label { font-size: 13px; font-weight: 600; color: var(--text); }
 .set-field-hint { font-size: 12px; color: var(--muted); line-height: 1.5; }
 
-/* Inputs — premium, with a clean focus ring (replaces the flat boxes). */
+/* Inputs: premium, with a clean focus ring (replaces the flat boxes). */
 [data-page="settings"] .settings-form input[type=text],
 [data-page="settings"] .settings-form input[type=number],
 [data-page="settings"] .settings-form select,
@@ -992,7 +1010,7 @@ kbd {
 [data-page="settings"] .settings-form select:focus {
   outline: none;
   border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+  box-shadow: var(--focus-ring);
 }
 
 /* Number input with a trailing unit affix (e.g. "ms"). */
@@ -1030,7 +1048,7 @@ kbd {
 }
 .set-toggle input:checked + .set-toggle-track .set-toggle-thumb { transform: translateX(16px); }
 .set-toggle input:focus-visible + .set-toggle-track {
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent);
+  box-shadow: var(--focus-ring);
 }
 .set-toggle-label { font-size: 13.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
 .set-toggle-label small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: var(--muted); }
@@ -1062,14 +1080,8 @@ kbd {
   padding: 11px 16px; font-size: 12px; color: var(--muted); line-height: 1.55;
   background: color-mix(in oklab, var(--panel-2) 40%, transparent);
 }
-.set-sound-foot code, .set-group-hint code {
-  font-family: var(--font-mono); font-size: 11.5px;
-  background: color-mix(in oklab, var(--panel-2) 80%, transparent);
-  padding: 1px 6px; border-radius: 5px;
-  border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
-}
 
-/* Test button — compact, with a "playing" pulse. */
+/* Test button: compact, with a "playing" pulse. */
 .set-test { padding: 9px 14px; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .set-test-ico { font-size: 9px; transition: transform .15s ease; }
 .set-test.playing {
@@ -1118,7 +1130,7 @@ kbd {
 .set-accent-hex:focus {
   outline: none;
   border-color: color-mix(in oklab, var(--accent) 60%, var(--border)) !important;
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 16%, transparent);
+  box-shadow: var(--focus-ring);
 }
 .set-accent-reset { padding: 8px 14px; font-size: 12.5px; }
 
@@ -1133,7 +1145,7 @@ kbd {
   padding-right: 34px;
 }
 
-/* Entrance — masthead, tabs, card rise once. */
+/* Entrance: masthead, tabs, card rise once. */
 @keyframes set-rise { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
 .set-masthead { animation: set-rise .45s cubic-bezier(.2,.7,.2,1) both; }
 [data-page="settings"] .settings-tabs { animation: set-rise .45s cubic-bezier(.2,.7,.2,1) both; animation-delay: .05s; }
@@ -1145,13 +1157,13 @@ kbd {
 }
 
 /* ====================================================================== *
- * Premium motion layer — global, flash-free entrance choreography.
+ * Premium motion layer: global, flash-free entrance choreography.
  *
  * The entrance is gated on `html.ef-js`, a class set by a tiny inline
  * <head> script BEFORE first paint. That guarantees two things:
- *   1. JS users never see a flicker — blocks start hidden (the keyframe's
+ *   1. JS users never see a flicker, blocks start hidden (the keyframe's
  *      `from` state held by `both` fill) and rise in on a staggered cadence.
- *   2. No-JS users get the full page instantly — the gate never matches,
+ *   2. No-JS users get the full page instantly, the gate never matches,
  *      so nothing is ever left hidden.
  * Honors prefers-reduced-motion (only runs under `no-preference`).
  * The dynamic pieces (count-up numbers, fill-from-zero bars, gauge sweep,
@@ -1190,7 +1202,7 @@ kbd {
   html.ef-js .wf-grid-bot > *:nth-child(2) { animation-delay: .36s; }
 }
 
-/* Theme switch — a soft cross-fade of the whole page via the View
+/* Theme switch: a soft cross-fade of the whole page via the View
    Transitions API (progressive enhancement; ignored where unsupported). */
 @media (prefers-reduced-motion: no-preference) {
   ::view-transition-old(root),
@@ -1198,7 +1210,7 @@ kbd {
 }
 
 /* ====================================================================== *
- * Search — semantic search over dictation history. Reuses .inbox-card /
+ * Search: semantic search over dictation history. Reuses .inbox-card /
  * .inbox-meta / .inbox-text / .btn; adds the query field + similarity bar.
  * ====================================================================== */
 .search-box { padding: 10px; }
@@ -1215,7 +1227,7 @@ kbd {
 .search-field:focus {
   outline: none;
   border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+  box-shadow: var(--focus-ring);
 }
 .search-status { min-height: 14px; margin: 8px 2px 0; }
 #search-context { font-style: italic; }
@@ -1252,7 +1264,7 @@ kbd {
   pointer-events: none; transition: color .15s ease;
 }
 .search-wrap:focus-within .search-ico { color: var(--accent); }
-/* "/" focus hint — inherits the global <kbd> chrome; fades out once focused. */
+/* "/" focus hint: inherits the global <kbd> chrome; fades out once focused. */
 .search-kbd {
   position: absolute; right: 11px; top: 50%; transform: translateY(-50%);
   cursor: pointer; opacity: .65; transition: opacity .15s ease;
@@ -1295,13 +1307,13 @@ kbd {
 }
 
 /* ====================================================================== *
- * Responsive layout — phones & tablets.
+ * Responsive layout: phones & tablets.
  *
  * The shell is a fixed sidebar + fixed topbar + margin-offset content
  * (see .sidebar / .topbar / .content above). Below the tablet breakpoint
  * the sidebar becomes an off-canvas drawer toggled by the topbar
  * hamburger (body.nav-open, wired in app.js), and the multi-column grids
- * collapse to a single column. Tokens only — no new colors.
+ * collapse to a single column. Tokens only, no new colors.
  * ====================================================================== */
 
 /* Hamburger + scrim are inert at desktop widths. */
@@ -1384,7 +1396,7 @@ kbd {
 }
 
 /* ====================================================================== *
- * Skeleton loading placeholders — token-driven shimmer.
+ * Skeleton loading placeholders: token-driven shimmer.
  *
  * A .skeleton element is a muted block with a light sweep; compose the
  * .skel-* line/bar shapes inside an .inbox-card to mimic a real result
@@ -1420,7 +1432,7 @@ kbd {
 .skel-card .inbox-actions .skel-line { height: 26px; width: 64px; margin: 0; border-radius: 9px; }
 
 /* ====================================================================== *
- * Command palette (Cmd/Ctrl+K) — fast keyboard navigation overlay.
+ * Command palette (Cmd/Ctrl+K): fast keyboard navigation overlay.
  *
  * Populated at runtime from the sidebar nav items (app.js), so it stays
  * in sync with the navigation automatically. Pop animation respects
@@ -1450,6 +1462,9 @@ kbd {
   background: transparent; color: var(--text);
   padding: 15px 18px; font-size: 15px; font-family: inherit; outline: none;
 }
+/* The only focusable control in the command palette, and it set outline:none
+   with nothing in its place. Inset so the ring stays inside the dialog edge. */
+.cmdk-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .cmdk-input::placeholder { color: var(--muted-2); }
 .cmdk-list {
   list-style: none; margin: 0; padding: 6px;

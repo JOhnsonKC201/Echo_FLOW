@@ -100,16 +100,16 @@ def preview(alias: str) -> bool:
 # always resolve. Users can still type any other WAV name or full path.
 SOUND_CHOICES: list[tuple[str, str]] = [
     # Crisp "listening" cues — good for the start sound.
-    ("Speech On.wav",               "Speech On — crisp “listening” chirp"),
-    ("Speech Sleep.wav",            "Speech Sleep — soft down-note"),
-    ("Speech Off.wav",              "Speech Off — “stopped listening”"),
-    ("Speech Misrecognition.wav",   "Speech Misrecognition — gentle buzz"),
-    ("ding.wav",                    "Ding — short, neutral"),
-    ("chimes.wav",                  "Chimes — soft three-note"),
-    ("chord.wav",                   "Chord — mellow"),
-    ("notify.wav",                  "Notify — classic"),
-    ("tada.wav",                    "Tada — celebratory"),
-    ("recycle.wav",                 "Recycle — quick swoosh"),
+    ("Speech On.wav",               "Speech On: crisp “listening” chirp"),
+    ("Speech Sleep.wav",            "Speech Sleep: soft down-note"),
+    ("Speech Off.wav",              "Speech Off: “stopped listening”"),
+    ("Speech Misrecognition.wav",   "Speech Misrecognition: gentle buzz"),
+    ("ding.wav",                    "Ding: short, neutral"),
+    ("chimes.wav",                  "Chimes: soft three-note"),
+    ("chord.wav",                   "Chord: mellow"),
+    ("notify.wav",                  "Notify: classic"),
+    ("tada.wav",                    "Tada: celebratory"),
+    ("recycle.wav",                 "Recycle: quick swoosh"),
     # Modern Windows 10/11 notification set.
     ("Windows Notify.wav",                  "Windows Notify"),
     ("Windows Notify System Generic.wav",   "Windows Notify (generic)"),
@@ -117,7 +117,7 @@ SOUND_CHOICES: list[tuple[str, str]] = [
     ("Windows Notify Calendar.wav",         "Windows Notify (calendar)"),
     ("Windows Notify Email.wav",            "Windows Notify (email)"),
     ("Windows Foreground.wav",              "Windows Foreground"),
-    ("Windows Background.wav",              "Windows Background — subtle"),
+    ("Windows Background.wav",              "Windows Background: subtle"),
     ("Windows Ding.wav",                    "Windows Ding"),
     ("Windows Default.wav",                 "Windows Default"),
     ("Windows Message Nudge.wav",           "Windows Nudge"),
@@ -134,7 +134,7 @@ SOUND_CHOICES: list[tuple[str, str]] = [
     ("SystemNotification",  "System Notification (alias)"),
     ("SystemExclamation",   "System Exclamation (alias)"),
     ("SystemDefault",       "System Default (alias)"),
-    ("SystemHand",          "System Hand — error (alias)"),
+    ("SystemHand",          "System Hand: error (alias)"),
     ("SystemQuestion",      "System Question (alias)"),
 ]
 

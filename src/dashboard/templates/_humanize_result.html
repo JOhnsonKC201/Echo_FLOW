@@ -24,13 +24,13 @@
 
     {% if hz_tells_after > 0 %}
       <div class="muted small" style="margin-top: 8px;">
-        The highlighted bits still read a little AI — hit <em>Try again</em> or turn up the strength.
+        The highlighted bits still read a little AI. Hit <em>Try again</em> or turn up the strength.
       </div>
     {% endif %}
 
     {% if hz_protected > 0 %}
       <div class="muted small" style="margin-top: 8px;">
-        🔒 Kept {{ hz_protected }} exact —
+        🔒 Kept {{ hz_protected }} exact:
         the sentences carrying your numbers, citations, quotes, and code were
         held as you wrote them, never sent to the model.
       </div>
@@ -43,12 +43,12 @@
       </div>
     {% elif hz_reason == 'unchanged' %}
       <div class="muted small" style="margin-top: 10px;">
-        The model left this essentially unchanged — it already reads cleanly.
+        The model left this essentially unchanged. It already reads cleanly.
       </div>
     {% elif hz_reason == 'kept' %}
       <div class="muted small" style="margin-top: 10px;">
         Couldn’t produce a clean rewrite this time, so your original is shown.
-        Dense or technical text is the usual cause — try a shorter passage or a
+        Dense or technical text is the usual cause. Try a shorter passage or a
         stronger <a href="/settings/experimental">humanizer model</a>.
       </div>
     {% endif %}
@@ -59,7 +59,7 @@
       <details style="margin-top: 12px;">
         <summary class="muted small" style="cursor: pointer;">
           Cut {{ hz_cut|length }} empty sentence{{ 's' if hz_cut|length != 1 else '' }}
-          <span class="muted">— filler that did no work</span>
+          <span class="muted">(filler that did no work)</span>
         </summary>
         <div class="muted small" style="margin-top: 6px;">
           {% for s in hz_cut %}
@@ -71,17 +71,17 @@
 
     {# The "specify" pass: vague claims a humanizer can't fill in for you. The
        absence of a real detail is the biggest AI tell, and no rewrite can invent
-       it — so it asks. #}
+       it, so it asks. #}
     {% if hz_diagnostics %}
       <div class="small" style="margin-top: 12px; padding: 10px 12px;
            border-left: 3px solid #5b8def; background: rgba(91,141,239,0.07);">
-        <div style="margin-bottom: 6px;"><strong>Reads empty — make these concrete.</strong>
+        <div style="margin-bottom: 6px;"><strong>Reads empty. Make these concrete.</strong>
           <span class="muted">Your text makes claims with no specifics, and a humanizer can’t invent the facts. Add a real number, name, or source for each:</span>
         </div>
         {% for d in hz_diagnostics %}
           <div style="margin: 2px 0;">
             <span style="background: rgba(91,141,239,0.16); border-radius: 2px; padding: 0 3px;">{{ d.phrase }}</span>
-            <span class="muted">— {{ d.question }}</span>
+            <span class="muted">({{ d.question }})</span>
           </div>
         {% endfor %}
         {% if hz_diag_segments %}
@@ -102,7 +102,7 @@
     {% if hz_diff %}
     <details style="margin-top: 14px;" open>
       <summary class="muted small" style="cursor: pointer;">
-        Compare — original vs humanized
+        Compare: original vs humanized
       </summary>
       <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px;">
         <div style="flex: 1 1 280px; min-width: 0;">
@@ -120,7 +120,7 @@
 
     <details style="margin-top: 8px;">
       <summary class="muted small" style="cursor: pointer;">
-        What changed <span class="muted">— {{ '%.0f'|format(hz_changed * 100) }}% of the words</span>
+        What changed <span class="muted">({{ '%.0f'|format(hz_changed * 100) }}% of the words)</span>
       </summary>
       <div style="white-space: pre-wrap; line-height: 1.7; margin-top: 8px;">
         {%- for op, chunk in hz_diff -%}
@@ -136,7 +136,7 @@
     {% if hz_tells_before > 0 %}
     <details style="margin-top: 8px;">
       <summary class="muted small" style="cursor: pointer;">
-        AI tells in your paste <span class="muted">— {{ hz_tells_before }} highlighted</span>
+        AI tells in your paste <span class="muted">({{ hz_tells_before }} highlighted)</span>
       </summary>
       <div style="white-space: pre-wrap; line-height: 1.7; margin-top: 8px;" class="muted small">
         {%- for is_tell, chunk in hz_in_segments -%}

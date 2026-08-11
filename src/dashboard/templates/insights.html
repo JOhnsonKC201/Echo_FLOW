@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Outcomes — Echo Flow{% endblock %}
+{% block title %}Outcomes · Echo Flow{% endblock %}
 {% block content %}
 
 <style>
-  /* Premium Outcomes — scoped to this page so it can't leak. */
+  /* Premium Outcomes: scoped to this page so it can't leak. */
 
   .wf-header { display:flex; align-items:baseline; justify-content:space-between;
                margin: 4px 0 18px; position:relative; }
@@ -85,7 +85,7 @@
                  background: linear-gradient(90deg, transparent, var(--border) 12%,
                     var(--border) 88%, transparent); }
 
-  /* WPM gauge — gradient arc + tick scale + centered overlay. */
+  /* WPM gauge: gradient arc + tick scale + centered overlay. */
   .wf-gauge      { margin-top: 18px; display:flex; flex-direction:column;
                    align-items:center; gap:10px; }
   .wf-gauge-wrap { position:relative; width:200px; height:120px; }
@@ -138,7 +138,7 @@
                          color-mix(in oklab, var(--accent) 60%, var(--accent-2)));
                       transition: width .8s cubic-bezier(.2,.7,.2,1); }
 
-  /* Fixes card — "how Echo edits" trimmed/added split + micro-stat footer.
+  /* Fixes card: "how Echo edits" trimmed/added split + micro-stat footer.
      Reuses the page's accent/panel tokens so it stays on-theme in both modes. */
   .wf-split      { margin-top: 18px; }
   .wf-split-head { display:flex; align-items:baseline; justify-content:space-between;
@@ -205,7 +205,7 @@
   .wf-microstat .k { margin-top: 3px; font-size: 10px; font-weight:600;
                    letter-spacing:.07em; text-transform:uppercase; color: var(--muted); }
 
-  /* Source toggle (Desktop / Mobile) — segmented control */
+  /* Source toggle (Desktop / Mobile): segmented control */
   .wf-source { position:relative; display:grid; grid-auto-flow:column;
                grid-auto-columns: 1fr; gap:0; margin-top: 18px;
                background: color-mix(in oklab, var(--panel-2) 80%, transparent);
@@ -229,7 +229,7 @@
   .wf-context { color: var(--muted); font-size: 13px; line-height: 1.55;
                 margin-top: 12px; }
 
-  /* Flex-column hero cards — lets sparse cards balance their whitespace instead
+  /* Flex-column hero cards let sparse cards balance their whitespace instead
      of leaving a void where they stretch to match a denser neighbour. The gauge
      recentres in its card; the source toggle anchors to the bottom edge. */
   .wf-card-col { display:flex; flex-direction:column; }
@@ -239,7 +239,7 @@
                  gap:7px; }
   .wf-source svg { width:15px; height:15px; flex:none; }
 
-  /* Milestone meter — gives the Total-words number a goal and fills the card on
+  /* Milestone meter: gives the Total-words number a goal and fills the card on
      the same recessed-groove language as the app/usage bars. */
   .wf-milestone { margin-top: 18px; }
   .wf-milestone-head { display:flex; align-items:baseline; justify-content:space-between;
@@ -313,14 +313,14 @@
                           0 1px 4px -1px color-mix(in oklab, var(--accent) 55%, transparent),
                           0 0 10px -2px color-mix(in oklab, var(--accent) 50%, transparent);
                        transition: width .8s cubic-bezier(.2,.7,.2,1); }
-  /* slow, subtle light-sweep glint — premium without being noisy */
+  /* slow, subtle light-sweep glint: premium without being noisy */
   .wf-app-bar > span::after { content:""; position:absolute; inset:0;
                        background: linear-gradient(115deg, transparent 32%,
                           color-mix(in oklab, white 55%, transparent) 50%, transparent 68%);
                        transform: translateX(-130%);
                        animation: wf-sheen 1.8s ease-out .3s 1 both; }
 
-  /* Heatmap — premium GitHub-style. */
+  /* Heatmap: premium GitHub-style. */
   .wf-heat-head { display:flex; align-items:baseline; justify-content:space-between;
                   margin-bottom: 18px; gap: 12px; flex-wrap:wrap; }
   .wf-heat-streak { font-size: 24px; font-weight:700; letter-spacing:-0.02em;
@@ -365,10 +365,10 @@
                           var(--accent));
                         border: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
 
-  /* Quality trajectory — premium sparkline.
+  /* Quality trajectory: premium sparkline.
      The plot stretches to full width (preserveAspectRatio="none"), so every
      stroke uses vector-effect:non-scaling-stroke to keep an even weight and the
-     SVG clips to its own box — no filters bleed past the card. End/start points
+     SVG clips to its own box, so no filters bleed past the card. End/start points
      are CSS pucks layered over the plot so they stay perfectly round despite the
      horizontal stretch. */
   .wf-trajectory { padding: 4px 0 0; }
@@ -384,7 +384,7 @@
                              vector-effect: non-scaling-stroke; }
   .wf-trajectory .grid { stroke: color-mix(in oklab, var(--border) 65%, transparent);
                          stroke-width: 1; vector-effect: non-scaling-stroke; }
-  /* Endpoint pucks — round regardless of the plot's horizontal stretch. */
+  /* Endpoint pucks: round regardless of the plot's horizontal stretch. */
   .wf-traj-marker { position:absolute; border-radius:50%; pointer-events:none; }
   .wf-traj-marker.start { left:0; width:8px; height:8px;
                           transform: translate(-50%,-50%);
@@ -398,7 +398,7 @@
 
   .wf-empty { color: var(--muted); font-size: 12.5px; padding: 14px 0; }
 
-  /* Unified in-card heading — replaces ad-hoc inline font-sizes so every card
+  /* Unified in-card heading: replaces ad-hoc inline font-sizes so every card
      titles itself the same way (accent tick + consistent weight). */
   .wf-card-title { font-size: 15px; font-weight: 650; letter-spacing: -0.01em;
                    color: var(--text); display:flex; align-items:center; gap:9px; }
@@ -407,7 +407,7 @@
                       color-mix(in oklab, var(--accent) 55%, var(--accent-2)));
                    box-shadow: 0 0 8px -1px color-mix(in oklab, var(--accent) 55%, transparent); }
 
-  /* Voice tab — ranked rows with meters. Replaces the .wf-app-pct reuse that
+  /* Voice tab: ranked rows with meters. Replaces the .wf-app-pct reuse that
      had no CSS, so pace/phrase lists rendered as raw unstyled numbers. */
   .wf-rank { display:flex; flex-direction:column; gap:4px; margin-top: 16px; }
   .wf-rank-row { display:grid; grid-template-columns: 28px 1fr auto;
@@ -452,13 +452,13 @@
                    transform: translateX(-130%);
                    animation: wf-sheen 1.8s ease-out .3s 1 both; }
 
-  /* Shared SVG gradient stops — a luminous green ramp used by the WPM gauge
+  /* Shared SVG gradient stops: a luminous green ramp used by the WPM gauge
      and the quality-trajectory line. Kept green-only so they stay cohesive
      with the page's sage palette instead of fading through the secondary blue. */
   .gstop-0 { stop-color: color-mix(in oklab, var(--accent) 55%, white); }
   .gstop-1 { stop-color: var(--accent); }
 
-  /* Graceful degradation on narrow windows — the dashboard is desktop-first,
+  /* Graceful degradation on narrow windows. The dashboard is desktop-first,
      but a single column keeps the cards readable if the window is shrunk. */
   @media (max-width: 940px) {
     .wf-grid-top, .wf-grid-bot { grid-template-columns: 1fr; }
@@ -635,19 +635,19 @@
     <div class="wf-divider"></div>
     <div class="wf-context">
       {% if total_words and total_words >= 50000 %}
-        You've written a novella — {{ ((total_words or 0) // 50000) }}× over.
+        You've written a novella, {{ ((total_words or 0) // 50000) }}× over.
       {% elif total_words and total_words >= 10000 %}
         That's an instruction manual.
       {% elif total_words and total_words >= 2000 %}
         That's a long-form essay.
       {% elif total_words and total_words > 0 %}
-        Keep going — milestones unlock at 2k, 10k, 50k words.
+        Keep going. Milestones unlock at 2k, 10k, 50k words.
       {% else %}
         Dictate to see your words add up.
       {% endif %}
     </div>
 
-    {# Milestone meter — find the next unreached tier and how far we've climbed
+    {# Milestone meter: find the next unreached tier and how far we've climbed
        toward it from the previous one. Gives the card a goal and a clean fill. #}
     {% set _tw = total_words or 0 %}
     {% set _ns = namespace(next=0, prev=0, label='') %}
@@ -771,7 +771,7 @@
   </div>
 </div>
 
-{# ===== Quality trajectory — kept compact below the hero ===== #}
+{# ===== Quality trajectory: kept compact below the hero ===== #}
 {% if trend and trend|length >= 2 %}
   <div class="wf-card wf-trajectory" style="margin-top:16px;">
     <div class="wf-heat-head" style="margin-bottom:6px;">
@@ -786,7 +786,7 @@
     {% set tmin = (trend | min) | round | int %}
     {% set span = tmax - tmin if (tmax - tmin) >= 12 else 12 %}
     {# Pad the value range by ~22% each side so peaks and troughs never kiss the
-       card edges — gives the line room to breathe. #}
+       card edges, giving the line room to breathe. #}
     {% set pad = (span * 22) // 100 %}{% set pad = pad if pad >= 6 else 6 %}
     {% set ymin = tmin - pad %}
     {% set ymax = tmax + pad %}
@@ -797,7 +797,7 @@
       {% if delta > 0 %}<span style="color:var(--accent)">↑ {{ delta }}</span>
       {% elif delta < 0 %}<span style="color:var(--danger)">↓ {{ delta * -1 }}</span>
       {% else %}<span style="color:var(--muted)">· steady</span>{% endif %}
-      <span class="muted small" style="margin-left:8px;">range {{ tmin }}–{{ tmax }}</span>
+      <span class="muted small" style="margin-left:8px;">range {{ tmin }} to {{ tmax }}</span>
     </div>
     {% set median = (tmin + tmax) // 2 %}
     {% set median_y = h - ((median - ymin) / (ymax - ymin)) * h %}
@@ -897,13 +897,13 @@
         {% endfor %}
       </div>
     {% else %}
-      <div class="wf-empty">No phrases yet — keep dictating.</div>
+      <div class="wf-empty">No phrases yet. Keep dictating.</div>
     {% endif %}
   </div>
 </div>
 {% else %}
 <div class="wf-card">
-  <div class="wf-empty">No voice data yet — dictate a few times and check back.</div>
+  <div class="wf-empty">No voice data yet. Dictate a few times and check back.</div>
 </div>
 {% endif %}
 {% endif %}{# end if tab == 'voice' #}

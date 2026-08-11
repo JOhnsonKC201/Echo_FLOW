@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Inbox — Echo Flow{% endblock %}
+{% block title %}Inbox · Echo Flow{% endblock %}
 {% block content %}
 <div class="home-grid">
   <section class="home-main">
@@ -10,7 +10,7 @@
     {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
     {% if cleanup_degraded %}
       <div class="flash" role="alert">
-        ⚠ Cleanup LLM is unreachable — dictations get deterministic polish only
+        ⚠ Cleanup LLM is unreachable. Dictations get deterministic polish only
         (casing + punctuation, no grammar). Start Ollama or set GROQ_API_KEY,
         then restart Echo Flow.
       </div>
@@ -104,7 +104,7 @@
            an untouched row already counts as accepted (analytics.acceptance_rate).
            Opened when there is nothing flagged, so the page is never just a stub. #}
         <details class="inbox-quiet"{% if not needs %} open{% endif %}>
-          <summary class="diff-toggle">Looks fine ({{ fine|length }}) - nothing to do</summary>
+          <summary class="diff-toggle">Looks fine ({{ fine|length }}), nothing to do</summary>
           <ul class="inbox-list">
             {% for it in fine %}{{ inbox_card(it) }}{% endfor %}
           </ul>

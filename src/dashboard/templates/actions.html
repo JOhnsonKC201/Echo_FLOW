@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Actions — Echo Flow{% endblock %}
+{% block title %}Actions · Echo Flow{% endblock %}
 {% block content %}
 <h1 class="welcome">Actions</h1>
 <div class="muted small" style="margin: 4px 0 14px;">
-  Semantic voice actions — open an app or site, search the web, summarize the
+  Semantic voice actions: open an app or site, search the web, summarize the
   focused document, draft a calendar event, take a note. Allowlist-only and
   never destructive: nothing here deletes, sends, or pays.
 </div>
@@ -29,7 +29,7 @@
 <span class="diff-add">{{ data.prefix }}, open downloads folder</span>    → opens a folder
 <span class="diff-add">{{ data.prefix }}, take a note that …</span>      → saves a note</pre>
   {% else %}
-  <div class="sub">Just say it — no prefix needed. A shortcut fires only when it
+  <div class="sub">Just say it. No prefix needed. A shortcut fires only when it
     resolves; anything else types normally. Examples:</div>
   <pre class="transform-prompt"><span class="diff-add">open spotify</span>            → launches a configured app
 <span class="diff-add">go to github.com</span>        → opens a site
@@ -90,7 +90,7 @@
       </tbody>
     </table>
   {% else %}
-    <div class="muted small">None yet — add one below.</div>
+    <div class="muted small">None yet. Add one below.</div>
   {% endif %}
   <div class="hairline"></div>
   <form method="post" action="/actions/save" class="row-form" style="gap:8px;">
@@ -124,7 +124,7 @@
         recovered live: <span class="num">{{ data.intent.recovered.ok }}/{{ data.intent.recovered.n }}</span> ok
       {%- endif %}
       {%- if not (data.intent.hits.n or data.intent.shadow.n or data.intent.recovered.n) %}
-        no measurements yet — speak a few prefixed commands to collect them
+        no measurements yet. Speak a few prefixed commands to collect them
       {%- endif %}.
     </div>
   {% endif %}
@@ -148,7 +148,7 @@
               {% if r.label %}<span class="muted small">({{ r.label }})</span>{% endif %}
             </td>
             <td>
-              {% if r.is_shadow %}<span class="muted">—</span>
+              {% if r.is_shadow %}<span class="muted">·</span>
               {% elif r.ok %}<span style="color: var(--accent);">✓</span>
               {% else %}<span style="color: var(--danger);">✕</span>{% endif %}
             </td>
