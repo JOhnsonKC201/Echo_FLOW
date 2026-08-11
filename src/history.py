@@ -361,12 +361,26 @@ class History:
                 cleaned_text TEXT NOT NULL,
                 humanized_text TEXT NOT NULL,
                 similarity REAL,
-                reviewed INTEGER NOT NULL DEFAULT 0
+                reviewed INTEGER NOT NULL DEFAULT 0,
+                outcome TEXT
             )
         """)
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_humanize_shadow_ts ON humanize_shadow(ts)"
         )
+        # outcome (added 2026-08-10) records EVERY shadow evaluation, not just
+        # the accepted ones. Without it the table only ever received rewrites
+        # that were both accepted and different, so "changed" counted over its
+        # own selection criteria and the dashboard read "N of N" forever, for
+        # every user, no matter how the humanize pass was actually performing.
+        # NULL means a legacy row written before this column existed.
+        try:
+            hs_cols = [r[1] for r in
+                       self.conn.execute("PRAGMA table_info(humanize_shadow)").fetchall()]
+            if "outcome" not in hs_cols:
+                self.conn.execute("ALTER TABLE humanize_shadow ADD COLUMN outcome TEXT")
+        except Exception:
+            pass
         # vocab_suggestions — content words Whisper transcribed with LOW
         # confidence. Surfaced in the dashboard so the user can pin the correct
         # spelling to custom_vocabulary (which feeds the decoder bias), making
@@ -507,14 +521,22 @@ class History:
     def log_humanize_shadow(self, *, cleaned_text: str, humanized_text: str,
                             style: str | None = None,
                             dictation_id: int | None = None,
-                            similarity: float | None = None) -> int:
-        """Append what the humanize pass WOULD have produced (shadow mode).
-        Best-effort — the caller swallows errors, mirroring log_action."""
+                            similarity: float | None = None,
+                            outcome: str = "changed") -> int:
+        """Append the result of one shadow evaluation. Best-effort, the caller
+        swallows errors, mirroring log_action.
+
+        `outcome` is "changed" (accepted a real rewrite), "unchanged" (the model
+        returned the input), or "rejected" (a guard refused it). Non-"changed"
+        outcomes are logged with EMPTY text: the denominator needs them, the
+        review list does not, and there is no reason to store a second copy of
+        prose that already lives in `dictations`.
+        """
         cur = self.conn.execute(
             "INSERT INTO humanize_shadow(ts, dictation_id, style, cleaned_text, "
-            "humanized_text, similarity, reviewed) VALUES (?,?,?,?,?,?,0)",
+            "humanized_text, similarity, reviewed, outcome) VALUES (?,?,?,?,?,?,0,?)",
             (time.time(), dictation_id, style, cleaned_text or "",
-             humanized_text or "", similarity),
+             humanized_text or "", similarity, outcome),
         )
         self.conn.commit()
         return cur.lastrowid or 0
@@ -555,9 +577,13 @@ class History:
             pass
 
     def recent_humanize_shadow(self, limit: int = 50) -> list[dict]:
+        # Only rows that carry a rewrite to review. Rejected/unchanged
+        # evaluations are recorded for the stats denominator with empty text
+        # and would render as blank cards here.
         rows = self.conn.execute(
             "SELECT id, ts, dictation_id, style, cleaned_text, humanized_text, "
-            "similarity, reviewed FROM humanize_shadow ORDER BY id DESC LIMIT ?",
+            "similarity, reviewed FROM humanize_shadow "
+            "WHERE humanized_text != '' ORDER BY id DESC LIMIT ?",
             (int(limit),),
         ).fetchall()
         return [
@@ -574,14 +600,19 @@ class History:
         dashboard shows before the user trusts 'on'. Never raises."""
         cutoff = time.time() - max(0, int(days)) * 86400
         rows = self.conn.execute(
-            "SELECT cleaned_text, humanized_text, similarity FROM humanize_shadow "
+            "SELECT cleaned_text, humanized_text, similarity, outcome FROM humanize_shadow "
             "WHERE ts >= ?", (cutoff,),
         ).fetchall()
         n = changed = 0
         sims: list[float] = []
-        for cleaned, humanized, sim in rows:
+        for cleaned, humanized, sim, outcome in rows:
             n += 1
-            if (humanized or "") != (cleaned or ""):
+            # Legacy rows (outcome IS NULL) predate the column and only exist
+            # when a rewrite was accepted, so fall back to comparing the text.
+            if outcome is None:
+                if (humanized or "") != (cleaned or ""):
+                    changed += 1
+            elif outcome == "changed":
                 changed += 1
             if sim is not None:
                 sims.append(float(sim))

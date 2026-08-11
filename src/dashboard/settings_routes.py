@@ -19,6 +19,17 @@ from ..cleanup import PE_STYLES as _PE_STYLES
 
 # ---- Helpers ----------------------------------------------------------------
 
+# The designed per-theme accents from static/app.css (:root vs [data-theme].
+# base.html only emits an --accent override when accent_color is non-empty, so
+# "" means "let each theme use its own", which is what keeps the light theme's
+# darker accent (and its AA contrast against white button labels) intact.
+_THEME_ACCENTS = {"light": "#1a4a3a", "dark": "#3eaf6f"}
+
+
+def _theme_accent(dashboard_cfg: dict) -> str:
+    theme = str((dashboard_cfg or {}).get("theme", "light") or "light").lower()
+    return _THEME_ACCENTS.get(theme, _THEME_ACCENTS["light"])
+
 def _checkbox(form, name: str) -> bool:
     return form.get(name) == "1"
 
@@ -95,7 +106,11 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             "hotkey_mode": hk.get("mode", "hold"),
             "paste_last_combo": hk.get("paste_last_combo", "") or "",
             "whisper_language": "auto" if lang_val in (None, "", "auto") else lang_val,
-            "accent_color": dc.get("accent_color", "#3eaf6f"),
+            # An <input type="color"> cannot render "no override", so show the
+            # accent the active theme would use anyway. Paired with the
+            # save-only-if-changed check below, submitting the form untouched
+            # stays a no-op instead of freezing one theme's accent onto both.
+            "accent_color": dc.get("accent_color") or _theme_accent(dc),
         })
 
     @flask_app.post("/settings/general/save")
@@ -126,7 +141,8 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         # save. Only write when it actually changed, otherwise a config that
         # predates the key fails the whole save (and, because the error return
         # below precedes the hot-reload, silently skips applying the language).
-        cur_accent = str((app_ref.cfg.get("dashboard") or {}).get("accent_color", "") or "")
+        _dc = app_ref.cfg.get("dashboard") or {}
+        cur_accent = str(_dc.get("accent_color") or "") or _theme_accent(_dc)
         if accent and accent.lower() != cur_accent.lower():
             pairs.append(("dashboard.accent_color", accent.lower()))
         errs = _save_scalars(app_ref, pairs, log)

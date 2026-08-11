@@ -26,7 +26,14 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 
-Write-Host "[nuitka] Compiling app.py -> dist_nuitka\ ..." -ForegroundColor Cyan
+# src/__init__.py is the single source of truth for the version (see
+# installer/RELEASING.md). This used to be hardcoded to 0.1.0.0, so every
+# Nuitka binary shipped stamped with a version four releases stale.
+$version = & $python -c "import src; print(src.__version__)"
+if (-not $version) { Write-Error "Could not read src.__version__"; exit 1 }
+$fileVersion = "$($version.Trim()).0"
+
+Write-Host "[nuitka] Compiling app.py -> dist_nuitka\ (v$fileVersion) ..." -ForegroundColor Cyan
 
 & $python -m nuitka `
     --standalone `
@@ -37,8 +44,8 @@ Write-Host "[nuitka] Compiling app.py -> dist_nuitka\ ..." -ForegroundColor Cyan
     --output-dir=dist_nuitka `
     --company-name="Echo Flow" `
     --product-name="Echo Flow" `
-    --file-version=0.1.0.0 `
-    --product-version=0.1.0.0 `
+    --file-version=$fileVersion `
+    --product-version=$fileVersion `
     --file-description="Echo Flow desktop assistant" `
     --copyright="Copyright (c) 2026 Echo Flow" `
     --assume-yes-for-downloads `

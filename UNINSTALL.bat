@@ -6,12 +6,16 @@ echo   Echo Flow  —  Uninstall
 echo ============================================================
 echo.
 
-REM Kill any running daemon
+REM Kill any running daemon. The old WINDOWTITLE filter could never match:
+REM run_silent.vbs starts the daemon hidden, so there is no window title to
+REM filter on, and the for-loop below it had an empty body. The daemon stayed
+REM alive and held .venv\python3xx.dll open, so the rmdir further down
+REM partially failed while still printing [OK]. Same approach as RESTART.bat.
 echo Stopping any running daemon...
-taskkill /F /IM wscript.exe /FI "WINDOWTITLE eq run_silent*" >nul 2>&1
-for /f "tokens=2" %%P in ('tasklist /FI "IMAGENAME eq python.exe" /FO csv ^| findstr /I "python.exe"') do (
-    REM Best-effort — only kills python.exe processes, user can confirm manually
-)
+taskkill /F /IM python.exe >nul 2>&1
+taskkill /F /IM pythonw.exe >nul 2>&1
+taskkill /F /IM wscript.exe >nul 2>&1
+ping -n 3 127.0.0.1 >nul
 
 REM Remove autostart shortcut
 powershell -NoProfile -Command ^
@@ -22,7 +26,12 @@ echo.
 set /p KEEPVENV="Remove Python venv folder (.venv)? [y/N]: "
 if /i "%KEEPVENV%"=="y" (
     rmdir /s /q .venv
-    echo [OK] venv removed.
+    if exist ".venv" (
+        echo [!!] venv could NOT be fully removed, a process may still hold it.
+        echo      Close Echo Flow, then delete .venv by hand.
+    ) else (
+        echo [OK] venv removed.
+    )
 )
 
 set /p KEEPDATA="Remove your dictation history (data/history.db)? [y/N]: "

@@ -480,6 +480,158 @@ def test_mobile_trust_for_rag_is_actually_wired():
     assert "trust_for_rag" in main_src, "mobile.trust_for_rag is still a dead knob"
 
 
+# ---------------------------------------------------------------------------
+# wave 2: privacy / security surface
+# ---------------------------------------------------------------------------
+
+def test_bridge_defaults_bind_to_loopback_with_mdns_off():
+    """The code defaulted to 0.0.0.0 + mDNS-on while config.yaml ships
+    loopback/off and dashboard/privacy.py REPORTS loopback for a missing key.
+    A config without those keys listened on every interface and advertised
+    itself, while the privacy page said it was loopback-only."""
+    src = (Path(__file__).resolve().parent.parent / "src" / "main.py").read_text(encoding="utf-8")
+    assert 'mobile_cfg.get("bind_address", "0.0.0.0")' not in src
+    assert 'mobile_cfg.get("bind_address", "127.0.0.1")' in src
+    assert 'mobile_cfg.get("advertise_mdns", True)' not in src
+    assert 'mobile_cfg.get("advertise_mdns", False)' in src
+
+
+def test_bridge_default_matches_the_privacy_ledger_default():
+    """Whatever the default is, these two must not disagree."""
+    from src.dashboard.privacy import bridge_state
+    state = bridge_state({"mobile": {"enabled": True, "port": 8765}})
+    assert state["bind_address"] == "127.0.0.1"
+    assert state["state"] == "loopback"
+
+
+@pytest.mark.parametrize("kind,slot,secret", [
+    ("open_app", "app", "my divorce lawyer notes"),
+    ("open_folder", "folder", "my 2026 tax audit"),
+])
+def test_unconfigured_action_message_does_not_echo_the_spoken_slot(kind, slot, secret):
+    """classify's "^open (.+)$" catch-all puts the whole utterance in the slot.
+    The failure string is persisted to voice_actions.error and to the
+    notifications table, and rendered on /actions and /notifications, so
+    echoing it there undid redact_args/redact_label entirely."""
+    from src import voice_actions as va
+    ctx = va.ActionContext(focused_title=None, focused_path=None,
+                           cfg={"experimental": {}}, notify=lambda *a, **k: None)
+    ok, msg = va.dispatch(va.ActionMatch(kind, "Open something", {slot: secret}), ctx)
+    assert ok is False
+    assert secret not in msg
+    assert "configured" in msg.lower()
+
+
+def test_mobile_submissions_do_not_feed_desktop_learned_patterns():
+    """learned_patterns has no source filter at read time and rewrites DESKTOP
+    dictations, so the bridge must honor cleanup.learning.trust_mobile before
+    recording a phone correction into it."""
+    src = (Path(__file__).resolve().parent.parent / "src" / "bridge.py").read_text(encoding="utf-8")
+    block = src.split("source=\"mobile\",")[1][:1600]
+    assert "trust_mobile" in block, "bridge records mobile pairs unconditionally"
+    assert "if (trust_mobile and getattr(app_ref, \"pattern_miner\"" in src
+    assert "if trust_mobile and callable(_spawn_teacher)" in src
+
+
+def test_light_theme_keeps_its_own_accent_by_default():
+    """base.html applies the accent override to BOTH themes, so shipping the
+    dark accent in config.yaml put #3eaf6f behind white button labels on the
+    light theme: 2.78:1, under the 4.5:1 AA floor and under even the 3:1
+    large-text floor. Empty means "each theme uses its designed accent"."""
+    import yaml
+    root = Path(__file__).resolve().parent.parent
+    cfg = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+    assert not (cfg["dashboard"].get("accent_color") or ""), \
+        "a shipped accent overrides BOTH themes; leave it empty"
+    # ...and the key still EXISTS, so Settings -> General can save it.
+    assert "accent_color" in cfg["dashboard"]
+
+
+def test_settings_general_save_is_a_noop_when_the_colour_is_untouched(tmp_path):
+    """The colour input always submits, so the rendered default and the
+    save-comparison default must agree or every save rewrites the accent."""
+    import shutil
+    import yaml
+    from src.dashboard.settings_routes import _theme_accent
+
+    root = Path(__file__).resolve().parent.parent
+    cfg = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+    dc = cfg["dashboard"]
+    rendered = dc.get("accent_color") or _theme_accent(dc)
+    compared = str(dc.get("accent_color") or "") or _theme_accent(dc)
+    assert rendered.lower() == compared.lower()
+
+
+def test_humanize_shadow_stats_can_report_less_than_everything(tmp_path):
+    """`changed` used to be counted over a table that only ever received
+    changed rows, so the dashboard read "N of N would have changed" forever,
+    for every user, regardless of how humanize was performing. That is the one
+    precision signal the page tells you to review before enabling it."""
+    from src.history import History
+    h = History(str(tmp_path / "h.db"))
+
+    h.log_humanize_shadow(cleaned_text="before one", humanized_text="after one",
+                          style="polished", similarity=0.9, outcome="changed")
+    h.log_humanize_shadow(cleaned_text="", humanized_text="", style="polished",
+                          outcome="rejected")
+    h.log_humanize_shadow(cleaned_text="", humanized_text="", style="polished",
+                          outcome="unchanged")
+
+    stats = h.humanize_shadow_stats(days=30)
+    assert stats["n"] == 3, "rejected/unchanged evaluations must count in the denominator"
+    assert stats["changed"] == 1
+    assert stats["avg_similarity"] == 0.9
+
+    # The review list shows only rows that actually carry a rewrite.
+    recent = h.recent_humanize_shadow(limit=50)
+    assert len(recent) == 1
+    assert recent[0]["humanized_text"] == "after one"
+
+
+def test_humanize_shadow_stats_still_reads_legacy_rows(tmp_path):
+    """Rows written before the `outcome` column exist only when a rewrite was
+    accepted, so they must still be counted as changed."""
+    from src.history import History
+    h = History(str(tmp_path / "h.db"))
+    h.conn.execute(
+        "INSERT INTO humanize_shadow(ts, dictation_id, style, cleaned_text, "
+        "humanized_text, similarity, reviewed) VALUES (?,?,?,?,?,?,0)",
+        (time.time(), None, "polished", "before", "after", 0.8))
+    h.conn.commit()
+    stats = h.humanize_shadow_stats(days=30)
+    assert stats == {"days": 30, "n": 1, "changed": 1, "avg_similarity": 0.8}
+
+
+def test_dictionary_terms_past_the_whisper_prompt_cap_still_count_as_known():
+    """_build_custom_vocabulary truncates to 80 because that is the Whisper
+    initial_prompt budget. Reusing it as the "already known" set meant a user
+    with more than ~80 dictionary entries kept being re-suggested terms they
+    had already promoted."""
+    from src.main import App
+    from src import vocab_suggest
+
+    app = App.__new__(App)
+    app.cfg = {"custom_vocabulary": [f"Term{i:03d}" for i in range(120)],
+               "cleanup": {"snippets": {}}}
+    app.history = None
+    app.learner = None
+
+    capped = app._build_custom_vocabulary()
+    uncapped = app._build_custom_vocabulary(limit=None)
+    assert len(capped) == 80, "the Whisper prompt budget still applies by default"
+    assert len(uncapped) == 120
+
+    # A term the user promoted 100th is still in their dictionary.
+    late = "Term099"
+    assert late not in capped and late in uncapped
+
+    low_conf = [(late, 0.2)]
+    text = f"I was talking about {late} today."
+    assert vocab_suggest.filter_candidates(low_conf, text, set(uncapped)) == []
+    assert vocab_suggest.filter_candidates(low_conf, text, set(capped)), \
+        "fixture no longer demonstrates the bug"
+
+
 def test_inbox_edit_of_a_missing_row_does_not_claim_success(tmp_path):
     """The UPDATE affected zero rows and the handler still redirected to the
     saved-dictation anchor as if it had written something."""

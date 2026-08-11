@@ -86,7 +86,11 @@ def test_open_app_unconfigured_fails_cleanly(monkeypatch):
     m = va.ActionMatch("open_app", "Open spotify", {"app": "spotify"})
     ok, msg = va.dispatch(m, _ctx(apps={}))
     assert ok is False
-    assert "spotify" in msg
+    # SEC-3: the message must NOT echo the spoken slot. classify's "^open (.+)$"
+    # catch-all puts the whole utterance here, and this string is persisted to
+    # voice_actions.error + the notifications table and rendered on two pages.
+    assert "spotify" not in msg.lower()
+    assert "configured" in msg.lower()
     assert called["popen"] is False
 
 

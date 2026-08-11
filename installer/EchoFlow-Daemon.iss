@@ -69,8 +69,8 @@ Source: "..\README.md";              DestDir: "{app}"; Flags: ignoreversion
 Source: "..\CHANGELOG.md";           DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
-Name: "{userprograms}\{#MyAppName}";        Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: startmenu
-Name: "{userdesktop}\{#MyAppName}";         Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: desktopicon
+Name: "{userprograms}\{#MyAppName}";        Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\assets\icon.ico"; Tasks: startmenu
+Name: "{userdesktop}\{#MyAppName}";         Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\assets\icon.ico"; Tasks: desktopicon
 Name: "{userprograms}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Registry]

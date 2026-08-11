@@ -6,7 +6,78 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Security
+- **The mobile bridge's code defaults were `0.0.0.0` plus mDNS-on**, the exact
+  combination `docs/MOBILE_BRIDGE.md` warns against. `config.yaml` ships
+  loopback with mDNS off and `dashboard/privacy.py` reports `127.0.0.1` for a
+  missing key, but `load_config` does no defaults merge, so a config lacking
+  those keys listened on every interface and advertised itself to the network
+  while the privacy ledger said loopback with no warning. Both code defaults now
+  fail safe and agree with the other two.
+- **Action Mode's "not configured" replies echoed the spoken text back**, which
+  defeated SEC-3 redaction: `classify`'s `^open (.+)$` catch-all puts the whole
+  utterance in the slot, and the reply is persisted to `voice_actions.error` and
+  the notifications table, then rendered on `/actions` and `/notifications`. Two
+  existing tests asserted the leak (`assert "secret" in msg`) and now assert the
+  opposite.
+- **The mobile bridge fed the desktop's learned patterns.** The dictation row was
+  carefully tagged `source='mobile'` for the RAG filter, then the same pair was
+  recorded into `learned_patterns`, which has no source filter at read time and
+  rewrites desktop dictations. Both that and the teacher-distillation spawn now
+  honor `cleanup.learning.trust_mobile`.
+- **`/v1/health` was an unthrottled key-guessing oracle.** It checked the shared
+  key itself rather than going through `@auth_required`, so wrong-key probes were
+  never counted, never logged, and never hit the M1 lockout, and a locked-out IP
+  could still guess there. An absent header stays a free liveness ping.
+
 ### Fixed
+- **The light theme lost its own accent.** `base.html` applies the accent
+  override to both themes, so the accent shipped in `config.yaml` put the dark
+  theme's `#3eaf6f` behind white button labels in light mode: 2.78:1, below the
+  4.5:1 AA floor and below even the 3:1 large-text floor. The shipped value is
+  now empty, meaning each theme uses its designed accent, while the key still
+  exists so Settings can save one.
+- **Humanize highlights were unreadable in dark mode.** `<mark>` set only a
+  background, so the UA default black `MarkText` applied: the spans the feature
+  exists to point at rendered at about 1.6:1.
+- **Home showed "0 dictations today" beside "9 m saved today".** The count starts
+  at midnight; the time-saved tile was a rolling 24 hours. They now share a
+  boundary, and both exclude teacher-distillation rows, which duplicate a real
+  utterance and were double-counting on both tiles.
+- **The activity heatmap's first column was structurally blank.** The query
+  cutoff came from the clock while the grid start was snapped back to a Monday,
+  so leading cells were rendered from days never fetched: real dictations showed
+  as level 0 and the peak was understated. On a Saturday that is a whole column.
+- **The "filler ratio" tile counted fillers after cleanup removed them.** It read
+  `cleaned_text`, so it measured the cleaner rather than the speaker and could
+  only ever approach 0%. It now counts over the raw transcript.
+- **Time saved counted words by counting spaces**, so newlines and tabs were not
+  separators: a multi-paragraph email read about 12% short and disagreed with the
+  total-words tile over the same rows. Both now use one definition.
+- **The "My Voice" shadow statistic was a tautology.** Only accepted, changed
+  rewrites were ever written to `humanize_shadow`, and `changed` was then counted
+  over exactly those rows, so the page read "N of N would have changed" forever,
+  for every user, no matter how humanize was performing. Every evaluation is now
+  recorded with an outcome, so the denominator is real.
+- **Dictionary terms past the 80th were re-suggested after being promoted.** The
+  80-term cap is the Whisper `initial_prompt` budget; it was also being used as
+  the "already known" set.
+- **Shortcut icons pointed at a path PyInstaller 6 no longer creates.** Bundled
+  data lives under `_internal/`, so `{app}\assets\icon.ico` never existed after
+  install and both installers shipped iconless shortcuts.
+- **`UNINSTALL.bat` never stopped the daemon and then claimed the venv was
+  removed.** The `taskkill` filtered on a window title that a hidden launcher
+  never has, and the loop under it had an empty body, so the running daemon held
+  `python3xx.dll` open and the `rmdir` partially failed while still printing OK.
+- **`build_nuitka.ps1` stamped every binary 0.1.0.0**, four releases stale. It
+  now reads `src.__version__`.
+- **The landing page still under-reported cloud egress**, the same class of bug a
+  prior release fixed in the README: it named only PE mode and the teacher loop,
+  omitting `cleanup.allow_cloud_cleanup`, which applies to every dictation. Its
+  "measured, not promised" caption also described a hardcoded constant, and the
+  README and product overview said "three paths" when there are five.
+- The daemon spec and `installer/README.md` still carried a "before this build is
+  useful, patch main.py" warning for work that shipped long ago.
 - **Silero VAD had never actually run.** `_is_voiced` handed the model a
   2048-sample slice, but Silero v5 accepts exactly 512 samples at 16 kHz and
   raises on anything else, and the bare `except` swallowed it, so every call

@@ -95,14 +95,17 @@ download API.
 - User data under `%LOCALAPPDATA%\EchoFlow\` is **not** removed on
   uninstall.
 
-## ⚠️ Before the daemon build is useful
+## User-writable state in a frozen build
 
-`src/main.py` must resolve its user-data dir to `%LOCALAPPDATA%\EchoFlow\`
-when running under PyInstaller (i.e. `sys.frozen == True`). The dashboard
-shell (`app.py`) already does this; the daemon needs the same patch
-applied manually. Without it, the frozen daemon will try to write
-`config.yaml` and `history.db` next to the bundled `.exe` and fail on a
-non-writable install location.
+`src/main.py` resolves `USER_ROOT` to `%LOCALAPPDATA%\EchoFlow\` when
+`sys.frozen` is true, seeds `config.yaml` there from the bundle on first run,
+and `chdir`s into it so relative paths from the config (`data/history.db`,
+`data/wispr.log`) land in the writable dir rather than beside the read-only
+`.exe`. Read-only bundled resources are read from `sys._MEIPASS`.
+
+Note that PyInstaller 6 places bundled data under an `_internal\` contents
+directory, so installed layout is `{app}\_internal\assets\…`, not
+`{app}\assets\…`.
 
 ## Code signing
 

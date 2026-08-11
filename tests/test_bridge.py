@@ -336,7 +336,10 @@ def test_dictate_full_pipeline_writes_history(client_and_app):
     assert rows[0][3] == "hello world [cleaned]"
     # Learner cache invalidated, pattern miner saw the (raw, cleaned) pair
     assert app_ref.learner.invalidations == 1
-    assert app_ref.pattern_miner.records == [("hello world", "hello world [cleaned]")]
+    # learned_patterns has no source filter at READ time and is applied to
+    # desktop dictations, so a phone submission must not land there unless the
+    # user trusts mobile for learning (cleanup.learning.trust_mobile).
+    assert app_ref.pattern_miner.records == []
 
 
 def test_dictate_source_defaults_when_omitted(client_and_app):

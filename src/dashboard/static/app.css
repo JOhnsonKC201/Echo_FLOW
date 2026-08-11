@@ -44,6 +44,11 @@ html, body {
 }
 a { color: inherit; text-decoration: none; }
 code, kbd, .mono, .num, .ts { font-family: var(--font-mono); }
+/* Humanize highlights set only a background. The UA default `mark { color:
+   MarkText }` is black, which on the dark theme's translucent highlight lands
+   at ~1.6:1, the spans the feature exists to point at were the least readable
+   text on the page. Inherit the surrounding text colour instead. */
+mark { color: inherit; }
 .num { font-variant-numeric: tabular-nums; }
 
 .sidebar {

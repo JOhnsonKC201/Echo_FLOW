@@ -595,7 +595,7 @@ class App:
                 self.cleaner.cfg = cleanup_cfg
             self.cleaner.invalidate_casing_cache()
 
-    def _build_custom_vocabulary(self) -> list[str]:
+    def _build_custom_vocabulary(self, limit: int | None = 80) -> list[str]:
         """Assemble the vocabulary list used to bias the Whisper decoder.
 
         Merges (in priority order):
@@ -604,7 +604,12 @@ class App:
              snippet outputs land in the acoustic prior too.
           3. Personal vocabulary mined from history via Learner.
 
-        De-duplicates while preserving order, returning at most ~80 terms.
+        De-duplicates while preserving order, returning at most `limit` terms.
+
+        The default 80 is the Whisper `initial_prompt` budget, not a statement
+        about how many terms the user has. Callers asking "does the user
+        already know this word?" must pass limit=None, or every term past the
+        80th reads as unknown and gets suggested back to them forever.
         """
         terms: list[str] = []
         seen: set[str] = set()
@@ -641,12 +646,12 @@ class App:
         # 3. Personal vocabulary mined from history.
         if self.learner is not None:
             try:
-                for t in self.learner.personal_vocabulary(limit=80):
+                for t in self.learner.personal_vocabulary(limit=limit or 500):
                     _add(t)
             except Exception as e:
                 _log.warning("personal_vocabulary failed: %s", e)
 
-        return terms[:80]
+        return terms if limit is None else terms[:limit]
 
     def _tray_idle(self):
         """Return the tray to its resting state. Every path that leaves 'rec'
@@ -905,12 +910,20 @@ class App:
                         _hz_cleaned, voice_profile=profile, raw=raw,
                         use_cloud=use_cloud, style=style, retriever=self.retriever,
                         min_sim=float(exp_cfg.get("humanize_min_sim", 0.85)))
+                    # Log the non-accepted outcomes too. Returning early here is
+                    # what made the dashboard's "N of N would have changed" a
+                    # tautology: only accepted, different rewrites were ever
+                    # stored, and then counted against themselves.
                     if not hz or hz == _hz_cleaned:
+                        self.history.log_humanize_shadow(
+                            cleaned_text="", humanized_text="", style=style,
+                            similarity=None,
+                            outcome="unchanged" if hz else "rejected")
                         return
                     sim = self.cleaner._voice_similarity(_hz_cleaned, hz, self.retriever)
                     self.history.log_humanize_shadow(
                         cleaned_text=_hz_cleaned, humanized_text=hz,
-                        style=style, similarity=sim)
+                        style=style, similarity=sim, outcome="changed")
                     # SEC-3: prose stays out of the log files unless opted in.
                     if exp_cfg.get("humanize_log_verbose"):
                         _log.info("humanize shadow: %r → %r (sim=%s)",
@@ -1318,7 +1331,11 @@ class App:
                             and whisper_meta.get("low_conf_words")):
                         try:
                             from . import vocab_suggest
-                            known = set(self._build_custom_vocabulary())
+                            # limit=None: the Whisper prompt cap must not
+                            # decide what counts as "already in the user's
+                            # dictionary", or terms past the 80th get
+                            # suggested back after they were promoted.
+                            known = set(self._build_custom_vocabulary(limit=None))
                             for term, prob in vocab_suggest.filter_candidates(
                                     whisper_meta["low_conf_words"], cleaned, known):
                                 self.history.record_vocab_suggestion(term, prob)
@@ -1839,14 +1856,22 @@ class App:
             try:
                 from . import bridge as _bridge
                 key = _bridge.ensure_shared_key(self.cfg, self.cfg_path)
-                host = mobile_cfg.get("bind_address", "0.0.0.0")
+                # Fail SAFE and agree with the two other places that answer
+                # this question: config.yaml ships "127.0.0.1" and
+                # dashboard/privacy.py reports "127.0.0.1" for a missing key.
+                # Defaulting to 0.0.0.0 here meant a config without the key
+                # (hand-trimmed, or predating it) bound to every interface
+                # while the privacy ledger said loopback, with no warning.
+                host = mobile_cfg.get("bind_address", "127.0.0.1")
                 port = int(mobile_cfg.get("port", 8765))
                 threading.Thread(
                     target=_bridge.serve,
                     args=(self, host, port, _announce),
                     daemon=True,
                 ).start()
-                if mobile_cfg.get("advertise_mdns", True):
+                # Also off by default, matching config.yaml: mDNS broadcasts the
+                # bridge to every device on the network.
+                if mobile_cfg.get("advertise_mdns", False):
                     self._mdns_handle = _bridge.advertise_mdns(host, port)
                 # Do NOT print the full key — the bridge banner already shows
                 # a truncated prefix. Full value lives in config.yaml.

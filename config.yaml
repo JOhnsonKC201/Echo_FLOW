@@ -215,7 +215,11 @@ dashboard:
   host: "127.0.0.1"           # NEVER bind to 0.0.0.0 — same-machine trust only.
   port: 8766                  # Auto-fallback to 8767..8770 if busy.
   theme: light               # dark | light
-  accent_color: "#3eaf6f"    # Dashboard accent (#rrggbb), set from Settings → General.
+  accent_color: ""           # Dashboard accent (#rrggbb) from Settings → General.
+                             # EMPTY = use each theme's own designed accent. Do not
+                             # ship a value here: base.html applies the override to
+                             # BOTH themes, so the dark accent (#3eaf6f) on the light
+                             # theme drops white button labels to 2.78:1 (AA needs 4.5).
   open_window_on_start: false # daemon starts the server; window opens on demand.
   open_hotkey: "<ctrl>+<cmd>"  # Global hotkey to open the dashboard window (Ctrl+Win). Set "" to disable.
   onboarded: true            # Phase 11 first-run tour gate; flips true after /onboarding/finish.

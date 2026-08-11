@@ -101,7 +101,10 @@ def test_open_folder_unconfigured_fails():
     ok, msg = va.dispatch(va.ActionMatch("open_folder", "Open x", {"folder": "secret"}),
                           _ctx(folders={}))
     assert ok is False
-    assert "secret" in msg
+    # SEC-3: the spoken folder name must not be echoed back, this string is
+    # persisted to voice_actions.error and the notifications table.
+    assert "secret" not in msg.lower()
+    assert "configured" in msg.lower()
 
 
 def test_open_folder_missing_dir_fails(tmp_path):

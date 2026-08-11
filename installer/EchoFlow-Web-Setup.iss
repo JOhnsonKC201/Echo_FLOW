@@ -79,8 +79,8 @@ Name: "autostart";    Description: "Start Echo Flow automatically when I log in 
 Name: "launchnow";    Description: "Launch the Echo Flow daemon when setup finishes";                GroupDescription: "Startup:"
 
 [Icons]
-Name: "{userprograms}\{#MyAppName}";            Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: startmenu
-Name: "{userdesktop}\{#MyAppName}";             Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\icon.ico"; Tasks: desktopicon
+Name: "{userprograms}\{#MyAppName}";            Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\assets\icon.ico"; Tasks: startmenu
+Name: "{userdesktop}\{#MyAppName}";             Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\assets\icon.ico"; Tasks: desktopicon
 Name: "{userprograms}\Uninstall {#MyAppName}";  Filename: "{uninstallexe}"
 
 [Registry]

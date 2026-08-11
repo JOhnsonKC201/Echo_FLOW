@@ -366,7 +366,14 @@ def _h_open_app(args: dict, ctx: ActionContext) -> tuple[bool, str]:
         norm[k] = str(val).strip()
     target = norm.get(app)
     if not target:
-        return (False, f"I don't have an app called “{app}” configured.")
+        # SEC-3: do NOT echo the spoken slot back. `classify`'s "^open (.+)$"
+        # catch-all puts the whole utterance in args["app"], and an
+        # unconfigured name is arbitrary speech, not an allowlist key. This
+        # string is persisted to voice_actions.error and to the notifications
+        # table, and rendered on /actions and /notifications, so repeating it
+        # here undid the redaction redact_args/redact_label perform.
+        return (False, "I don't have that app configured. "
+                       "Add it under Settings, Action targets.")
 
     # SEC-4: reject a configured target that smuggles shell syntax / arguments,
     # unless it is a real file on disk. Voice never reaches here, but a bad
@@ -626,7 +633,9 @@ def _h_open_folder(args: dict, ctx: ActionContext) -> tuple[bool, str]:
             target = os.path.expanduser(os.path.expandvars(str(val).strip()))
             break
     if not target:
-        return (False, f"I don't have a folder called “{name}” configured.")
+        # SEC-3: same reasoning as the app case above, do not echo the slot.
+        return (False, "I don't have that folder configured. "
+                       "Add it under Settings, Action targets.")
     # Refuse UNC paths — os.startfile on \\host\share triggers an outbound SMB
     # auth (NetNTLM leak). A configured local folder never needs this form.
     if target[:2] in ("\\\\", "//"):

@@ -425,11 +425,14 @@ Review the pairs at <http://127.0.0.1:8766/teacher> before trusting the loop.
   Transcripts, embeddings, and learning data live in `data/history.db` on your
   machine. Audio is never written to disk at all: it stays in memory for the
   length of the utterance and is dropped.
-- **Three paths can call a cloud API**, all gated behind a key you set yourself:
-  Prompt-Engineering mode (`Ctrl+Shift+Alt`), the teacher loop, and
-  `cleanup.allow_cloud_cleanup`. That third one is the one to watch, because
-  unlike the other two it applies to **every dictation** rather than to a
-  deliberate keystroke. Check which are live on the dashboard's Privacy page,
+- **Five paths can call a cloud API**, all gated behind a key you set yourself:
+  Prompt-Engineering mode (`Ctrl+Shift+Alt`), the teacher loop,
+  `cleanup.allow_cloud_cleanup`, `cleanup.verify.escalate_cloud` (the second
+  cleanup pass), and `experimental.humanize_use_cloud`. The third one is the one
+  to watch, because unlike a deliberate keystroke it applies to **every
+  dictation**. Separately, `update.check_on_startup` (off by default) makes one
+  anonymous GET to `api.github.com` at launch; it carries no dictation data.
+  Check which are live on the dashboard's Privacy page,
   or read `cleanup.provider` and `cleanup.allow_cloud_cleanup` in `config.yaml`.
 - **Your speech is written to a log in plain text.** Every dictation appends its
   raw transcript and its cleaned output to `data/wispr.log` (rotating, 5 MB x 5)

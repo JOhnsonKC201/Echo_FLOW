@@ -117,11 +117,12 @@ This is the whole point, so it's explicit:
 - **Local by default.** No telemetry, no analytics, no auto-update phone-home.
   Transcripts, embeddings, and learning data live in `data/history.db` on your
   machine; audio is never written to disk at all.
-- **Three paths can call a cloud API**, each behind a key you set yourself:
+- **Five paths can call a cloud API**, each behind a key you set yourself:
   **Prompt-Engineering mode** (`Ctrl+Shift+Alt`, rewrites a spoken idea into a full
-  prompt via Groq), the optional **teacher-distillation loop**, and
-  **`cleanup.allow_cloud_cleanup`**. The third is the one to watch: unlike the
-  other two it applies to *every* dictation rather than a deliberate keystroke.
+  prompt via Groq), the optional **teacher-distillation loop**,
+  **`cleanup.allow_cloud_cleanup`**, **`cleanup.verify.escalate_cloud`** (the
+  second cleanup pass), and **`experimental.humanize_use_cloud`**. The third is
+  the one to watch: unlike a deliberate keystroke it applies to *every* dictation.
   The dashboard's Privacy page names whichever are live.
 - **Your speech is also written in plain text** to `data/wispr.log` (raw and
   cleaned, every dictation). It stays on the machine, but the Wipe button and the

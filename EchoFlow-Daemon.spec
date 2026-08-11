@@ -15,12 +15,10 @@ Output:
 NOTE: This is a one-FOLDER build (not one-file) so that boot-time startup
 stays snappy — the user launches this at login via the installer's Run key.
 
-IMPORTANT (manual step before this spec is useful):
-    src/main.py must be patched to resolve its user-data dir to
-    %LOCALAPPDATA%\\EchoFlow\\ when sys.frozen is True (the same pattern
-    that app.py already uses for the dashboard shell). Without that patch
-    the frozen daemon will try to write config.yaml / history.db next to
-    the exe inside Program Files-style locations and fail.
+User-writable state is already handled: src/main.py resolves USER_ROOT to
+%LOCALAPPDATA%\\EchoFlow when sys.frozen is True, seeds config.yaml from the
+bundle on first run, and chdirs there so relative paths in the config land in
+the writable dir rather than next to the read-only exe. No manual patch needed.
 """
 
 from PyInstaller.utils.hooks import (

@@ -306,8 +306,17 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         # detail leaks fingerprinting info (e.g. "ollama present" hints the user
         # has an LLM running locally); only return it to authenticated callers.
         sent = request.headers.get("X-Echo-Key", "")
+        # M1: this route checks the key itself instead of going through
+        # @auth_required, so it used to be a key-guessing oracle that never
+        # recorded a failure and never honored the lockout. An absent header is
+        # a plain liveness ping and stays free; a WRONG key counts.
+        ip = request.remote_addr or "unknown"
+        if _is_locked_out(ip):
+            return jsonify({"ok": True})
         authed = _key_matches(sent)
         if not authed:
+            if sent:
+                _record_auth_failure(ip)
             return jsonify({"ok": True})
         whisper_kind = type(getattr(app_ref, "transcriber", None)).__name__
         cleanup_provider = getattr(getattr(app_ref, "cleaner", None), "provider", None)
@@ -447,7 +456,22 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
                 )
                 if getattr(app_ref, "learner", None) is not None:
                     app_ref.learner.invalidate_cache()
-                if getattr(app_ref, "pattern_miner", None) is not None and raw != cleaned:
+                # The row above is tagged source="mobile" so the RAG retriever
+                # can exclude it, but learned_patterns has no source filter at
+                # read time: recording here fed phone submissions straight into
+                # the substitutions that rewrite DESKTOP dictations, which is
+                # exactly what mobile.trust_for_rag exists to prevent. Same for
+                # teacher distillation, which re-logs the pair as
+                # source="teacher" and is trusted by default.
+                # cleanup.learning.trust_mobile is the knob for the LEARNING
+                # layer (few-shot examples, personal vocabulary, and these
+                # patterns); mobile.trust_for_rag covers retrieval separately.
+                trust_mobile = bool(
+                    ((getattr(app_ref, "cfg", None) or {}).get("cleanup") or {})
+                    .get("learning", {}).get("trust_mobile", False)
+                )
+                if (trust_mobile and getattr(app_ref, "pattern_miner", None) is not None
+                        and raw != cleaned):
                     try:
                         app_ref.pattern_miner.record(raw, cleaned)
                     except Exception as e:
@@ -456,7 +480,7 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
                 # dictations so the user's phone benefits from the same
                 # learning loop. Gated by cleanup.learning.teacher_enabled.
                 _spawn_teacher = getattr(app_ref, "_spawn_teacher_distillation", None)
-                if callable(_spawn_teacher):
+                if trust_mobile and callable(_spawn_teacher):
                     try:
                         _spawn_teacher(
                             raw=raw, user_cleaned=cleaned, style=style,

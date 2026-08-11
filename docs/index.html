@@ -224,7 +224,7 @@
     <div class="zero">
       <div>
         <div class="big" aria-label="zero">0</div>
-        <p class="cap">by default. measured, not promised.</p>
+        <p class="cap">by default. architectural, not measured.</p>
       </div>
       <div>
         <p class="lead">The dashboard keeps a local audit of everything that touches the
@@ -349,10 +349,14 @@ run.bat<button class="copy" data-for="src-cmd" type="button">copy</button></div>
     <p class="kicker">Questions people actually ask</p>
     <h2>FAQ</h2>
     <details><summary>Is my audio really never uploaded?</summary>
-      <p>By default, nothing is. The only cloud paths are an opt-in prompt-engineering
-      mode and an opt-in teacher loop, both requiring your own API key and both off
-      until you enable them. The code is MIT, and the dashboard's privacy page lists
-      every network touch so you can verify instead of trusting.</p></details>
+      <p>Audio is never uploaded, full stop: it stays in memory for the length of the
+      utterance and is dropped. Your <em>text</em> can reach a cloud API only through
+      paths you switch on yourself, each needing your own API key: Prompt-Engineering
+      mode, the teacher loop, <code>cleanup.allow_cloud_cleanup</code>, the
+      verify-escalation pass, and the humanizer's cloud option. Watch the third one in
+      particular, because unlike a deliberate keystroke it applies to every dictation.
+      The code is MIT, and the dashboard's privacy page shows which of these are live
+      right now so you can verify instead of trusting.</p></details>
     <details><summary>Do I need a GPU?</summary>
       <p>No. Whisper model size is picked automatically for your hardware and runs fine
       on CPU. If an NVIDIA GPU is present it gets used, which mostly buys you headroom

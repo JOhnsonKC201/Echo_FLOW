@@ -277,7 +277,19 @@ def streak_heatmap(
     Days are emitted oldest->newest so the template can fill columns naturally.
     """
     where_src = _source_clause(include_mobile)
-    cutoff = _now_ts() - (weeks * 7 * 86400)
+    today = dt.date.today()
+    # Snap the window start back to a Monday so every column is a clean Mon-Sun
+    # week. Without this the first column is a partial week and, because cells are
+    # placed by weekday alone, the grid never lines up into tidy columns.
+    raw_start = today - dt.timedelta(days=weeks * 7 - 1)
+    start = raw_start - dt.timedelta(days=raw_start.weekday())
+    # Derive the query cutoff FROM the grid, not from the clock. A wall-clock
+    # `now - weeks*7*86400` always lands after `start` (which was just snapped
+    # backwards to a Monday), so the leading cells were rendered from days the
+    # query never fetched: real dictations there showed as level 0, and `peak`
+    # was understated by the same rows. The gap is weekday-dependent, up to a
+    # whole blank first column on a Saturday.
+    cutoff = dt.datetime.combine(start, dt.time.min).timestamp()
     cur = conn.execute(
         f"SELECT ts FROM dictations WHERE ts >= ?{where_src}",
         (cutoff,),
@@ -285,13 +297,6 @@ def streak_heatmap(
     counts: dict[dt.date, int] = defaultdict(int)
     for (ts,) in cur:
         counts[dt.datetime.fromtimestamp(ts).date()] += 1
-
-    today = dt.date.today()
-    # Snap the window start back to a Monday so every column is a clean Mon–Sun
-    # week. Without this the first column is a partial week and, because cells are
-    # placed by weekday alone, the grid never lines up into tidy columns.
-    raw_start = today - dt.timedelta(days=weeks * 7 - 1)
-    start = raw_start - dt.timedelta(days=raw_start.weekday())
     num_days = (today - start).days + 1
     days = []
     peak = max(counts.values()) if counts else 0
@@ -465,7 +470,7 @@ def voice_payload(conn: sqlite3.Connection, *, days: int = 30) -> dict:
     """
     since = _now_ts() - (days * 86400)
     cur = conn.execute(
-        "SELECT cleaned_text, duration_ms FROM dictations "
+        "SELECT cleaned_text, duration_ms, raw_text FROM dictations "
         "WHERE ts >= ? AND cleaned_text IS NOT NULL AND source = 'desktop'",
         (since,),
     )
@@ -473,26 +478,32 @@ def voice_payload(conn: sqlite3.Connection, *, days: int = 30) -> dict:
     rates: list[float] = []
     all_tokens: list[str] = []
     filler_count = 0
+    filler_total = 0
     bigram_counts: dict[tuple[str, str], int] = defaultdict(int)
 
-    for text, dur_ms in cur:
+    for text, dur_ms, raw_text in cur:
         toks = _tokenize_lower(text)
         if not toks:
             continue
+        # Fillers are counted over the RAW transcript, because removing exactly
+        # these tokens is the cleanup layer's job. Counting them in
+        # cleaned_text measured the cleaner, not the speaker, so the tile could
+        # only ever approach 0% no matter how the user actually talks.
+        raw_toks = _tokenize_lower(raw_text) or toks
+        filler_total += len(raw_toks)
+        for t in raw_toks:
+            if t in _FILLER_WORDS:
+                filler_count += 1
+        for i in range(len(raw_toks) - 1):
+            if (raw_toks[i], raw_toks[i + 1]) in _FILLER_BIGRAMS:
+                filler_count += 1
         # WPM per dictation (same floor as current_wpm to suppress noise).
         if dur_ms and dur_ms > 0:
             seconds = dur_ms / 1000.0
             if seconds >= _MIN_DURATION_S_FOR_WPM:
                 rates.append(len(toks) / (seconds / 60.0))
-        # Filler-word count: single words.
-        for t in toks:
-            if t in _FILLER_WORDS:
-                filler_count += 1
-        # Filler bigrams.
         for i in range(len(toks) - 1):
             pair = (toks[i], toks[i + 1])
-            if pair in _FILLER_BIGRAMS:
-                filler_count += 1
             # All bigrams for "most-used phrases" (skip if either token is a
             # stopword-y filler so the chart shows meaning, not "of the").
             if pair[0] in _STOPWORDS or pair[1] in _STOPWORDS:
@@ -502,7 +513,7 @@ def voice_payload(conn: sqlite3.Connection, *, days: int = 30) -> dict:
 
     total = len(all_tokens)
     unique = len(set(all_tokens))
-    filler_ratio = (filler_count / total) if total else 0.0
+    filler_ratio = (filler_count / filler_total) if filler_total else 0.0
     vocab_diversity = (unique / total) if total else 0.0
 
     top_bigrams = sorted(bigram_counts.items(), key=lambda kv: kv[1], reverse=True)[:10]
@@ -516,7 +527,7 @@ def voice_payload(conn: sqlite3.Connection, *, days: int = 30) -> dict:
         },
         "filler": {
             "count": filler_count,
-            "total_words": total,
+            "total_words": filler_total,
             "ratio": filler_ratio,
             "ratio_pct": round(filler_ratio * 100, 2),
         },
@@ -572,29 +583,38 @@ def _typing_wpm_baseline(conn: sqlite3.Connection, default: int = 40) -> int:
     return default
 
 
-def time_saved_ms(conn: sqlite3.Connection, days: int = 30) -> int:
+def time_saved_ms(conn: sqlite3.Connection, days: int = 30, *,
+                  since: float | None = None,
+                  include_mobile: "bool | str" = False) -> int:
     """Estimated typing time saved over the last N days. Math:
         time_saved = words_dictated * (60s / typing_baseline_wpm)
                    - sum(dictation_duration_ms)
 
     Negative results clamp to 0 (degenerate: very short dictations where
     typing-baseline-equivalent < actual speaking time)."""
-    since = _time.time() - (days * 86400)
-    row = conn.execute(
-        "SELECT COALESCE(SUM(LENGTH(cleaned_text) - LENGTH(REPLACE(cleaned_text, ' ', ''))), 0), "
-        "       COALESCE(SUM(LENGTH(cleaned_text)), 0), "
-        "       COALESCE(SUM(duration_ms), 0) "
-        "FROM dictations WHERE ts >= ?",
+    # `since` lets a caller align this with a calendar boundary instead of a
+    # rolling window. Home showed "0 dictations today" (midnight-based) beside
+    # "9 m saved today" (now - 24h), which is a straight contradiction every
+    # morning.
+    if since is None:
+        since = _time.time() - (days * 86400)
+    # Teacher distillation writes a SECOND row for the same utterance with the
+    # same duration_ms, and the mobile bridge writes rows the Insights page
+    # deliberately excludes. Without this filter both tiles double-count.
+    where_src = _source_clause(include_mobile)
+    # Count words with the same definition total_words uses. The old
+    # count-the-spaces SQL treated newlines and tabs as non-separators, so a
+    # multi-paragraph email or a bulleted list read ~12-30% short, and the two
+    # tiles disagreed about the same rows.
+    rows = conn.execute(
+        f"SELECT cleaned_text, duration_ms FROM dictations WHERE ts >= ?{where_src}",
         (since,),
-    ).fetchone()
-    spaces, char_count, total_dur_ms = row
-    # Word count ≈ spaces + 1 per non-empty dictation. Cheaper than splitting
-    # in Python and works inside SQL.
-    n_rows = conn.execute(
-        "SELECT COUNT(*) FROM dictations WHERE ts >= ? AND LENGTH(cleaned_text) > 0",
-        (since,),
-    ).fetchone()[0]
-    words = spaces + n_rows
+    ).fetchall()
+    words = 0
+    total_dur_ms = 0
+    for text, duration_ms in rows:
+        words += _word_count(text)
+        total_dur_ms += duration_ms or 0
     if words <= 0:
         return 0
     baseline_wpm = _typing_wpm_baseline(conn)
@@ -674,12 +694,16 @@ def today_summary(conn: sqlite3.Connection) -> dict:
     All values default to 0/None on empty/missing data — safe for templates.
     """
     midnight = _time.mktime(_time.struct_time(_time.localtime()[:3] + (0, 0, 0, 0, 0, -1)))
+    # Both tiles must agree on what "today" means AND on what counts as a
+    # dictation: teacher-distillation rows duplicate a real utterance, and the
+    # acceptance tile beside these already filters to desktop.
     count = conn.execute(
-        "SELECT COUNT(*) FROM dictations WHERE ts >= ?", (midnight,)
+        f"SELECT COUNT(*) FROM dictations WHERE ts >= ?{_source_clause(False)}",
+        (midnight,),
     ).fetchone()[0]
     return {
         "count": int(count),
-        "time_saved_ms": time_saved_ms(conn, days=1),
+        "time_saved_ms": time_saved_ms(conn, since=midnight),
         "acceptance": acceptance_rate(conn, days=7),
         "latency": latency_percentiles(conn, n=200),
     }
