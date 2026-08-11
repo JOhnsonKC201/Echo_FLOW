@@ -6,6 +6,59 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Accessibility
+- **The light theme was missing half its semantic colours.** `:root` is the dark
+  palette and `[data-theme="light"]` overrode only 10 of the 14 colour tokens, so
+  `--warn` and `--danger` kept dark-tuned values on a near-white surface. Every
+  warning and error in the light theme rendered around 2.2:1 against the 4.5:1 AA
+  floor, including the two Privacy-ledger rows whose whole job is to tell you
+  something IS leaving the machine. Both tokens now have light values (5.4:1 and
+  6.0:1), which fixes roughly 22 call sites at once.
+- **The most destructive button in the app was amber and illegible.**
+  `.btn.danger` read `var(--warn, #c0392b)`, but `--warn` is always defined so
+  the red fallback never applied: "Wipe dictation history" rendered in the same
+  amber as warning pills, white-on-amber at 2.19:1. There is now a
+  `--danger-solid` token for solid destructive fills (6.5:1 light, 7.2:1 dark),
+  distinct from `--danger`, which is the text colour.
+- **Notification severity badges were unreadable in light mode** (1.3:1 to 1.8:1).
+  The badge text *is* the severity word, so severity was the thing being lost.
+- **Onboarding step numerals** were a hardcoded near-black on `--accent`: fine on
+  the dark accent, 1.90:1 on the light theme's darker green. They follow `--bg`
+  now.
+- **Nothing in the stylesheet had a disabled state.** The Humanize button
+  disables itself for what its own copy calls "up to a minute" while keeping the
+  full accent gradient and `cursor: pointer`, so it looked clickable and did
+  nothing.
+
+### Fixed
+- **The knowledge graph was unusable on a phone.** Its wrapper was positioned
+  against the viewport with hardcoded `220px`/`56px` literals instead of the
+  `--sidebar-w`/`--topbar-h` tokens, so the sidebar-collapse media query could
+  never reach it: measured 145px of a 365px viewport (40%). On desktop the same
+  drift overlapped the sidebar's last 4px and left a 4px strip under the topbar.
+  Now 100% of a narrow viewport, and pixel-exact on desktop.
+- **The Home latency tile rendered its unit at the headline size.** The count-up
+  animation wrote `el.textContent`, replacing every child, which destroyed the
+  `<span class="muted small">ms</span>` beside the number. It now animates the
+  number's text node and leaves sibling markup alone.
+- **Three pages showed a breadcrumb that disagreed with the sidebar and the
+  page heading** ("Myvoice" vs "My Voice", "Calibration" vs "Calibrate"). The
+  crumb came from a hand-copied dict carrying a "keep in sync" comment; it now
+  derives from `SECTIONS`, the same list the sidebar renders from.
+- **Horizontal scrolling on narrow screens.** The Privacy page's DB path had no
+  break opportunity and ran ~250px off a 375px screen; `.row-form` inputs could
+  not shrink below their intrinsic width, pushing submit buttons off-viewport by
+  60 to 115px; and the `kv-table`s exceeded their card with nothing between them
+  and `<body>` that scrolls. Because the topbar and sidebar are `position: fixed`,
+  scrolling sideways slid the content out from under its own header.
+- **The mobile drawer scrim covered the topbar**, dimming the hamburger that
+  opened it and swallowing taps on the theme toggle and the bell.
+- `<mark>` in the Humanize result set only a background colour, so the UA default
+  black applied: about 1.6:1 on the dark theme, on exactly the spans the feature
+  exists to point at.
+- "Mark read" on Notifications carried `link-danger`, a 26x26 icon box, which
+  squashed its label and coloured a harmless action as destructive.
+
 ### Security
 - **The installers shipped the maintainer's working config as the factory
   default.** `config.yaml` at the repo root does two incompatible jobs: it is

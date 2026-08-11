@@ -219,10 +219,27 @@ window.EF = { $, $$, escapeHtml, fetchJson };
     return frac != null ? grouped + "." + frac : grouped;
   }
 
+  // Animate the TEXT NODE holding the number, not the element. Writing
+  // el.textContent replaces every child, which silently destroyed markup that
+  // lives beside the number, e.g. home.html's
+  //   <div class="stat-value num">{{ p95 }} <span class="muted small">ms</span></div>
+  // lost its unit span, so "ms" rendered at the 30px stat size instead of the
+  // 11.5px muted style. Elements whose only child is text behave exactly as
+  // before.
+  const nodeFor = new WeakMap();
+  function numberNode(el) {
+    for (const n of el.childNodes) {
+      if (n.nodeType === 3 && /\d/.test(n.nodeValue)) return n;
+    }
+    return null;
+  }
+
   // --- pre-pass: capture targets and zero everything out, synchronously. ---
-  const numEls = $$(NUM_SEL).filter(el => /\d/.test(el.textContent));
+  const numEls = $$(NUM_SEL).filter(el => numberNode(el) !== null);
   numEls.forEach(el => {
-    const raw = el.textContent.trim();
+    const node = numberNode(el);
+    nodeFor.set(el, node);
+    const raw = node.nodeValue;
     // prefix (e.g. "") · number (commas/decimals) · suffix (e.g. "%")
     const m = raw.match(/^(\D*)(-?[\d,]*\.?\d+)(.*)$/s);
     if (!m) return;
@@ -232,7 +249,7 @@ window.EF = { $, $$, escapeHtml, fetchJson };
     el.dataset.efTarget   = m[2].replace(/,/g, "");
     el.dataset.efDecimals = String((m[2].split(".")[1] || "").length);
     el.dataset.efComma    = m[2].includes(",") ? "1" : "0";
-    el.textContent = m[1] +
+    node.nodeValue = m[1] +
       fmt(0, +el.dataset.efDecimals, el.dataset.efComma === "1") + m[3];
   });
 
@@ -252,16 +269,18 @@ window.EF = { $, $$, escapeHtml, fetchJson };
     const dec = +el.dataset.efDecimals;
     const comma = el.dataset.efComma === "1";
     const { efPrefix: pre, efSuffix: suf, efFinal: fin } = el.dataset;
-    if (!isFinite(target) || target === 0) { el.textContent = fin; return; }
+    const node = nodeFor.get(el);
+    if (!node) return;
+    if (!isFinite(target) || target === 0) { node.nodeValue = fin; return; }
     const dur = 900;
     let start = null;
     function step(ts) {
       if (start === null) start = ts;
       const p = Math.min((ts - start) / dur, 1);
       const eased = 1 - Math.pow(1 - p, 3);            // easeOutCubic
-      el.textContent = pre + fmt(target * eased, dec, comma) + suf;
+      node.nodeValue = pre + fmt(target * eased, dec, comma) + suf;
       if (p < 1) requestAnimationFrame(step);
-      else el.textContent = fin;                       // exact server format
+      else node.nodeValue = fin;                       // exact server format
     }
     requestAnimationFrame(step);
   }

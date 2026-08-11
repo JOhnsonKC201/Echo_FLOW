@@ -42,16 +42,15 @@
    under the sidebar when body.nav-open on narrow viewports. #}
 <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 <header class="topbar">
-  {# Section display names — keep in sync with SECTIONS in dashboard/app.py.
-     Falls back to the active key's title-case for anything not listed. #}
-  {% set _crumbs = {
-    'home': 'Home', 'insights': 'Outcomes', 'graph': 'Graph',
-    'search': 'Search',
-    'dictionary': 'Dictionary', 'snippets': 'Snippets', 'style': 'Style',
-    'transforms': 'Transforms', 'commands': 'Commands',
-    'scratchpad': 'Scratchpad', 'privacy': 'Privacy',
-    'settings': 'Settings', 'notifications': 'Notifications'
-  } %}
+  {# Derive the crumb from SECTIONS, the same list the sidebar renders from.
+     This used to be a hand-copied dict with a "keep in sync" comment, and it
+     had already drifted: myvoice, calibration and actions were missing, so the
+     crumb fell back to `active|capitalize` and read "Myvoice" while the sidebar
+     and the page's own h1 both said "My Voice". #}
+  {% set _ns = namespace(crumb = active|capitalize) %}
+  {% for _key, _label, _url, _tpl in sections %}
+    {%- if _key == active %}{% set _ns.crumb = _label %}{% endif -%}
+  {% endfor %}
   <div class="topbar-left">
     {# Mobile-only menu trigger; hidden via CSS at desktop widths. #}
     <button class="nav-toggle" id="nav-toggle" type="button"
@@ -61,7 +60,7 @@
               stroke-width="2" stroke-linecap="round"/>
       </svg>
     </button>
-    <div class="crumb">{{ _crumbs.get(active, active|capitalize) }}</div>
+    <div class="crumb">{{ _ns.crumb }}</div>
   </div>
   <div class="topbar-actions">
     <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light theme"

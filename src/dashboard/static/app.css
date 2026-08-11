@@ -11,7 +11,11 @@
   --accent: #3eaf6f;         /* tighter, less saturated than #58c77a */
   --accent-2: #4aa9ff;
   --warn: #e6a23c;
-  --danger: #d96565;
+  --danger: #d96565;        /* danger as TEXT on a panel */
+  /* danger as a SOLID FILL behind white text. Distinct from --danger because
+     #d96565 only reaches 3.5:1 with white, under the 4.5:1 AA floor. This is
+     7.18:1. Destructive buttons must not be the same colour as warning pills. */
+  --danger-solid: #a32b21;
   --raw: #2a1f1f;
   --clean: #1f2a23;
   --diff-add: #1c3a2a;
@@ -31,6 +35,14 @@
   --text: #1c2230;
   --accent: #1a4a3a;
   --accent-2: #1f6fd0;
+  /* :root is the DARK palette, and this block previously overrode only 10 of
+     the 14 colour tokens. --warn and --danger kept their dark-tuned values on a
+     near-white surface, so every warning and error in the light theme rendered
+     around 2.2:1, including the two Privacy-ledger rows that exist to tell you
+     something IS leaving the machine. */
+  --warn: #8a5a00;          /* 5.43:1 on --bg, 5.93:1 on --panel */
+  --danger: #b3261e;        /* 5.99:1 on --bg, 6.54:1 on --panel */
+  --danger-solid: #b3261e;  /* 6.54:1 with white */
   --diff-add: #d8efe1;
   --diff-del: #f5d7d7;
 }
@@ -49,6 +61,21 @@ code, kbd, .mono, .num, .ts { font-family: var(--font-mono); }
    at ~1.6:1, the spans the feature exists to point at were the least readable
    text on the page. Inherit the surrounding text colour instead. */
 mark { color: inherit; }
+/* There was no :disabled rule anywhere in this stylesheet. The Humanize button
+   disables itself for what its own copy calls "up to a minute" while keeping
+   the full accent gradient and cursor:pointer, so it looked clickable and did
+   nothing. aria-busy/aria-disabled get the same treatment for AT parity. */
+button:disabled, .btn:disabled, button[aria-disabled="true"], .btn[aria-disabled="true"] {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+button:disabled:hover, .btn:disabled:hover,
+button[aria-disabled="true"]:hover, .btn[aria-disabled="true"]:hover {
+  border-color: var(--border);
+  box-shadow: none;
+  transform: none;
+}
 .num { font-variant-numeric: tabular-nums; }
 
 .sidebar {
@@ -330,9 +357,13 @@ button.primary:hover, .btn.primary:hover {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.row-form { display: flex; gap: 10px; align-items: center; }
+/* wrap + min-width:0: a flex item's automatic minimum size is its intrinsic
+   width, so a size=20 input could not shrink below ~168px. On a 375px screen
+   the submit button was pushed past the card edge and off the viewport, and
+   the page scrolled sideways under a topbar that is position:fixed. */
+.row-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row-form input[type="text"], textarea {
-  flex: 1; padding: 10px 13px; border-radius: 9px;
+  flex: 1; min-width: 0; padding: 10px 13px; border-radius: 9px;
   background: var(--bg); color: var(--text);
   border: 1px solid var(--border); font-size: 14px;
   font-family: inherit;
@@ -457,7 +488,11 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
 }
 .settings-form .actions { display: flex; gap: 8px; margin-top: 8px; }
-.btn.danger { background: var(--warn, #c0392b); color: #fff; border-color: transparent; font-weight: 600; }
+/* --warn is always defined, so the #c0392b fallback here never applied and the
+   most destructive control in the app ("Wipe dictation history") rendered in
+   the same amber as warning pills, with white-on-amber at 2.19:1. */
+.btn.danger { background: var(--danger-solid); color: #fff; border-color: transparent; font-weight: 600; }
+.btn.danger:hover { background: color-mix(in oklab, var(--danger-solid) 88%, #000); }
 .restart-banner {
   background: linear-gradient(90deg,
     color-mix(in oklab, var(--accent) 14%, var(--panel-2)),
@@ -470,7 +505,10 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 }
 .kv { list-style: none; padding: 0; margin: 0 0 18px; display: flex; flex-direction: column; gap: 6px; }
 .kv li {
-  display: flex; justify-content: space-between;
+  /* The Privacy page puts a full Windows DB path in here. Backslashes and
+     colons offer no break opportunity, so without wrapping it ran ~250px off
+     a 375px screen and forced a horizontal scroll. */
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px;
   padding: 10px 14px; background: var(--bg);
   border: 1px solid var(--border); border-radius: 10px;
   font-size: 13px;
@@ -478,7 +516,7 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 }
 .kv li:hover { border-color: color-mix(in oklab, var(--accent) 30%, var(--border)); }
 .kv .k { color: var(--muted); }
-.kv .v { color: var(--text); }
+.kv .v { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
 
 /* Phase 9 — Notifications inbox */
 .card-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -513,6 +551,11 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .lvl-info    { background: color-mix(in oklab, #4aa9ff 14%, transparent); color: #89b9ff; border-color: color-mix(in oklab, #4aa9ff 25%, transparent); }
 .lvl-warning { background: color-mix(in oklab, #e6a23c 14%, transparent); color: #ffc864; border-color: color-mix(in oklab, #e6a23c 28%, transparent); }
 .lvl-error   { background: color-mix(in oklab, #d96565 16%, transparent); color: #ff8a8a; border-color: color-mix(in oklab, #d96565 30%, transparent); }
+/* The badge TEXT is the severity word, so these foregrounds carry the meaning.
+   They were tuned for the dark palette only and landed at 1.3-1.8:1 on light. */
+[data-theme="light"] .lvl-info    { color: #1b4f8f; }
+[data-theme="light"] .lvl-warning { color: #7a5200; }
+[data-theme="light"] .lvl-error   { color: #a3231d; }
 .notif-title { font-weight: 600; color: var(--text); font-size: 13.5px; letter-spacing: -0.005em; }
 .notif-body { color: var(--muted); font-size: 13px; margin-top: 4px; white-space: pre-wrap; line-height: 1.5; }
 /* (.bell-badge already styled above near .bell) */
@@ -560,7 +603,9 @@ textarea { width: 100%; font-family: ui-monospace, monospace; resize: vertical; 
 .onboarding { max-width: 720px; }
 .onboard-steps { list-style: none; counter-reset: step; padding: 0; margin: 14px 0; display: flex; flex-direction: column; gap: 14px; }
 .onboard-steps li { counter-increment: step; padding: 14px 18px 14px 56px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; position: relative; }
-.onboard-steps li::before { content: counter(step); position: absolute; left: 18px; top: 14px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #08110b; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.onboard-steps li::before { content: counter(step); position: absolute; left: 18px; top: 14px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--bg); font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+/* was a hardcoded near-black on --accent: fine on the dark accent (6.87:1),
+   but 1.90:1 on the light theme's darker #1a4a3a. --bg tracks the theme. */
 .onboard-steps h3 { margin: 0 0 4px; font-size: 14px; color: var(--text); }
 .onboard-steps p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .onboard-steps kbd { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 12px; color: var(--text); }
@@ -1299,7 +1344,16 @@ kbd {
   body.nav-open .sidebar-backdrop { opacity: 1; pointer-events: auto; }
 
   /* Topbar + content reclaim the full width. */
-  .topbar  { left: 0; padding: 0 14px; }
+  /* z-index above the drawer scrim (55). The scrim covers inset:0, so without
+     this it dimmed the topbar and swallowed taps on the hamburger that opened
+     the drawer, the theme toggle and the bell. Still below the sidebar (60). */
+  .topbar  { left: 0; padding: 0 14px; z-index: 57; }
+  /* The kv-tables carry fixed th widths (220px/120px) that exceed a phone
+     card, and nothing between them and <body> scrolls, so the whole page
+     shifted sideways under the fixed topbar. Fixed layout keeps the declared
+     widths proportional and clamps the table to its container. */
+  .kv-table { table-layout: fixed; }
+  .kv-table th, .kv-table td { overflow-wrap: anywhere; }
   .content { margin-left: 0; padding: 16px 14px; }
 
   /* Collapse the major multi-column grids to a single column. */

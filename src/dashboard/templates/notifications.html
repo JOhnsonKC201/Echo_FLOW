@@ -27,7 +27,9 @@
             {% if not n.read_at %}
               <form method="post" action="/notifications/mark-read" class="inline">
                 <input type="hidden" name="id" value="{{ n.id }}">
-                <button type="submit" class="btn link-danger">Mark read</button>
+                {# not destructive, and .link-danger is a 26x26 icon box that
+                   squashed this 9-character label #}
+                <button type="submit" class="btn">Mark read</button>
               </form>
             {% endif %}
           </li>
