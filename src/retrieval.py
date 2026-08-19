@@ -131,7 +131,11 @@ class Retriever:
                             (to_blob(vec), _model_name, row_id),
                         )
                     except Exception:
-                        continue
+                        # Skip this row, but fall through to the batch check
+                        # below. `continue` here would jump the commit whenever
+                        # a failing row landed on a boundary, quietly undoing
+                        # the batching this loop depends on.
+                        pass
                     # Commit in batches. sqlite3 opens an implicit write
                     # transaction on the first UPDATE and holds it until commit;
                     # over a few thousand rows at ~10ms each that is a minute of
