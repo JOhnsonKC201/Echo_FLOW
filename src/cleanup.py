@@ -8,6 +8,7 @@ import requests
 from dataclasses import dataclass, field
 
 from . import log as wlog
+from . import fillers
 from . import notify
 _log = wlog.get("cleanup")
 
@@ -1159,10 +1160,11 @@ class Cleaner:
                         except Exception as e:
                             _log.warning("learned→ollama fallback failed: %s", e)
                             # Keep the user's words, but still normalize casing —
-                            # never surface unflattened "Every Word Capitalized".
-                            return self._finalize(self._expand_snippets(text), style)
+                            # never surface unflattened "Every Word Capitalized" —
+                            # and strip the fillers no model was there to remove.
+                            return self._llm_free_finalize(self._expand_snippets(text), style)
                     else:
-                        return self._finalize(self._expand_snippets(text), style)
+                        return self._llm_free_finalize(self._expand_snippets(text), style)
             else:
                 # Unknown / "none" provider: the user opted out of cleanup —
                 # honor it as a true raw passthrough (no casing/punctuation pass).
@@ -1184,7 +1186,7 @@ class Cleaner:
                 # punctuation, never substitutes words. Skipping it here was the
                 # bug where Whisper's "Every Word Capitalized" output reached the
                 # user unflattened whenever the guard tripped.
-                return self._finalize(self._expand_snippets(text), style)
+                return self._llm_free_finalize(self._expand_snippets(text), style)
             out_expanded = self._expand_snippets(out)
             # A user-defined transform (system_prompt_override) owns its output
             # formatting, just like PE 'prompt' mode — don't impose casing
@@ -1240,7 +1242,7 @@ class Cleaner:
             # "Every Word Capitalized" output unflattened. Guarded so a polish
             # error can never swallow the user's words.
             try:
-                return self._finalize(self._expand_snippets(text), style), False
+                return self._llm_free_finalize(self._expand_snippets(text), style), False
             except Exception:
                 return self._expand_snippets(text), False
 
@@ -2360,6 +2362,32 @@ class Cleaner:
 
         return _re.sub(_CANON_TOKEN_RE, _sub, text)
 
+    def _llm_free_finalize(self, text: str, style: str = "default") -> str:
+        """Polish text that NO model has cleaned. LLM-free and meaning-safe.
+
+        Used on every path where the user's raw words are what reaches the
+        cursor: the provider is unreachable, the learned provider had nothing
+        to apply, or the hallucination guard threw the model's rewrite away.
+        Those paths already ran the casing/punctuation pass; they never ran
+        filler removal, because that instruction only ever lived inside a model
+        prompt. So "so um I think, you know, it works" reached the cursor
+        verbatim for anyone without a model.
+
+        Strictly subtractive: `fillers.strip` deletes known hesitations and
+        fenced discourse markers and substitutes nothing, so this cannot invent
+        a word. The no-model contract ("we keep YOUR words") holds.
+        """
+        if bool(self.cfg.get("strip_fillers", True)) and style != "prompt":
+            try:
+                stripped, dropped = fillers.strip(text)
+                if dropped:
+                    _log.debug("llm-free: dropped fillers %s", dropped)
+                    text = stripped
+            except Exception as e:
+                # Never let a polish bug cost the user their dictation.
+                _log.warning("filler strip failed, keeping raw text: %s", e)
+        return self._finalize(text, style)
+
     def _finalize(self, text: str, style: str = "default") -> str:
         """Authoritative casing pass applied on every clean() return path.
 
@@ -2468,7 +2496,20 @@ class Cleaner:
         out = self._apply_learned_patterns(self._apply_learned_ngrams(text))
         applied = out != text
 
-        # Path C: cheap, deterministic capitalization + punctuation polish.
+        # Path C: deterministic filler removal. Every SYSTEM_PROMPTS tier tells
+        # the model to "remove filler words: um, uh, like, you know", so a user
+        # WITH a model gets this. A user without one never did: the instruction
+        # only existed inside a prompt nobody was sending. fillers.strip is the
+        # rule-based equivalent and is the reason this provider is usable on a
+        # machine that has no Ollama and no API key.
+        if bool(self.cfg.get("strip_fillers", True)):
+            stripped, dropped = fillers.strip(out)
+            if dropped:
+                _log.debug("learned: dropped fillers %s", dropped)
+                applied = True
+                out = stripped
+
+        # Path D: cheap, deterministic capitalization + punctuation polish.
         polished = _polish_text(out)
         if polished != out:
             applied = True

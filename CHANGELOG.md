@@ -4,6 +4,63 @@ All notable changes are documented here. Format roughly follows
 [Keep a Changelog](https://keepachangelog.com/); this project uses
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+- **Echo Flow starts Ollama when it is installed but not running.** Ollama does
+  not register itself for Windows autostart and Echo Flow does, so every login
+  brought the daemon up with its model backend down; the user was told to start
+  Ollama and restart. The daemon now probes the port at startup and, if the
+  binary is on disk, launches it. It only ever starts a backend you already
+  installed and never downloads or installs anything. `cleanup.autostart_ollama`,
+  on by default. The registry workaround this replaces is gone from the README
+  troubleshooting table.
+- **Cleanup upgrades itself when Ollama finishes booting, with no restart.**
+  A cold `ollama app.exe` start measured at over 25 seconds on a real machine,
+  which is far too long to block daemon startup for. So startup waits only long
+  enough to catch a warm start (`cleanup.autostart_timeout_sec`, 8s) and then
+  comes up in rules-only cleanup, while a background watcher polls and flips the
+  provider back to `ollama` the moment it answers. `phase.decide()` runs once at
+  startup and pinned the provider for the life of the process, so before this an
+  Ollama that arrived thirty seconds late was ignored until the user restarted
+  the daemon, which is precisely what the old toast told them to do.
+- **Deterministic filler removal for the LLM-free path** (`src/fillers.py`).
+  Every cleanup prompt tier instructs the model to "remove filler words: um, uh,
+  like, you know", which means the users who could not run a model never got it:
+  on a fresh install with no Ollama and no API key the `learned` provider has no
+  patterns to apply, so text reached the cursor with every hesitation intact.
+  There is now a rule-based pass on all four raw-words return paths (provider
+  unreachable, learned-with-nothing-to-apply, learned-to-Ollama fallback failed,
+  hallucination guard tripped). `cleanup.strip_fillers`, on by default.
+
+  It is deliberately timid, because the failure modes are asymmetric: a filler
+  left in is a blemish, a word eaten is invisible data loss. Hesitations (um,
+  uh, er, erm) are removed anywhere; discourse markers (you know, I mean, sort
+  of, basically) only where comma-fenced or opening a sentence; "like" only when
+  fenced by commas on **both** sides, since every other position is a real verb
+  or preposition. A sentence is never emptied, and the pass is purely
+  subtractive, so the "we keep YOUR words" contract still holds.
+
+### Changed
+- **The degraded-mode toast says what still works.** It read "Cleanup LLM
+  offline — using deterministic polish only. Start Ollama or set GROQ_API_KEY,
+  then restart", which is wrong twice over now: the daemon has already tried to
+  start Ollama, and a user who simply has no model needs to know the app is
+  still doing something for them. It now names the cleanup they are getting
+  (capitalization, punctuation, filler removal) and distinguishes "no local
+  model found" from "installed but did not start". It no longer ends with "then
+  restart", because the watcher above means a restart is not needed; a second
+  toast confirms when full cleanup comes back.
+- **README documents the no-model path.** The setup section previously said that
+  without Ollama "you simply get Whisper's raw text", which undersold it. There
+  is now a table of what rules-only cleanup does and does not do.
+
+### Fixed
+- **`fillers.strip` could not eat the front of a real word.** Caught while
+  building it: a hesitation pattern fenced only on its left turns "Ahmed" into
+  "Med" and "Erlang" into "Lang". Both edges are fenced, and the regression is
+  pinned by a test list of real words that begin with hesitation sounds.
+
 ## 0.3.1 - 2026-08-24
 
 ### Changed

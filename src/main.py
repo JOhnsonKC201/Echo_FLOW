@@ -43,6 +43,7 @@ from .retrieval import Retriever, RetrievalConfig
 from .asr_artifacts import HALLUCINATIONS
 from . import voice_profile
 from . import phase as phase_mod
+from . import ollama_supervisor
 from . import grade as grade_mod
 from . import tags as tags_mod
 from . import actions as actions_mod
@@ -242,6 +243,42 @@ class App:
         # startup so users discover misconfiguration before their first
         # dictation. Each warning maps to a documented setup step.
         _audit_cloud_keys(cfg)
+        # Ollama does not register itself for autostart on Windows; Echo Flow
+        # does. So on a normal login the daemon used to come up with its model
+        # backend down, degrade to LLM-free cleanup, and tell the user to start
+        # Ollama and restart. If the binary is on disk we can just start it,
+        # and this has to happen BEFORE decide() because decide() probes the
+        # port to choose a provider.
+        self.ollama_state = "skipped"
+        self._pending_ollama_watch: str | None = None
+        if bool(cfg.get("cleanup", {}).get("autostart_ollama", True)):
+            ourl = cfg.get("cleanup", {}).get("ollama", {}).get(
+                "base_url", "http://localhost:11434"
+            )
+            try:
+                self.ollama_state = ollama_supervisor.ensure_running(
+                    lambda: ollama_supervisor.is_alive(ourl),
+                    timeout_sec=float(
+                        cfg.get("cleanup", {}).get("autostart_timeout_sec", 8.0)
+                    ),
+                )
+                if self.ollama_state == "started":
+                    _announce("[green]Started Ollama[/green] (it was installed but not running)")
+                # A cold Ollama start was measured at over 25s, far too long to
+                # hold up the daemon. On a timeout we come up now in rules-only
+                # mode and upgrade in the background once it answers, so the
+                # user never has to restart Echo Flow to get cleanup back. The
+                # watcher is started AFTER self.cleaner exists (see below);
+                # starting it here would race the Cleaner construction it
+                # mutates.
+                self._pending_ollama_watch = (
+                    ourl if self.ollama_state == "timeout" else None
+                )
+            except Exception as e:
+                # Autostart is a convenience. It must never be the reason the
+                # daemon fails to come up.
+                _log.warning("Ollama autostart failed: %s", e)
+                self.ollama_state = "error"
         # Auto-phase: decide backend BEFORE loading anything
         db_path = cfg["history"]["db_path"]
         self.phase = phase_mod.decide(cfg, db_path)
@@ -252,12 +289,19 @@ class App:
             # Raw-ish mode used to be silent — the user only noticed when
             # dictations came out unpolished. Say it once, loudly.
             try:
-                wnotify.notify(
-                    "Echo Flow",
-                    "Cleanup LLM offline — using deterministic polish only. "
-                    "Start Ollama or set GROQ_API_KEY, then restart.",
-                    "warning",
-                )
+                if self.ollama_state == "not-installed":
+                    # No model on this machine, and possibly never will be.
+                    # Say what DOES work rather than only what does not.
+                    msg = ("No local model found. Cleaning with rules only: "
+                           "capitalization, punctuation and filler removal. "
+                           "Install Ollama for grammar cleanup.")
+                elif self.ollama_state in ("timeout", "spawn-failed", "error"):
+                    msg = ("Ollama is installed but did not start. Using "
+                           "rules-only cleanup until it does.")
+                else:
+                    msg = ("Cleanup model offline. Using rules-only cleanup: "
+                           "capitalization, punctuation and filler removal.")
+                wnotify.notify("Echo Flow", msg, "warning")
             except Exception as e:
                 _log.warning("degraded-mode toast failed: %s", e)
         # Apply phase decision over static config
@@ -290,6 +334,9 @@ class App:
             vad_filter=wc.get("vad_filter", True),
         ))
         self.cleaner = Cleaner(cfg["cleanup"])
+        # Safe to start now: the watcher flips self.cleaner.provider.
+        if self._pending_ollama_watch:
+            self._watch_for_ollama(self._pending_ollama_watch)
         # Preload the cleanup model in the background so the first dictation
         # doesn't pay the cold-start cost (5-15s for qwen2.5:3b).
         threading.Thread(target=self.cleaner.warmup, daemon=True).start()
@@ -473,6 +520,28 @@ class App:
                 except Exception as e:
                     _log.warning("self-improve pass failed: %s", e)
             threading.Thread(target=_self_improve, daemon=True).start()
+
+    def _watch_for_ollama(self, base_url: str) -> None:
+        """Upgrade from rules-only to model cleanup when Ollama finishes booting.
+
+        `phase.decide()` runs once, at startup, and pins the provider. Before
+        this, an Ollama that came up thirty seconds later was ignored until the
+        user restarted the daemon, which is exactly what the old degraded toast
+        told them to do.
+        """
+        def _upgrade() -> None:
+            self.cleaner.provider = "ollama"
+            self.cfg["cleanup"]["provider"] = "ollama"
+            wnotify.notify(
+                "Echo Flow", "Local model is up. Full cleanup is back on.", "info"
+            )
+
+        threading.Thread(
+            target=ollama_supervisor.watch_until_ready,
+            args=(lambda: ollama_supervisor.is_alive(base_url), _upgrade),
+            daemon=True,
+            name="ollama-watch",
+        ).start()
 
     def refresh_transform_hotkeys(self) -> None:
         """(Re)register pynput GlobalHotKeys for every transform with a hotkey.
