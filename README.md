@@ -8,7 +8,7 @@
   <img alt="audio" src="https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a">
   <img alt="cloud" src="https://img.shields.io/badge/cloud-opt--in%20only-6c6a62">
   <a href="https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml/badge.svg"></a>
-  <img alt="version" src="https://img.shields.io/badge/version-0.3.0-58c77a">
+  <img alt="version" src="https://img.shields.io/badge/version-0.3.1-58c77a">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
