@@ -2,7 +2,7 @@
 # Version manifest. PackageVersion + the SHA256 in the installer manifest must
 # be refreshed for each release (see packaging/winget/README.md).
 PackageIdentifier: JOhnsonKC201.EchoFlow
-PackageVersion: 0.3.0
+PackageVersion: 0.3.1
 DefaultLocale: en-US
 ManifestType: version
 ManifestVersion: 1.6.0

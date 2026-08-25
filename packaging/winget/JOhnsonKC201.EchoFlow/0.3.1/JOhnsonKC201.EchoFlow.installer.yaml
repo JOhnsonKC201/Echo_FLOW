@@ -11,7 +11,7 @@
 # specified here. The install is per-user (Scope: user), matching the Inno
 # script's PrivilegesRequired=lowest.
 PackageIdentifier: JOhnsonKC201.EchoFlow
-PackageVersion: 0.3.0
+PackageVersion: 0.3.1
 InstallerLocale: en-US
 Platform:
   - Windows.Desktop
@@ -26,7 +26,7 @@ UpgradeBehavior: install
 ReleaseDate: 2026-07-25
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/JOhnsonKC201/Echo_FLOW/releases/download/v0.3.0/EchoFlow-Daemon-Setup-0.3.0.exe
+    InstallerUrl: https://github.com/JOhnsonKC201/Echo_FLOW/releases/download/v0.3.1/EchoFlow-Daemon-Setup-0.3.1.exe
     # Placeholder (quoted so this template stays a valid 64-hex string until
     # replaced with the real release hash, which contains letters and won't
     # need quoting).
@@ -34,7 +34,7 @@ Installers:
     AppsAndFeaturesEntries:
       - DisplayName: Echo Flow
         Publisher: Echo Flow
-        DisplayVersion: 0.3.0
+        DisplayVersion: 0.3.1
         # Inno's per-user uninstall key is "{AppId}_is1"; AppId is set in
         # installer/EchoFlow-Daemon.iss. This lets winget match installed/
         # upgrade state.

@@ -4,7 +4,7 @@ All notable changes are documented here. Format roughly follows
 [Keep a Changelog](https://keepachangelog.com/); this project uses
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.3.1 - 2026-08-24
 
 ### Changed
 - **Removed every long dash from the interface.** 141 em and en dashes across 27
@@ -346,7 +346,7 @@ All notable changes are documented here. Format roughly follows
   count (833 → 1502), and stopped it claiming audio is stored in `history.db`:
   audio is never written to disk.
 
-## 0.3.0 — 2026-07-25
+## 0.3.0 - 2026-07-25
 
 ### Added
 - **Speaker adaptation, Phase 3 — guided voice calibration.** A new **Calibrate**
@@ -651,7 +651,7 @@ All notable changes are documented here. Format roughly follows
   `#define` is now just a local-build fallback. Fixed the stale repo URL in
   `installer/EchoFlow.iss`.
 
-## 0.2.0 — 2026-06-17
+## 0.2.0 - 2026-06-17
 
 The dashboard era: a full local web dashboard, the casing-control system,
 experimental voice Action Mode, opt-in cloud cleanup, and a hardening pass
@@ -804,7 +804,7 @@ across the daemon lifecycle.
   the active vector store is the `embedding` BLOB column on the
   `dictations` table in `data/history.db`.
 
-## 0.1.0 — 2026-05-20
+## 0.1.0 - 2026-05-20
 
 First numbered version. The day a lot happened.
 
