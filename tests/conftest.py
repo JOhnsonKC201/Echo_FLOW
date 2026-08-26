@@ -155,3 +155,34 @@ def isolated_env(monkeypatch, tmp_path):
     for k in ("GROQ_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.chdir(tmp_path)
+
+
+def _assert_kept_users_words(out: str, raw: str) -> None:
+    """The raw-path contract: Echo Flow may DELETE, never invent or reorder.
+
+    When no cleanup model is reachable, the user's own words are what reaches
+    the cursor. The LLM-free pass that runs on the way out is cosmetic (casing,
+    punctuation) and subtractive (hesitations like "um"/"uh"/"er", which used to
+    be removed only by an instruction inside a model prompt, i.e. exactly what
+    is unavailable on this path).
+
+    Assert that contract rather than string equality: equality only held while
+    the pass was casing-only, and it would fail the moment the pass legitimately
+    removes something.
+    """
+    words_in = raw.split()
+    words_out = [w.strip(".,!?").lower() for w in out.split()]
+    assert words_out, "the user's dictation must never come back empty"
+    assert set(words_out) <= set(words_in), (
+        f"no word may be invented on the raw path; got {out!r} from {raw!r}"
+    )
+    assert words_out == [w for w in words_in if w in set(words_out)], (
+        "this is deletion, not a rewrite: surviving words keep their order"
+    )
+    assert "um" not in words_out, "hesitations should be gone"
+
+
+@pytest.fixture
+def assert_kept_users_words():
+    """Shared raw-path contract check. See `_assert_kept_users_words`."""
+    return _assert_kept_users_words

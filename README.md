@@ -69,7 +69,7 @@ the Whisper model once; after that it works fully offline.
 | Feature | What it gives you |
 |---|---|
 | **Local transcription** | OpenAI Whisper on-device (`tiny` → `large-v3-turbo`, or `auto` by hardware). Nothing uploaded. |
-| **Local cleanup** | A small LLM via Ollama (`qwen2.5:3b-instruct`) polishes raw output — punctuation, capitalization, filler removal. No Ollama → you still get raw Whisper text. |
+| **Local cleanup** | A small LLM via Ollama (`qwen2.5:3b-instruct`) polishes raw output: punctuation, capitalization, filler removal. No Ollama and no key → deterministic rules-only cleanup, which still handles casing, punctuation and fillers. |
 | **Re-paste** (`Ctrl+Shift+Win`) | Drops your last dictation into a new window — say it once in Slack, paste it again in email. |
 | **Snippets** | Short codes expand after cleanup: `btw` → "by the way", `lgtm` → "looks good to me". Case- and word-boundary-aware. |
 | **App-aware profiles** | Cleanup style adapts to the focused app — casual punctuation in Slack, symbol-aware in VS Code, full sentences in Gmail. |
@@ -277,8 +277,24 @@ Ollama, then pull the default model:
 ```bat
 ollama pull qwen2.5:3b-instruct-q4_K_M
 ```
-This is the default (`cleanup.provider: ollama`). If Ollama isn't running, you
-simply get Whisper's raw text — no internet required either way.
+This is the default (`cleanup.provider: ollama`). Echo Flow starts Ollama for
+you if it is installed but not running, so you do not have to add it to Windows
+startup yourself.
+
+**No Ollama and no API key?** Echo Flow still works. It falls back to
+rules-only cleanup, which is deterministic and needs no model at all:
+
+| Rules-only cleanup does | It does not |
+|---|---|
+| Capitalization and end punctuation | Fix grammar or tense |
+| Flattens Whisper's "Every Word Capitalized" runs | Reword or restructure |
+| Collapses double-transcribed phrases | Add anything you did not say |
+| Removes fillers: "um", "uh", "er", and comma-fenced "you know" / ", like," | |
+| Applies any casings and phrases it has learned from your edits | |
+
+It is purely subtractive, so it can never put a word in your mouth. You lose
+grammar cleanup, not dictation. Set `cleanup.strip_fillers: false` to turn the
+filler pass off.
 
 ### 5. Optional: cloud for Prompt-Engineering mode
 Regular dictation is 100% local. The one built-in cloud path is
@@ -493,7 +509,7 @@ for deeper specs (start at [`docs/README.md`](docs/README.md)).
 | **Whisper invents "thank you for watching" on silence** | Already guarded (length + RMS); very short/quiet clips are dropped. |
 | **Recording starts when I only wanted to re-paste** | The Ctrl+Shift+Win combo has a veto — add Win within a frame and recording aborts, paste fires instead. |
 | **Ollama "connection refused"** | Start the Ollama app or run `ollama serve`. |
-| **"Couldn't reach the local model" after every reboot** | Echo Flow autostarts at login but Ollama does not, so the daemon comes up with its model backend down. Add Ollama to startup (no admin needed): `Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name Ollama -Value "\"$env:LOCALAPPDATA\Programs\Ollama\ollama app.exe\""`. Undo with `Remove-ItemProperty` on the same key. No daemon restart needed once Ollama is up; the model is re-checked per request. |
+| **"Couldn't reach the local model" after every reboot** | Fixed in 0.3.2. Echo Flow autostarts at login but Ollama does not, so the daemon used to come up with its model backend down. It now starts Ollama itself when the binary is installed (`cleanup.autostart_ollama`, on by default). If it still cannot, you get rules-only cleanup and a toast saying so rather than silence. |
 | **Hotkey dead after a Windows update** | pynput's global listener sometimes needs a restart — `RESTART.bat`. |
 | **Pasting lags in some Electron apps** | Clipboard restore runs in a background thread; usually fine, occasionally a ~100ms hiccup. |
 | **Every word comes out Capitalized** | Fixed in current code; if you still see it, `RESTART.bat` so the running daemon picks up the casing pass. |

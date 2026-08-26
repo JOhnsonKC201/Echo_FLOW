@@ -50,6 +50,18 @@ cleanup:
   # cloud call fails or its API key is missing, cleanup falls back to local
   # Ollama so dictation never breaks. Requires GROQ_API_KEY for groq.
   allow_cloud_cleanup: true
+  # Start Ollama when it is installed but not running. Ollama does not add
+  # itself to Windows startup and Echo Flow does, so without this the daemon
+  # comes up every login with its model backend down. Only ever starts a
+  # backend you already installed; it never downloads or installs anything.
+  autostart_ollama: true
+  autostart_timeout_sec: 8.0    # how long STARTUP waits for it to answer. A cold Ollama can take 25s+, so on a timeout the daemon comes up in rules-only cleanup and a background watcher upgrades it the moment Ollama answers. No restart needed.
+  # Deterministic filler removal on the LLM-free paths (no model reachable, or
+  # cleanup.provider: learned). Removes hesitations ("um", "uh", "er") and
+  # comma-fenced discourse markers ("you know", "I mean", ", like,"). Purely
+  # subtractive, so it can never substitute a word you did not say. The model
+  # prompts already ask for this, so it changes nothing when a model is up.
+  strip_fillers: true
   # Fast-path: if Whisper output is already clean (capitalized, punctuated, no
   # fillers, <=140 chars) skip the LLM polish entirely. Saves 200-2000ms on
   # the common case. Set false to force LLM polish on every dictation.

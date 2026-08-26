@@ -12,6 +12,8 @@ def _messy_text() -> str:
     return "um yeah like ship the thing you know"
 
 
+
+
 def test_primary_fails_fallback_runs(monkeypatch):
     from src.cleanup import Cleaner
     cleaner = Cleaner({"enabled": True, "provider": "ollama",
@@ -39,7 +41,7 @@ def test_primary_fails_fallback_runs(monkeypatch):
     assert skipped is False
 
 
-def test_both_fail_returns_raw(monkeypatch):
+def test_both_fail_returns_raw(monkeypatch, assert_kept_users_words):
     from src.cleanup import Cleaner
     cleaner = Cleaner({"enabled": True, "provider": "ollama",
                        "learned": {"fallback_to_ollama": False}})
@@ -58,15 +60,12 @@ def test_both_fail_returns_raw(monkeypatch):
         provider_override="ollama",
         fallback_provider="learned",
     )
-    # On total failure we keep the user's WORDS (never invent/substitute), but
-    # the LLM-free casing/punctuation pass still runs — so Whisper's "Every Word
-    # Capitalized" output can't reach the user unflattened during an outage.
-    assert out.rstrip(".").lower() == raw
+    assert_kept_users_words(out, raw)
     assert out[0].isupper()  # casing normalized, words intact
     assert skipped is False
 
 
-def test_no_fallback_provider_returns_raw_on_primary_fail(monkeypatch):
+def test_no_fallback_provider_returns_raw_on_primary_fail(monkeypatch, assert_kept_users_words):
     """When fallback_provider is None, primary failure returns the user's words
     (casing-normalized, never reworded) immediately."""
     from src.cleanup import Cleaner
@@ -78,6 +77,6 @@ def test_no_fallback_provider_returns_raw_on_primary_fail(monkeypatch):
 
     raw = _messy_text()
     out, skipped = cleaner.clean(raw, provider_override="ollama")
-    assert out.rstrip(".").lower() == raw
+    assert_kept_users_words(out, raw)
     assert out[0].isupper()
     assert skipped is False

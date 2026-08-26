@@ -299,20 +299,29 @@ class _RecordCollector(logging.Handler):
 
 
 def _capture_phase_logs():
+    """Capture the logger that owns the Ollama probe.
+
+    The probe itself moved to `ollama_supervisor` (which also owns STARTING
+    Ollama, so both halves of "is the backend up" live together);
+    `phase._ollama_alive` is now a thin alias. The quiet-when-offline,
+    loud-on-a-real-bug behavior these tests guard is unchanged, so they follow
+    the probe to its new home rather than being deleted.
+    """
     from src import phase as phase_mod
-    logger = phase_mod._log
+    from src import ollama_supervisor as sup_mod
+    logger = sup_mod._log
     handler = _RecordCollector()
     prev_level = logger.level
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
-    return phase_mod, logger, handler, prev_level
+    return phase_mod, sup_mod, logger, handler, prev_level
 
 
 def test_ollama_alive_offline_is_quiet():
     """An unreachable Ollama is an expected, handled state — it must NOT emit an
     ERROR-level traceback (those flood _live_err.txt on every daemon restart and
     bury real bugs). Regression guard for the noisy-log fix."""
-    phase_mod, logger, handler, prev = _capture_phase_logs()
+    phase_mod, sup_mod, logger, handler, prev = _capture_phase_logs()
     try:
         # Port 1 is dead → connection error → expected False, logged at debug.
         assert phase_mod._ollama_alive("http://localhost:1") is False
@@ -327,12 +336,12 @@ def test_ollama_alive_offline_is_quiet():
 def test_ollama_alive_unexpected_error_still_loud(monkeypatch):
     """A non-network error (genuine bug) must still surface with a traceback so
     it stays visible — we only quieted the expected connection-failure case."""
-    phase_mod, logger, handler, prev = _capture_phase_logs()
+    phase_mod, sup_mod, logger, handler, prev = _capture_phase_logs()
 
     def _boom(*_a, **_k):
         raise ValueError("unexpected non-network failure")
 
-    monkeypatch.setattr(phase_mod.requests, "get", _boom)
+    monkeypatch.setattr(sup_mod.requests, "get", _boom)
     try:
         assert phase_mod._ollama_alive("http://localhost:11434") is False
     finally:

@@ -65,7 +65,7 @@ def _missing_content_post(*a, **k):
     _malformed_post,
     _missing_content_post,
 ], ids=["timeout", "http500", "malformed_json", "missing_content"])
-def test_via_ollama_error_returns_raw_and_notifies(monkeypatch, fake_post):
+def test_via_ollama_error_returns_raw_and_notifies(monkeypatch, fake_post, assert_kept_users_words):
     from src import cleanup as cleanup_mod
     cleaner = _make_cleaner()
 
@@ -77,8 +77,9 @@ def test_via_ollama_error_returns_raw_and_notifies(monkeypatch, fake_post):
     monkeypatch.setattr(cleanup_mod.notify, "notify", _fake_notify)
 
     out, skipped = cleaner.clean(RAW)
-    # Words preserved (no rewording), casing/punctuation normalized.
-    assert out.rstrip(".").lower() == RAW, f"words must be preserved on error; got {out!r}"
+    # Words preserved (no rewording), casing/punctuation normalized, and the
+    # hesitations the model would have removed are removed by rule instead.
+    assert_kept_users_words(out, RAW)
     assert out[0].isupper()
     assert skipped is False
     assert len(notify_calls) == 1, f"expected one error notify; got {notify_calls}"
