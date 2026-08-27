@@ -267,8 +267,12 @@ Creates a Python venv and installs dependencies from `requirements.txt`.
 ```bat
 run.bat
 ```
-First launch downloads the Whisper model (a minute or two). When the green
-microphone appears in your system tray, you're ready. Transcription runs
+First launch writes a `config.yaml` in the repo root, copied from the factory
+default in `packaging/default/config.yaml`. That copy is yours to edit and is
+gitignored, so a clone can never inherit anyone else's settings: you start
+local-first, exactly as described below. First launch also downloads the Whisper
+model (a minute or two). When the green microphone appears in your system tray,
+you're ready. Transcription runs
 **locally** — nothing is uploaded.
 
 ### 4. Local LLM cleanup (recommended)
@@ -476,7 +480,7 @@ without exposing keys.
 
 ```
 app.py            entry point
-config.yaml       the only thing you normally edit
+config.yaml       the only thing you normally edit (created on first run; gitignored)
 src/              the app — daemon, dashboard, voice pipeline
   ├── main.py         daemon: hotkey, recording, transcription, dispatch
   ├── cleanup.py      LLM/learned cleanup + casing/punctuation polish

@@ -488,6 +488,12 @@ def _repo() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _shipped_cfg() -> Path:
+    """The config every install actually starts from. The working config.yaml
+    beside it is gitignored: absent in CI, personal everywhere else."""
+    return _repo() / "packaging" / "default" / "config.yaml"
+
+
 def test_factory_default_is_in_sync_with_config_yaml():
     """packaging/default/config.yaml is generated FROM config.yaml so a newly
     added setting is inherited automatically. If this fails, run
@@ -503,11 +509,14 @@ def test_factory_default_is_in_sync_with_config_yaml():
 
 
 def test_factory_default_is_local_only_and_opt_in():
-    """config.yaml is the maintainer's WORKING config and is also what gets
-    bundled and copied to %LOCALAPPDATA% on a frozen install's first run. It
-    shipped provider=groq + allow_cloud_cleanup=true, so every dictation of
-    every new user went to a cloud API while the README said local-by-default;
-    Action Mode was live; and command_prefix was a word no doc mentions."""
+    """This file is the only config in git, and every install starts from it:
+    bundled into the builds, and copied on a source checkout's first run too.
+    config.yaml beside it is the maintainer's working config and is gitignored.
+
+    It used to be the other way round, and the working config shipped
+    provider=groq + allow_cloud_cleanup=true, so every dictation of every new
+    user went to a cloud API while the README said local-by-default; Action
+    Mode was live; and command_prefix was a word no doc mentions."""
     import yaml
     cfg = yaml.safe_load((_repo() / "packaging" / "default" / "config.yaml")
                          .read_text(encoding="utf-8"))
@@ -614,7 +623,7 @@ def test_light_theme_keeps_its_own_accent_by_default():
     large-text floor. Empty means "each theme uses its designed accent"."""
     import yaml
     root = Path(__file__).resolve().parent.parent
-    cfg = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+    cfg = yaml.safe_load(_shipped_cfg().read_text(encoding="utf-8"))
     assert not (cfg["dashboard"].get("accent_color") or ""), \
         "a shipped accent overrides BOTH themes; leave it empty"
     # ...and the key still EXISTS, so Settings -> General can save it.
@@ -629,7 +638,7 @@ def test_settings_general_save_is_a_noop_when_the_colour_is_untouched(tmp_path):
     from src.dashboard.settings_routes import _theme_accent
 
     root = Path(__file__).resolve().parent.parent
-    cfg = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+    cfg = yaml.safe_load(_shipped_cfg().read_text(encoding="utf-8"))
     dc = cfg["dashboard"]
     rendered = dc.get("accent_color") or _theme_accent(dc)
     compared = str(dc.get("accent_color") or "") or _theme_accent(dc)
@@ -720,7 +729,7 @@ def test_inbox_edit_of_a_missing_row_does_not_claim_success(tmp_path):
 
     root = Path(__file__).resolve().parent.parent
     cfg_path = tmp_path / "config.yaml"
-    shutil.copy(root / "config.yaml", cfg_path)
+    shutil.copy(_shipped_cfg(), cfg_path)
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     cfg["dashboard"]["onboarded"] = True
     h = History(str(tmp_path / "h.db"))
@@ -806,7 +815,7 @@ def test_every_scalar_in_the_shipped_config_resolves_to_itself(tmp_path):
             else:
                 yield pre + (k,), v
 
-    orig = dict(leaves(yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))))
+    orig = dict(leaves(yaml.safe_load(_shipped_cfg().read_text(encoding="utf-8"))))
     scalars = {p: v for p, v in orig.items()
                if isinstance(v, (str, int, float, bool)) or v is None}
     assert len(scalars) > 100, "fixture no longer covers the real config"
@@ -814,7 +823,7 @@ def test_every_scalar_in_the_shipped_config_resolves_to_itself(tmp_path):
     problems = []
     for path, val in scalars.items():
         dst = tmp_path / f"{'_'.join(path)}.yaml"
-        shutil.copy(root / "config.yaml", dst)
+        shutil.copy(_shipped_cfg(), dst)
         new = (not val) if isinstance(val, bool) else (
             "ZZSENT" if (isinstance(val, str) or val is None) else val + 7)
         set_scalar(dst, ".".join(path), new)
@@ -833,5 +842,5 @@ def test_config_yaml_defines_every_dashboard_key_the_settings_form_writes(tmp_pa
     from src.dashboard.config_writer import set_scalar
     root = Path(__file__).resolve().parent.parent
     dst = tmp_path / "config.yaml"
-    shutil.copy(root / "config.yaml", dst)
+    shutil.copy(_shipped_cfg(), dst)
     set_scalar(dst, "dashboard.accent_color", "#123456")

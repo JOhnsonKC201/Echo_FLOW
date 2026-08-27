@@ -11,7 +11,8 @@ from src import sound
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-REPO_CFG = REPO_ROOT / "config.yaml"
+# The tracked factory default; the working config.yaml is gitignored.
+REPO_CFG = REPO_ROOT / "packaging" / "default" / "config.yaml"
 HOST = {"Host": "127.0.0.1:8766"}
 
 

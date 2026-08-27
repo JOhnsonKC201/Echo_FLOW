@@ -22,11 +22,13 @@ Add a dated section to `CHANGELOG.md` describing the release.
 
 ## 1b. Refresh the factory-default config
 
-`config.yaml` at the repo root is the **working** config: it is what the daemon
+`config.yaml` at the repo root is your **working** config: it is what the daemon
 reads when you run from source, so it carries whatever you have switched on. It
-is *not* what ships. The installers bundle
-`packaging/default/config.yaml`, which `main.load_config` copies to
-`%LOCALAPPDATA%\EchoFlow\config.yaml` on a frozen install's first run.
+is gitignored and it never ships. The only config in git is
+`packaging/default/config.yaml`, which the installers bundle and which
+`main.load_config` copies on first run: to
+`%LOCALAPPDATA%\EchoFlow\config.yaml` on a frozen install, and to the repo
+root on a source checkout.
 
 That file is generated, never hand-edited:
 
@@ -40,8 +42,10 @@ keys listed in `FACTORY_OVERRIDES` (cloud cleanup off, voice control opt-in,
 automatically; it only needs an entry there if the value you committed is not a
 safe default for a stranger's machine.
 
-`python scripts/make_default_config.py --check` fails if the two have drifted,
-and the test suite runs exactly that, so CI blocks a stale default.
+`python scripts/make_default_config.py --check` fails if the two have drifted.
+Where there is no working config to diff against (CI, a fresh clone) it verifies
+the tracked default still carries every `FACTORY_OVERRIDES` value instead. The
+test suite runs both, so CI blocks a stale default and a cloud one.
 
 ## 2. Tag and push
 

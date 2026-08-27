@@ -10,7 +10,10 @@ from src.history import History
 from src.dashboard import actions_view
 
 
-REPO_CFG = Path(__file__).resolve().parent.parent / "config.yaml"
+# The tracked factory default, not a working config.yaml: that one is
+# gitignored, so it is absent in CI and personal everywhere else.
+REPO_CFG = (Path(__file__).resolve().parent.parent
+            / "packaging" / "default" / "config.yaml")
 HOST = {"Host": "127.0.0.1:8766"}
 
 

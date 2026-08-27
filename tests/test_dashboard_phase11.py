@@ -11,7 +11,10 @@ import yaml
 from src.history import History
 
 
-REPO_CFG = Path(__file__).resolve().parent.parent / "config.yaml"
+# The tracked factory default, not a working config.yaml: that one is
+# gitignored, so it is absent in CI and personal everywhere else.
+REPO_CFG = (Path(__file__).resolve().parent.parent
+            / "packaging" / "default" / "config.yaml")
 
 
 class _App:

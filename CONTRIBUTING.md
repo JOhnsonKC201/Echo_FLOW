@@ -38,12 +38,15 @@ CI runs it on Python 3.11 and 3.12.
 - Fixing a bug? Write the failing test first so the regression stays dead.
 - The daemon loads code once at startup: run `RESTART.bat` to see your change
   live.
-- **Adding a config setting?** `config.yaml` is the working config for a source
-  checkout; the installers ship `packaging/default/config.yaml`. That one is
-  generated (`python scripts/make_default_config.py`) and inherits your new key
-  automatically, so you only need to touch `FACTORY_OVERRIDES` in that script if
-  the value you committed is not a safe default on a stranger's machine. A test
-  fails if the two drift.
+- **Adding a config setting?** `config.yaml` is your working config and is
+  gitignored, so nothing you switch on can reach a cloner. The only config in
+  git is `packaging/default/config.yaml`: the installers bundle it, and
+  `main.load_config` copies it on first run for a source checkout too.
+  Regenerate it with `python scripts/make_default_config.py` and it inherits
+  your new key automatically. Touch `FACTORY_OVERRIDES` in that script only if
+  the value you run with is not a safe default on a stranger's machine. Tests
+  fail if the two drift, and fail again if the tracked default ever ships a
+  cloud setting.
 - Planning something big? Open an issue first so we can talk design before you
   sink a weekend into it.
 

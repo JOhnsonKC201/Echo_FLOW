@@ -132,6 +132,16 @@ else:
 
 CONFIG_PATH = USER_ROOT / "config.yaml"
 
+# The factory default every fresh install starts from. It is the only config
+# tracked in git; the config.yaml beside it is yours and is gitignored, so a
+# clone cannot inherit whatever a maintainer had switched on. Frozen builds
+# bundle this file as a bare "config.yaml" (see the .spec files), which is why
+# the two branches point at different names.
+if getattr(sys, "frozen", False):
+    FACTORY_CONFIG = BUNDLE_ROOT / "config.yaml"
+else:
+    FACTORY_CONFIG = USER_ROOT / "packaging" / "default" / "config.yaml"
+
 
 def _audit_cloud_keys(cfg: dict) -> None:
     """Warn loudly when a cloud feature is enabled but its API key is missing.
@@ -200,10 +210,13 @@ def _format_initial_prompt(terms: list[str]) -> str:
 
 
 def load_config() -> dict:
-    # First-run on a frozen install: seed user config from the bundled default.
-    if not CONFIG_PATH.exists() and (BUNDLE_ROOT / "config.yaml").exists():
+    # First run seeds the user config from the factory default. This runs for a
+    # source checkout too: config.yaml is gitignored, so a fresh clone has none
+    # until this copies one, and it starts local-first like the README says.
+    if not CONFIG_PATH.exists() and FACTORY_CONFIG.exists():
         import shutil
-        shutil.copy(BUNDLE_ROOT / "config.yaml", CONFIG_PATH)
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(FACTORY_CONFIG, CONFIG_PATH)
     # Frozen builds: chdir to user root so all relative paths in cfg
     # (history.db_path, data/dashboard.port, data/wispr.log, …) land in the
     # user-writable dir instead of next to the read-only .exe.

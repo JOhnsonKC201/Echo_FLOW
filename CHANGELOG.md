@@ -6,6 +6,27 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Fixed
+- **A source checkout no longer starts with cloud cleanup on.** 0.3.1 stopped
+  the installers from shipping the maintainer's working `config.yaml`, but the
+  seeding that replaced it was gated on `sys.frozen`, so only frozen installs
+  got the factory default. Anyone following the README's from-source path, the
+  one it recommends "if you want to hack on it", still got a tracked
+  `config.yaml` carrying `cleanup.provider: groq` and
+  `allow_cloud_cleanup: true`, two sections above the same README promising
+  "Regular dictation is 100% local". Step 5 then told them to set `GROQ_API_KEY`
+  for Prompt-Engineering mode, which was the exact keystroke that started
+  routing every dictation to Groq.
+
+  `config.yaml` is now gitignored, `packaging/default/config.yaml` is the only
+  config in git, and `main.load_config` seeds from it on first run whether or
+  not the app is frozen. A clone cannot inherit anyone's settings because it
+  arrives with no config at all. Test fixtures read the shipped default instead
+  of a working config, so the suite now asserts against what users get, and
+  `make_default_config.py --check` verifies the tracked default's values
+  directly when there is no working config to diff against, which is the case
+  in CI.
+
 ### Added
 - **Echo Flow starts Ollama when it is installed but not running.** Ollama does
   not register itself for Windows autostart and Echo Flow does, so every login

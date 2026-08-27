@@ -6,6 +6,11 @@ __pycache__/
 *.wav
 *.log
 ruvector.db
+
+# Your working config. The tracked one is packaging/default/config.yaml, which
+# main.py copies here on first run. Keeping this untracked is what stops a
+# maintainer's switched-on cloud settings from becoming every cloner's default.
+/config.yaml
 .pytest_cache/
 .coverage
 

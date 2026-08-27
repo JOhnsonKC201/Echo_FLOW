@@ -36,7 +36,11 @@ class _AppRef:
 
 
 def main() -> int:
+    # Your working config if you have one, else the shipped default, which is
+    # all a fresh clone has until the daemon first runs.
     cfg_path = REPO / "config.yaml"
+    if not cfg_path.exists():
+        cfg_path = REPO / "packaging" / "default" / "config.yaml"
     cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
     db_path = REPO / cfg.get("history", {}).get("db_path", "data/history.db")
     db_path.parent.mkdir(parents=True, exist_ok=True)
