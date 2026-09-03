@@ -287,29 +287,72 @@ def make_app(app_ref, bound_port: int | None = None):
         source = (_req.args.get("source") or "desktop").lower()
         if source not in ("desktop", "mobile", "all"):
             source = "desktop"
-        include_mobile = source in ("mobile", "all")
+        # The page prints the measurement window beside every number, so the
+        # windows live here, next to the calls they parameterise, and are
+        # handed to the template. Previously each label was hand-typed in the
+        # HTML, or missing: five different windows rendered as one wall of
+        # numbers with nothing saying which covered what.
+        windows = {"saved_days": 30, "apps_days": 30, "accept_days": 7,
+                   "latency_n": 200, "wpm_days": 7, "kept_days": 14}
         payload = {
             "wpm": 0, "total_words": 0, "streak": 0,
             "fixes": {"words_corrected": 0, "dictionary_fixes": 0, "total": 0},
             "heatmap": {"days": [], "weeks": 14, "max": 0},
             "apps": [], "trend": [],
+            "pace": {"mean": 0, "median": 0, "n": 0, "buckets": [],
+                     "scale_max": 240, "baseline": 40,
+                     "mean_pos": 0.0, "baseline_pos": 0.0},
         }
         outcomes = {
-            "time_saved_ms": 0,
             "acceptance": {"current": 0.0, "prior": 0.0, "delta_pp": 0.0,
                            "n_current": 0, "n_prior": 0},
-            "latency": {"p50": None, "p95": None, "n": 0},
+            "latency": {"bins": [], "p50": None, "p95": None, "n": 0,
+                        "axis_max": 0, "over": 0,
+                        "p50_pos": 0.0, "p95_pos": 0.0},
         }
+        # Every tile draws the series its own headline was computed from, so
+        # the series is the source and the headline is derived, never the
+        # other way round.
+        daily: list = []
+        kept_series: list = []
+        saved = {"value": "0", "unit": "min", "ms": 0,
+                 "prior_ms": 0, "delta_pct": None, "words": 0}
         voice = None
         history = getattr(app_ref, "history", None)
         if history is not None and getattr(history, "conn", None) is not None:
             try:
                 # Pass the source name, not the boolean: "mobile" now really
                 # means mobile-only instead of silently falling back to "all".
-                payload = analytics.insights_payload(history.conn, include_mobile=source)
-                outcomes["time_saved_ms"] = analytics.time_saved_ms(history.conn, days=30)
-                outcomes["acceptance"] = analytics.acceptance_rate(history.conn, days=7)
-                outcomes["latency"] = analytics.latency_percentiles(history.conn, n=200)
+                payload = analytics.insights_payload(
+                    history.conn, include_mobile=source,
+                    apps_window_days=windows["apps_days"],
+                    wpm_window_days=windows["wpm_days"])
+                # Every one of these takes the source filter now. Time saved
+                # ignored it, and acceptance and latency were pinned to
+                # desktop, so three of the six headline numbers would not have
+                # moved when you switched the toggle to Mobile.
+                outcomes["acceptance"] = analytics.acceptance_rate(
+                    history.conn, days=windows["accept_days"], include_mobile=source)
+                outcomes["latency"] = analytics.latency_histogram(
+                    history.conn, n=windows["latency_n"], include_mobile=source)
+                kept_series = analytics.kept_daily(
+                    history.conn, days=windows["kept_days"], include_mobile=source)
+                # Two windows in one pass: the tile shows the recent half and
+                # compares it against the half before.
+                span = windows["saved_days"]
+                both = analytics.daily_metrics(
+                    history.conn, days=span * 2, include_mobile=source)
+                daily, prior = both[span:], both[:span]
+                # max() once over the whole window, exactly where time_saved_ms
+                # clamps, so the tile total equals the bars beneath it.
+                saved_ms = max(0, sum(d["saved_ms"] for d in daily))
+                prior_ms = max(0, sum(d["saved_ms"] for d in prior))
+                saved = analytics.duration_parts(saved_ms)
+                saved["prior_ms"] = prior_ms
+                saved["delta_pct"] = (
+                    round((saved_ms - prior_ms) / prior_ms * 100)
+                    if prior_ms else None)
+                saved["words"] = sum(d["words"] for d in daily)
                 if tab == "voice":
                     voice = analytics.voice_payload(history.conn)
             except Exception as e:
@@ -318,19 +361,21 @@ def make_app(app_ref, bound_port: int | None = None):
         return render_template(
             "insights.html", sections=SECTIONS, active="insights",
             theme=dcfg.get("theme", "dark"),
-            time_saved_human=analytics.humanize_ms(outcomes["time_saved_ms"]),
-            baseline_wpm=40,
+            saved=saved,
+            daily=daily,
+            kept_series=kept_series,
+            pace=payload["pace"],
             acceptance=outcomes["acceptance"],
             acceptance_pct=acc_pct,
             latency=outcomes["latency"],
             trend=payload["trend"],
             apps=payload["apps"],
             fixes=payload["fixes"],
-            wpm=payload["wpm"],
             total_words=payload["total_words"],
             streak=payload["streak"],
             heatmap=payload["heatmap"],
             source=source,
+            windows=windows,
             tab=tab,
             voice=voice,
         )

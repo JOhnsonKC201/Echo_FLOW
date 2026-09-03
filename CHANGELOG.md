@@ -42,6 +42,38 @@ All notable changes are documented here. Format roughly follows
   subtractive, so the "we keep YOUR words" contract still holds.
 
 ### Changed
+- **Outcomes is an instrument panel, not a wall of numbers.** The page showed
+  three headline figures over a decorative gauge and printed the window for
+  none of them, while five different windows (30 days, 7 days, last 200, last
+  50, all time) sat side by side reading as one comparable set. Every reading
+  now names its window, and every headline is drawn over the series it was
+  computed from: typing time saved over its daily bars, speaking pace against a
+  pinned 0 to 240 axis with your typing baseline marked on it, words dictated
+  over their accumulation, kept-as-written over per-day kept and edited counts,
+  response time over the distribution of the last 200 with the median and 95th
+  percentile marked, and the streak over a fourteen day strip. The WPM gauge is
+  gone: it drew a semicircle to restate a number printed two lines above it.
+- **Outcomes surfaces the three measurements it was already computing.** Time
+  saved, acceptance rate and latency percentiles were queried on every request
+  and then dropped, because the template referenced none of them. Three round
+  trips to SQLite per page load, rendering nothing.
+- **The Desktop / Mobile / All filter reaches every number on Outcomes.** Time
+  saved was never passed the filter, acceptance had `source = 'desktop'` written
+  into its SQL and latency had no source clause at all, so switching to Mobile
+  would have moved some readings and left others reporting desktop. The filter
+  also now offers All, which the route has always accepted.
+- **Outcomes no longer leads with a figure that is not a quantity.** Its largest
+  number was `words_corrected + dictionary_fixes`, a word count added to a count
+  of dictations, and the second of those was rendered again alongside it as
+  "refined N% of your dictations", which is the same measurement under a second
+  name. Both components are shown separately now, each labelled as what it
+  counts.
+- **Typing time saved on Outcomes covers thirty calendar days.** It was a
+  rolling 720 hour window, which starts partway through the day thirty days ago
+  and so disagreed with the daily chart beside it by about twenty hours of
+  activity. Home's "saved today" tile is unaffected; it was already
+  midnight-aligned.
+
 - **The degraded-mode toast says what still works.** It read "Cleanup LLM
   offline — using deterministic polish only. Start Ollama or set GROQ_API_KEY,
   then restart", which is wrong twice over now: the daemon has already tried to

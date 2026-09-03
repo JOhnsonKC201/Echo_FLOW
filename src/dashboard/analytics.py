@@ -19,6 +19,11 @@ from collections import defaultdict
 # so a 200ms test dictation doesn't claim 30,000 WPM.
 _MIN_DURATION_S_FOR_WPM = 0.5
 
+# Top of the words-per-minute axis. Pinned, not data-derived: a tile whose
+# scale rescales with the data cannot be read at a glance, because a mark
+# moving right could mean you sped up or the axis shrank.
+_WPM_SCALE_MAX = 240
+
 
 def _now_ts() -> float:
     return dt.datetime.now().timestamp()
@@ -78,6 +83,24 @@ def current_wpm(
     arithmetic mean. That's more meaningful than total_words / total_seconds
     because long pauses between dictations shouldn't drag the average down.
     """
+    rates = _wpm_rates(conn, window_days=window_days, include_mobile=include_mobile)
+    if not rates:
+        return 0
+    return int(round(sum(rates) / len(rates)))
+
+
+def _wpm_rates(
+    conn: sqlite3.Connection,
+    *,
+    window_days: int = 7,
+    include_mobile: "bool | str" = False,
+) -> list[float]:
+    """Per-dictation words-per-minute samples in the window.
+
+    Split out of current_wpm so the headline number and the distribution drawn
+    under it are computed from exactly the same samples, including the same
+    duration floor and the same zero-word skip.
+    """
     cutoff = _now_ts() - (window_days * 86400)
     where_src = _source_clause(include_mobile)
     cur = conn.execute(
@@ -96,9 +119,7 @@ def current_wpm(
         if words == 0:
             continue
         rates.append(words / (seconds / 60.0))
-    if not rates:
-        return 0
-    return int(round(sum(rates) / len(rates)))
+    return rates
 
 
 def day_streak(
@@ -263,6 +284,24 @@ def fixes_made(
     }
 
 
+def _activity_level(count: int) -> int:
+    """0-4 bucket for a day's dictation count: 0, 1-2, 3-5, 6-10, 11+.
+
+    One definition, because the 15 week grid and the 14 day strip in the
+    streak tile render the same colour ramp and have to agree about what a
+    given shade means.
+    """
+    if count == 0:
+        return 0
+    if count <= 2:
+        return 1
+    if count <= 5:
+        return 2
+    if count <= 10:
+        return 3
+    return 4
+
+
 def streak_heatmap(
     conn: sqlite3.Connection,
     *,
@@ -303,21 +342,29 @@ def streak_heatmap(
     for offset in range(num_days):
         d = start + dt.timedelta(days=offset)
         c = counts.get(d, 0)
-        # 5 buckets: 0, 1-2, 3-5, 6-10, 11+. Scales with usage but stable.
-        if c == 0:
-            level = 0
-        elif c <= 2:
-            level = 1
-        elif c <= 5:
-            level = 2
-        elif c <= 10:
-            level = 3
-        else:
-            level = 4
+        level = _activity_level(c)
         days.append({"date": d.isoformat(), "count": c, "level": level,
                      "weekday": d.weekday(), "week": offset // 7})
     num_weeks = (num_days + 6) // 7
-    return {"days": days, "weeks": num_weeks, "max": peak}
+    # Column index where each month starts, for the axis above the grid.
+    # A month owning fewer than two columns is dropped: one column is about as
+    # wide as a cell, so a one-column label would overlap the next one.
+    months: list[dict] = []
+    for d in days:
+        if d["weekday"] != 0:
+            continue
+        label = dt.date.fromisoformat(d["date"]).strftime("%b")
+        if not months or months[-1]["label"] != label:
+            months.append({"label": label, "week": d["week"]})
+    months = [
+        m for i, m in enumerate(months)
+        if ((months[i + 1]["week"] if i + 1 < len(months) else num_weeks)
+            - m["week"]) >= 2
+    ]
+    return {"days": days, "weeks": num_weeks, "max": peak,
+            "months": months,
+            "active": sum(1 for d in days if d["count"] > 0),
+            "span": num_days}
 
 
 def app_usage_breakdown(
@@ -409,20 +456,28 @@ def quality_trend(
 
 
 def insights_payload(conn: sqlite3.Connection, *,
-                     include_mobile: "bool | str" = False) -> dict:
+                     include_mobile: "bool | str" = False,
+                     apps_window_days: int = 30,
+                     wpm_window_days: int = 7) -> dict:
     """One call for the Insights route.
 
     `include_mobile` follows the same convention as the lower-level helpers:
     False (default) shows the desktop user's stats; True folds in mobile
     bridge entries. Used by the Outcomes "Desktop / Mobile / All" toggle.
     """
+    pace = wpm_profile(conn, window_days=wpm_window_days,
+                       include_mobile=include_mobile)
     return {
-        "wpm": current_wpm(conn, include_mobile=include_mobile),
+        # Same object, so the number on the tile and the mark on its axis can
+        # never disagree.
+        "wpm": pace["mean"],
+        "pace": pace,
         "total_words": total_words(conn, include_mobile=include_mobile),
         "streak": day_streak(conn, include_mobile=include_mobile),
         "fixes": fixes_made(conn, include_mobile=include_mobile),
         "heatmap": streak_heatmap(conn, include_mobile=include_mobile),
-        "apps": app_usage_breakdown(conn, include_mobile=include_mobile),
+        "apps": app_usage_breakdown(conn, include_mobile=include_mobile,
+                                    window_days=apps_window_days),
         "trend": quality_trend(conn, include_mobile=include_mobile),
     }
 
@@ -448,6 +503,9 @@ def _wpm_buckets(rates: list[float]) -> list[dict]:
     edges = [0, 60, 80, 100, 120, 140, 160, 180, 220]
     labels = ["<60", "60-79", "80-99", "100-119", "120-139",
               "140-159", "160-179", "180-219", "220+"]
+    # The open-ended top bucket is given the same 20 wpm width as its
+    # neighbours so it can be drawn on a linear axis at all.
+    bounds = list(zip(edges, edges[1:] + [_WPM_SCALE_MAX]))
     counts = [0] * len(labels)
     for r in rates:
         placed = False
@@ -458,7 +516,9 @@ def _wpm_buckets(rates: list[float]) -> list[dict]:
                 break
         if not placed:
             counts[-1] += 1
-    return [{"label": labels[i], "count": counts[i]} for i in range(len(labels))]
+    return [{"label": labels[i], "count": counts[i],
+             "lo": bounds[i][0], "hi": bounds[i][1]}
+            for i in range(len(labels))]
 
 
 def voice_payload(conn: sqlite3.Connection, *, days: int = 30) -> dict:
@@ -623,7 +683,18 @@ def time_saved_ms(conn: sqlite3.Connection, days: int = 30, *,
     return max(0, saved)
 
 
-def acceptance_rate(conn: sqlite3.Connection, days: int = 7) -> dict:
+# What counts as "the user kept it". Written once because two callers need
+# to agree: the headline rate and the per-day series drawn beneath it. When
+# these drifted apart the tile showed a percentage its own chart contradicted.
+_KEPT_PREDICATE = (
+    " AND (user_rating IS NULL OR user_rating = 1)"
+    " AND (original_cleaned IS NULL OR original_cleaned = cleaned_text)"
+    " AND COALESCE(user_rating, 0) >= 0"
+)
+
+
+def acceptance_rate(conn: sqlite3.Connection, days: int = 7, *,
+                    include_mobile: "bool | str" = False) -> dict:
     """% of dictations in the window whose cleaned_text == original_cleaned
     (i.e. user didn't open the editor to fix the model's output).
 
@@ -635,17 +706,16 @@ def acceptance_rate(conn: sqlite3.Connection, days: int = 7) -> dict:
     cur_since = now - (days * 86400)
     prior_since = now - (2 * days * 86400)
 
+    where_src = _source_clause(include_mobile)
+
     def _bucket(since: float, until: float) -> tuple[int, int]:
         total = conn.execute(
-            "SELECT COUNT(*) FROM dictations WHERE ts >= ? AND ts < ? AND source = 'desktop'",
+            f"SELECT COUNT(*) FROM dictations WHERE ts >= ? AND ts < ?{where_src}",
             (since, until),
         ).fetchone()[0]
         accepted = conn.execute(
-            "SELECT COUNT(*) FROM dictations "
-            "WHERE ts >= ? AND ts < ? AND source = 'desktop' "
-            "  AND (user_rating IS NULL OR user_rating = 1) "
-            "  AND (original_cleaned IS NULL OR original_cleaned = cleaned_text) "
-            "  AND COALESCE(user_rating, 0) >= 0",
+            f"SELECT COUNT(*) FROM dictations "
+            f"WHERE ts >= ? AND ts < ?{where_src}{_KEPT_PREDICATE}",
             (since, until),
         ).fetchone()[0]
         return accepted, total
@@ -664,16 +734,18 @@ def acceptance_rate(conn: sqlite3.Connection, days: int = 7) -> dict:
     }
 
 
-def latency_percentiles(conn: sqlite3.Connection, n: int = 200) -> dict:
+def latency_percentiles(conn: sqlite3.Connection, n: int = 200, *,
+                        include_mobile: "bool | str" = False) -> dict:
     """p50 / p95 over the last N dictations that have latency_ms populated.
 
     Returns {p50, p95, n}. Empty result if there's no data yet (newly
     installed user, or all dictations predate the latency_ms column).
     """
+    where_src = _source_clause(include_mobile)
     rows = conn.execute(
-        "SELECT latency_ms FROM dictations "
-        "WHERE latency_ms IS NOT NULL "
-        "ORDER BY id DESC LIMIT ?",
+        f"SELECT latency_ms FROM dictations "
+        f"WHERE latency_ms IS NOT NULL{where_src} "
+        f"ORDER BY id DESC LIMIT ?",
         (int(n),),
     ).fetchall()
     samples = sorted(int(r[0]) for r in rows if r[0] is not None)
@@ -685,6 +757,199 @@ def latency_percentiles(conn: sqlite3.Connection, n: int = 200) -> dict:
         return samples[max(0, min(idx, len(samples) - 1))]
 
     return {"p50": _pct(0.50), "p95": _pct(0.95), "n": len(samples)}
+
+
+def duration_parts(ms: int) -> dict:
+    """Split a duration into its number and its unit.
+
+    humanize_ms glues the two together ("43 m"), which is right for prose but
+    wrong for a stat tile: the unit renders at the value's size, and the
+    count-up animation in app.js walks the whole string. Splitting them lets
+    the unit take its own smaller type and keeps the animated text node
+    purely numeric. Unit words, not single letters, so "43 m" cannot be read
+    as metres.
+    """
+    ms = int(ms or 0)
+    if ms <= 0:
+        return {"value": "0", "unit": "min", "ms": 0}
+    if ms < 1000:
+        return {"value": str(ms), "unit": "ms", "ms": ms}
+    seconds = ms / 1000
+    if seconds < 60:
+        return {"value": f"{seconds:.1f}", "unit": "sec", "ms": ms}
+    minutes = seconds / 60
+    if minutes < 60:
+        return {"value": f"{minutes:.0f}", "unit": "min", "ms": ms}
+    return {"value": f"{minutes / 60:.1f}", "unit": "hr", "ms": ms}
+
+
+def daily_metrics(
+    conn: sqlite3.Connection,
+    *,
+    days: int = 30,
+    include_mobile: "bool | str" = False,
+) -> list[dict]:
+    """One row per calendar day, oldest first, with empty days filled in.
+
+    Feeds the chart under each tile. The zero fill is the point: a series that
+    silently omits quiet days compresses time, so a fortnight off renders as a
+    continuous run and every chart drawn from it lies about pace.
+
+    `saved_ms` is deliberately NOT clamped per day. time_saved_ms sums words
+    and durations across the whole window and clamps once at the end, so
+    clamping here would make the chart and the headline disagree on any day
+    the user spoke slower than they type. Clamp at draw time instead.
+    """
+    where_src = _source_clause(include_mobile)
+    today = dt.date.today()
+    start = today - dt.timedelta(days=days - 1)
+    cutoff = dt.datetime.combine(start, dt.time.min).timestamp()
+    baseline = _typing_wpm_baseline(conn)
+    per_day: dict[dt.date, dict] = {}
+    rows = conn.execute(
+        f"SELECT ts, cleaned_text, duration_ms FROM dictations "
+        f"WHERE ts >= ?{where_src}",
+        (cutoff,),
+    )
+    for ts, text, duration_ms in rows:
+        day = dt.datetime.fromtimestamp(ts).date()
+        bucket = per_day.setdefault(
+            day, {"dictations": 0, "words": 0, "duration_ms": 0})
+        bucket["dictations"] += 1
+        bucket["words"] += _word_count(text)
+        bucket["duration_ms"] += duration_ms or 0
+    out = []
+    for offset in range(days):
+        day = start + dt.timedelta(days=offset)
+        b = per_day.get(day) or {"dictations": 0, "words": 0, "duration_ms": 0}
+        typing_equiv_ms = int(b["words"] * (60_000 / baseline))
+        out.append({
+            "date": day.isoformat(),
+            "level": _activity_level(b["dictations"]),
+            "dictations": b["dictations"],
+            "words": b["words"],
+            "duration_ms": b["duration_ms"],
+            "saved_ms": typing_equiv_ms - int(b["duration_ms"]),
+        })
+    return out
+
+
+def kept_daily(
+    conn: sqlite3.Connection,
+    *,
+    days: int = 14,
+    include_mobile: "bool | str" = False,
+) -> list[dict]:
+    """Per day: dictations kept as written vs edited. Oldest first, zero filled.
+
+    A per-day *rate* would be the obvious series here and it would be the wrong
+    one: on a three dictation day one edit swings it 33 points. Counts keep the
+    sample size visible.
+    """
+    where_src = _source_clause(include_mobile)
+    today = dt.date.today()
+    start = today - dt.timedelta(days=days - 1)
+    cutoff = dt.datetime.combine(start, dt.time.min).timestamp()
+    totals: dict[dt.date, int] = defaultdict(int)
+    kept: dict[dt.date, int] = defaultdict(int)
+    for (ts,) in conn.execute(
+        f"SELECT ts FROM dictations WHERE ts >= ?{where_src}", (cutoff,)
+    ):
+        totals[dt.datetime.fromtimestamp(ts).date()] += 1
+    for (ts,) in conn.execute(
+        f"SELECT ts FROM dictations WHERE ts >= ?{where_src}{_KEPT_PREDICATE}",
+        (cutoff,),
+    ):
+        kept[dt.datetime.fromtimestamp(ts).date()] += 1
+    out = []
+    for offset in range(days):
+        day = start + dt.timedelta(days=offset)
+        total = totals.get(day, 0)
+        out.append({"date": day.isoformat(), "total": total,
+                    "kept": kept.get(day, 0), "edited": total - kept.get(day, 0)})
+    return out
+
+
+def latency_histogram(
+    conn: sqlite3.Connection,
+    *,
+    n: int = 200,
+    bins: int = 14,
+    include_mobile: "bool | str" = False,
+) -> dict:
+    """Shape of the last N response times, with p50 and p95 located on the axis.
+
+    The axis stops at p95 and everything slower folds into the final bin. A
+    linear axis out to the true maximum would let one 40 second outlier squash
+    the other 199 samples into the first bin, which is how a histogram ends up
+    saying nothing at all.
+    """
+    where_src = _source_clause(include_mobile)
+    rows = conn.execute(
+        f"SELECT latency_ms FROM dictations "
+        f"WHERE latency_ms IS NOT NULL{where_src} "
+        f"ORDER BY id DESC LIMIT ?",
+        (int(n),),
+    ).fetchall()
+    samples = sorted(int(r[0]) for r in rows if r[0] is not None)
+    if not samples:
+        return {"bins": [], "p50": None, "p95": None, "n": 0,
+                "axis_max": 0, "over": 0, "p50_pos": 0.0, "p95_pos": 0.0}
+
+    def _pct(q: float) -> int:
+        idx = int(round((len(samples) - 1) * q))
+        return samples[max(0, min(idx, len(samples) - 1))]
+
+    p50, p95 = _pct(0.50), _pct(0.95)
+    axis_max = max(p95, 1)
+    width = axis_max / bins
+    counts = [0] * bins
+    over = 0
+    for value in samples:
+        if value > axis_max:
+            over += 1
+            counts[-1] += 1
+            continue
+        idx = min(int(value / width), bins - 1)
+        counts[idx] += 1
+    return {
+        "bins": [{"lo": int(i * width), "hi": int((i + 1) * width),
+                  "count": counts[i]} for i in range(bins)],
+        "p50": p50, "p95": p95, "n": len(samples),
+        "axis_max": axis_max, "over": over,
+        "p50_pos": min(p50 / axis_max, 1.0),
+        "p95_pos": min(p95 / axis_max, 1.0),
+    }
+
+
+def wpm_profile(
+    conn: sqlite3.Connection,
+    *,
+    window_days: int = 7,
+    include_mobile: "bool | str" = False,
+) -> dict:
+    """Mean WPM plus the distribution it came from, on a fixed axis.
+
+    The axis is pinned to 0..220 rather than scaled to the data so the tile
+    means the same thing between visits: a mark that moves right is you
+    speaking faster, not the chart rescaling under you.
+    """
+    rates = _wpm_rates(conn, window_days=window_days, include_mobile=include_mobile)
+    scale_max = _WPM_SCALE_MAX
+    baseline = _typing_wpm_baseline(conn)
+    mean = int(round(sum(rates) / len(rates))) if rates else 0
+    ordered = sorted(rates)
+    median = int(round(ordered[len(ordered) // 2])) if ordered else 0
+    return {
+        "mean": mean,
+        "median": median,
+        "n": len(rates),
+        "buckets": _wpm_buckets(rates),
+        "scale_max": scale_max,
+        "baseline": baseline,
+        "mean_pos": min(mean / scale_max, 1.0),
+        "baseline_pos": min(baseline / scale_max, 1.0),
+    }
 
 
 def today_summary(conn: sqlite3.Connection) -> dict:

@@ -3,908 +3,974 @@
 {% block content %}
 
 <style>
-  /* Premium Outcomes: scoped to this page so it can't leak. */
+/* =======================================================================
+   Outcomes. Scoped to this page.
 
-  .wf-header { display:flex; align-items:baseline; justify-content:space-between;
-               margin: 4px 0 18px; position:relative; }
-  .wf-title  { font-size: 30px; font-weight: 700; letter-spacing: -0.025em;
-               background: linear-gradient(180deg, var(--text), color-mix(in oklab, var(--text) 80%, var(--accent) 20%));
-               -webkit-background-clip: text; background-clip: text;
-               -webkit-text-fill-color: transparent; color: transparent; }
-  .wf-header::after { content:""; position:absolute; left:0; right:0; bottom:-10px;
-                      height:1px; background: linear-gradient(90deg,
-                        color-mix(in oklab, var(--accent) 40%, transparent),
-                        var(--border) 30%, var(--border) 70%, transparent); }
-  .wf-subtitle { margin-top: 6px; font-size: 13px; color: var(--muted);
-                 letter-spacing: 0; }
+   The surface is an instrument panel: a raised bezel carrying a legend and
+   a readout, with the chart sunk into a recessed well below it. Depth comes
+   from that metaphor, not from decoration, which is the rule that keeps it
+   from sliding back into the glow-on-everything version this replaced.
 
-  .wf-tabs   { display:flex; gap:24px; margin: 16px 0 24px;
-               border-bottom: 1px solid var(--border); position:relative; }
-  .wf-tab    { padding: 10px 2px; font-size: 13px; font-weight:600; color: var(--muted);
-               cursor:pointer; border-bottom: 2px solid transparent; margin-bottom:-1px;
-               text-decoration: none;
-               transition: color .15s ease, transform .15s ease; }
-  .wf-tab:hover { color: var(--text); transform: translateY(-1px); }
-  .wf-tab.active { color: var(--text); border-bottom-color: var(--accent);
-                   filter: drop-shadow(0 4px 8px color-mix(in oklab, var(--accent) 35%, transparent)); }
+   Five rules, so it stays coherent if someone extends it:
 
-  .wf-grid-top { display:grid; grid-template-columns: 1fr 1fr 1.3fr; gap:18px;
-                 margin-bottom: 18px; }
-  .wf-grid-bot { display:grid; grid-template-columns: 1fr 1.5fr; gap:18px; }
+   1. Every mark is data. No chart is drawn to fill a space, and no tile
+      carries a chart it did not compute its own headline from. The tile
+      total and the bars beneath it are the same measurement, taken once.
+   2. Every number prints the window it covers. Six different windows appear
+      here (30 days, 14 days, 7 days, last 200, last 50, all time) and they
+      are not interchangeable. The version this replaced printed none.
+   3. Every chart carries an axis. A sparkline without a scale is a mood.
+   4. Axes that can be pinned are pinned. The pace scale is fixed 0 to 240
+      so a mark moving right means you sped up, not that the chart rescaled.
+   5. The accent marks quantity only: a filled bar, an active day, a value
+      above baseline. Never a border, a heading, or a shadow.
+   ======================================================================= */
 
-  .wf-card { position:relative; isolation:isolate;
-             background: linear-gradient(180deg,
-                color-mix(in oklab, var(--panel) 92%, var(--accent) 4%),
-                var(--panel) 55%);
-             border:1px solid var(--border); border-radius: 16px;
-             padding: 22px 24px;
-             box-shadow:
-                0 1px 0 color-mix(in oklab, var(--text) 4%, transparent) inset,
-                0 1px 2px rgba(0,0,0,.04),
-                0 10px 28px -16px color-mix(in oklab, var(--accent) 18%, rgba(0,0,0,.35));
-             transition: transform .25s cubic-bezier(.2,.7,.2,1),
-                         border-color .2s ease, box-shadow .25s ease; }
-  .wf-card::before { content:""; position:absolute; inset:0; border-radius:16px;
-                     padding:1px; pointer-events:none; opacity:.7;
-                     background: linear-gradient(140deg,
-                        color-mix(in oklab, var(--accent) 30%, transparent) 0%,
-                        transparent 28%, transparent 72%,
-                        color-mix(in oklab, var(--accent-2) 18%, transparent) 100%);
-                     -webkit-mask: linear-gradient(#000 0 0) content-box,
-                                   linear-gradient(#000 0 0);
-                             mask: linear-gradient(#000 0 0) content-box,
-                                   linear-gradient(#000 0 0);
-                     -webkit-mask-composite: xor; mask-composite: exclude; }
-  .wf-card:hover { transform: translateY(-1px);
-                   border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
-                   box-shadow:
-                      0 1px 0 color-mix(in oklab, var(--text) 5%, transparent) inset,
-                      0 2px 4px rgba(0,0,0,.05),
-                      0 18px 40px -18px color-mix(in oklab, var(--accent) 28%, rgba(0,0,0,.45)); }
-
-  .wf-hero-num { font-size: 42px; font-weight: 700; line-height:1.02;
-                 letter-spacing:-0.03em; font-variant-numeric: tabular-nums;
-                 background: linear-gradient(180deg, var(--text),
-                    color-mix(in oklab, var(--text) 80%, var(--accent) 22%));
-                 -webkit-background-clip: text; background-clip: text;
-                 -webkit-text-fill-color: transparent; color: transparent; }
-  .wf-hero-lbl { margin-top: 8px; font-size: 11px; font-weight:600;
-                 letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
-  .wf-delta    { margin-top: 10px; display:inline-flex; align-items:center; gap:6px;
-                 font-size: 11.5px; font-weight: 600; color: var(--muted);
-                 padding: 3px 9px; border-radius: 999px;
-                 background: color-mix(in oklab, var(--panel-2) 70%, transparent);
-                 border: 1px solid color-mix(in oklab, var(--border) 80%, transparent); }
-  .wf-delta.up   { color: var(--accent);
-                   background: color-mix(in oklab, var(--accent) 10%, transparent);
-                   border-color: color-mix(in oklab, var(--accent) 25%, transparent); }
-  .wf-delta.down { color: var(--danger);
-                   background: color-mix(in oklab, var(--danger) 8%, transparent);
-                   border-color: color-mix(in oklab, var(--danger) 22%, transparent); }
-  .wf-divider  { height:1px; margin: 18px 0;
-                 background: linear-gradient(90deg, transparent, var(--border) 12%,
-                    var(--border) 88%, transparent); }
-
-  /* WPM gauge: gradient arc + tick scale + centered overlay. */
-  .wf-gauge      { margin-top: 18px; display:flex; flex-direction:column;
-                   align-items:center; gap:10px; }
-  .wf-gauge-wrap { position:relative; width:200px; height:120px; }
-  .wf-gauge svg  { display:block; overflow: visible; }
-  .wf-gauge-track { stroke: color-mix(in oklab, var(--panel-2) 80%, var(--text) 4%);
-                    stroke-width: 12; fill: none; stroke-linecap: round; }
-  .wf-gauge-fill  { stroke: url(#wf-gauge-grad); stroke-width: 12; fill: none;
-                    stroke-linecap: round;
-                    filter: drop-shadow(0 0 6px color-mix(in oklab, var(--accent) 50%, transparent));
-                    transition: stroke-dashoffset 1.2s cubic-bezier(.16,.84,.3,1); }
-  .wf-gauge-tick  { stroke: color-mix(in oklab, var(--muted) 60%, transparent);
-                    stroke-width: 1; stroke-linecap: round; }
-  .wf-gauge-tick.major { stroke: var(--muted); stroke-width: 1.5; }
-  .wf-gauge-min, .wf-gauge-max { position:absolute; bottom:4px;
-                     font-size: 10px; font-weight: 600; color: var(--muted);
-                     font-variant-numeric: tabular-nums; letter-spacing:.02em; }
-  .wf-gauge-min { left: 16px; }
-  .wf-gauge-max { right: 16px; }
-  .wf-gauge-val   { display:inline-flex; align-items:center; gap:7px;
-                    font-size: 13px; font-weight: 700; color: var(--text);
-                    padding: 4px 12px; border-radius: 999px;
-                    background: color-mix(in oklab, var(--accent) 10%, transparent);
-                    border: 1px solid color-mix(in oklab, var(--accent) 22%, transparent); }
-  .wf-gauge-val::before { content:""; width:6px; height:6px; border-radius:999px;
-                          background: var(--accent);
-                          box-shadow: 0 0 8px color-mix(in oklab, var(--accent) 70%, transparent); }
-  .wf-gauge-cap   { font-size: 11px; color: var(--muted); }
-
-  /* Fixes breakdown rows */
-  .wf-row { display:flex; align-items:center; justify-content:space-between;
-            padding: 12px 10px; font-size: 13px; border-radius: 8px;
-            position:relative; transition: background .15s ease; }
-  .wf-row::before { content:""; position:absolute; left:0; top:8px; bottom:8px;
-                    width:2px; border-radius:2px; background: var(--accent);
-                    opacity:0; transition: opacity .15s ease; }
-  .wf-row:hover { background: color-mix(in oklab, var(--accent) 5%, transparent); }
-  .wf-row:hover::before { opacity:1; }
-  .wf-row + .wf-row { border-top: 1px solid color-mix(in oklab, var(--border) 70%, transparent); }
-  .wf-row .lbl { color: var(--text); display:inline-flex; align-items:center; gap:10px; }
-  .wf-row .lbl .dot { width:6px; height:6px; border-radius:999px;
-                      background: color-mix(in oklab, var(--accent) 60%, var(--muted)); }
-  .wf-row .val { color: var(--text); font-weight:600;
-                 font-variant-numeric: tabular-nums;
-                 display:inline-flex; align-items:center; gap:10px; }
-  .wf-row .sparkbar { width:48px; height:4px; border-radius:999px;
-                      background: color-mix(in oklab, var(--panel-2) 80%, transparent);
-                      overflow:hidden; }
-  .wf-row .sparkbar > span { display:block; height:100%;
-                      background: linear-gradient(90deg, var(--accent),
-                         color-mix(in oklab, var(--accent) 60%, var(--accent-2)));
-                      transition: width .8s cubic-bezier(.2,.7,.2,1); }
-
-  /* Fixes card: "how Echo edits" trimmed/added split + micro-stat footer.
-     Reuses the page's accent/panel tokens so it stays on-theme in both modes. */
-  .wf-split      { margin-top: 18px; }
-  .wf-split-head { display:flex; align-items:baseline; justify-content:space-between;
-                   font-size: 11px; font-weight:600; letter-spacing:.06em;
-                   text-transform:uppercase; color: var(--muted); margin-bottom: 9px; }
-  .wf-split-head .tot { color: var(--text); font-variant-numeric: tabular-nums; }
-  /* shared glint sweep used by every fill bar on the page */
-  @keyframes wf-sheen { 0% { transform: translateX(-130%); }
-                        45% { transform: translateX(130%); }
-                        100% { transform: translateX(130%); } }
-
-  .wf-split-bar  { display:flex; height: 11px; border-radius: 999px; overflow:hidden;
-                   background:
-                      linear-gradient(180deg,
-                         color-mix(in oklab, black 7%, transparent), transparent 55%),
-                      color-mix(in oklab, var(--panel-2) 85%, transparent);
-                   box-shadow: inset 0 1px 2px color-mix(in oklab, black 14%, transparent),
-                               inset 0 0 0 1px color-mix(in oklab, var(--border) 45%, transparent); }
-  .wf-split-bar > span { display:block; height:100%; position:relative; overflow:hidden;
-                   transition: width .8s cubic-bezier(.2,.7,.2,1); }
-  .wf-split-bar .seg-trim {
-                   background:
-                      linear-gradient(180deg,
-                         color-mix(in oklab, white 40%, transparent) 0%,
-                         color-mix(in oklab, white 8%, transparent) 42%,
-                         transparent 62%,
-                         color-mix(in oklab, black 12%, transparent) 100%),
-                      linear-gradient(90deg,
-                         color-mix(in oklab, var(--accent) 72%, var(--accent-2) 28%),
-                         var(--accent) 62%,
-                         color-mix(in oklab, var(--accent) 82%, white 18%));
-                   box-shadow:
-                      inset 0 1px 0 color-mix(in oklab, white 48%, transparent),
-                      inset 0 -1px 2px color-mix(in oklab, black 18%, transparent),
-                      0 0 10px -2px color-mix(in oklab, var(--accent) 50%, transparent); }
-  .wf-split-bar .seg-trim::after { content:""; position:absolute; inset:0;
-                   background: linear-gradient(115deg, transparent 32%,
-                      color-mix(in oklab, white 55%, transparent) 50%, transparent 68%);
-                   transform: translateX(-130%);
-                   animation: wf-sheen 1.8s ease-out .3s 1 both; }
-  .wf-split-bar .seg-add  {
-                   background:
-                      linear-gradient(180deg,
-                         color-mix(in oklab, white 22%, transparent) 0%,
-                         transparent 55%),
-                      color-mix(in oklab, var(--accent-2) 50%, var(--panel-2));
-                   box-shadow: inset 0 1px 0 color-mix(in oklab, white 22%, transparent); }
-  .wf-split-legend { display:flex; gap:18px; margin-top:11px;
-                   font-size: 11.5px; color: var(--muted); }
-  .wf-split-legend .k { display:inline-flex; align-items:center; gap:7px; }
-  .wf-split-legend .sw { width:8px; height:8px; border-radius:2px; flex:none; }
-  .wf-split-legend .sw.trim { background: var(--accent); }
-  .wf-split-legend .sw.add  { background: color-mix(in oklab, var(--accent-2) 50%, var(--panel-2)); }
-  .wf-split-legend strong { color: var(--text); font-weight:700;
-                   font-variant-numeric: tabular-nums; }
-
-  .wf-microstats { display:grid; grid-template-columns: 1fr 1fr; gap: 10px;
-                   margin-top: 18px; }
-  .wf-microstat  { padding: 11px 13px; border-radius: 11px;
-                   background: color-mix(in oklab, var(--panel-2) 55%, transparent);
-                   border: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
-  .wf-microstat .n { font-size: 18px; font-weight: 700; letter-spacing:-0.02em;
-                   line-height:1.1; font-variant-numeric: tabular-nums; color: var(--text); }
-  .wf-microstat .k { margin-top: 3px; font-size: 10px; font-weight:600;
-                   letter-spacing:.07em; text-transform:uppercase; color: var(--muted); }
-
-  /* Source toggle (Desktop / Mobile): segmented control */
-  .wf-source { position:relative; display:grid; grid-auto-flow:column;
-               grid-auto-columns: 1fr; gap:0; margin-top: 18px;
-               background: color-mix(in oklab, var(--panel-2) 80%, transparent);
-               border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
-               border-radius: 12px; padding: 4px; }
-  .wf-source a { position:relative; z-index:1; background: transparent; border:0;
-                 color: var(--muted); font-size: 12.5px; font-weight: 600;
-                 padding: 9px 12px; border-radius: 9px; cursor:pointer;
-                 text-align:center; text-decoration:none;
-                 transition: color .2s ease, transform .12s ease; }
-  .wf-source a:hover { color: var(--text); }
-  .wf-source a:active { transform: scale(.97); }
-  .wf-source a.active { color: var(--text);
-                             background: var(--panel);
-                             box-shadow:
-                                0 1px 2px rgba(0,0,0,.08),
-                                0 4px 12px -6px color-mix(in oklab, var(--accent) 22%, transparent),
-                                0 0 0 1px color-mix(in oklab, var(--accent) 18%, transparent); }
-
-  /* Big number context line */
-  .wf-context { color: var(--muted); font-size: 13px; line-height: 1.55;
-                margin-top: 12px; }
-
-  /* Flex-column hero cards let sparse cards balance their whitespace instead
-     of leaving a void where they stretch to match a denser neighbour. The gauge
-     recentres in its card; the source toggle anchors to the bottom edge. */
-  .wf-card-col { display:flex; flex-direction:column; }
-  .wf-card-col > .wf-gauge  { flex:1 1 auto; justify-content:center; }
-  .wf-card-col > .wf-source { margin-top:auto; }
-  .wf-source a { display:inline-flex; align-items:center; justify-content:center;
-                 gap:7px; }
-  .wf-source svg { width:15px; height:15px; flex:none; }
-
-  /* Milestone meter: gives the Total-words number a goal and fills the card on
-     the same recessed-groove language as the app/usage bars. */
-  .wf-milestone { margin-top: 18px; }
-  .wf-milestone-head { display:flex; align-items:baseline; justify-content:space-between;
-                       font-size: 11px; font-weight:600; letter-spacing:.06em;
-                       text-transform:uppercase; color: var(--muted); margin-bottom: 9px; }
-  .wf-milestone-head .goal { color: var(--text); text-transform:none;
-                             letter-spacing:0; font-size: 12px;
-                             font-variant-numeric: tabular-nums; }
-  .wf-milestone-bar { height: 9px; border-radius:999px; overflow:hidden; position:relative;
-                      background:
-                         linear-gradient(180deg,
-                            color-mix(in oklab, black 7%, transparent), transparent 55%),
-                         color-mix(in oklab, var(--panel-2) 85%, transparent);
-                      box-shadow: inset 0 1px 2px color-mix(in oklab, black 14%, transparent),
-                                  inset 0 0 0 1px color-mix(in oklab, var(--border) 45%, transparent); }
-  .wf-milestone-bar > span { display:block; height:100%; border-radius:999px;
-                      background:
-                         linear-gradient(180deg,
-                            color-mix(in oklab, white 40%, transparent) 0%,
-                            color-mix(in oklab, white 8%, transparent) 42%,
-                            transparent 62%,
-                            color-mix(in oklab, black 12%, transparent) 100%),
-                         linear-gradient(90deg,
-                            color-mix(in oklab, var(--accent) 72%, var(--accent-2) 28%),
-                            var(--accent) 62%,
-                            color-mix(in oklab, var(--accent) 82%, white 18%));
-                      box-shadow: inset 0 1px 0 color-mix(in oklab, white 48%, transparent),
-                                  0 0 10px -2px color-mix(in oklab, var(--accent) 50%, transparent);
-                      transition: width .8s cubic-bezier(.2,.7,.2,1); }
-  .wf-milestone-foot { margin-top: 8px; font-size: 11.5px; color: var(--muted);
-                       font-variant-numeric: tabular-nums; }
-
-  /* Apps usage list */
-  .wf-apps { display:flex; flex-direction:column; gap: 14px; margin-top: 16px; }
-  .wf-app  { display:grid; grid-template-columns: 1fr auto; gap: 6px 12px;
-             align-items:center; }
-  .wf-app-lbl { font-size: 13px; font-weight: 600; letter-spacing: 0.01em;
-                color: var(--text); display:inline-flex; align-items:center; gap:8px; }
-  .wf-app-lbl .glyph { width:18px; height:18px; display:inline-flex;
-                       align-items:center; justify-content:center;
-                       border-radius:6px; font-size: 11px;
-                       background: color-mix(in oklab, var(--accent) 12%, transparent);
-                       color: var(--accent); }
-  .wf-app-cnt { font-size: 11.5px; color: var(--muted);
-                font-variant-numeric: tabular-nums; }
-  .wf-app-bar { grid-column: 1 / -1; height: 9px;
-                /* recessed groove: faint top-shadow gradient + hairline inner ring */
-                background:
-                   linear-gradient(180deg,
-                      color-mix(in oklab, black 7%, transparent), transparent 55%),
-                   color-mix(in oklab, var(--panel-2) 85%, transparent);
-                border-radius: 999px; overflow:hidden; position:relative;
-                box-shadow: inset 0 1px 2px color-mix(in oklab, black 14%, transparent),
-                            inset 0 0 0 1px color-mix(in oklab, var(--border) 45%, transparent); }
-  .wf-app-bar > span { display:block; height:100%; border-radius: 999px;
-                       position:relative; overflow:hidden;
-                       /* layered fill: glassy vertical sheen over the accent ramp */
-                       background:
-                          linear-gradient(180deg,
-                             color-mix(in oklab, white 40%, transparent) 0%,
-                             color-mix(in oklab, white 8%, transparent) 42%,
-                             transparent 62%,
-                             color-mix(in oklab, black 12%, transparent) 100%),
-                          linear-gradient(90deg,
-                             color-mix(in oklab, var(--accent) 72%, var(--accent-2) 28%),
-                             var(--accent) 62%,
-                             color-mix(in oklab, var(--accent) 82%, white 18%));
-                       box-shadow:
-                          inset 0 1px 0 color-mix(in oklab, white 48%, transparent),
-                          inset 0 -1px 2px color-mix(in oklab, black 18%, transparent),
-                          0 1px 4px -1px color-mix(in oklab, var(--accent) 55%, transparent),
-                          0 0 10px -2px color-mix(in oklab, var(--accent) 50%, transparent);
-                       transition: width .8s cubic-bezier(.2,.7,.2,1); }
-  /* slow, subtle light-sweep glint: premium without being noisy */
-  .wf-app-bar > span::after { content:""; position:absolute; inset:0;
-                       background: linear-gradient(115deg, transparent 32%,
-                          color-mix(in oklab, white 55%, transparent) 50%, transparent 68%);
-                       transform: translateX(-130%);
-                       animation: wf-sheen 1.8s ease-out .3s 1 both; }
-
-  /* Heatmap: premium GitHub-style. */
-  .wf-heat-head { display:flex; align-items:baseline; justify-content:space-between;
-                  margin-bottom: 18px; gap: 12px; flex-wrap:wrap; }
-  .wf-heat-streak { font-size: 24px; font-weight:700; letter-spacing:-0.02em;
-                    display:inline-flex; align-items:center; gap:10px; }
-  .wf-heat-streak .chip { display:inline-flex; align-items:center; gap:6px;
-                          font-size: 11.5px; font-weight:600;
-                          padding: 3px 10px; border-radius: 999px;
-                          background: color-mix(in oklab, var(--accent) 14%, transparent);
-                          color: var(--accent);
-                          border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
-                          box-shadow: 0 0 12px -2px color-mix(in oklab, var(--accent) 30%, transparent); }
-  .wf-heat-streak small { font-size: 12px; font-weight:500; color: var(--muted); }
-  .wf-heat-longest { font-size: 11px; font-weight: 600; letter-spacing:.08em;
-                     text-transform: uppercase; color: var(--muted); }
-  .wf-heat-wrap { display:flex; gap:10px; align-items:flex-start; }
-  .wf-heat-days { display:grid; grid-template-rows: repeat(7, 13px);
-                  gap:4px; font-size:10px; line-height:1; font-weight:600;
-                  letter-spacing:.01em; color: var(--muted); flex:0 0 auto; }
-  .wf-heat-days > div { display:flex; align-items:center; height:13px; }
-  .wf-heat-grid { display:grid; grid-template-rows: repeat(7, 13px);
-                  gap: 4px; overflow-x: auto; padding-bottom: 4px;
-                  justify-content:start; }
-  .wf-cell { width:13px; height:13px; border-radius:3px;
-             background: color-mix(in oklab, var(--panel-2) 70%, var(--text) 4%);
-             transition: transform .15s ease, box-shadow .15s ease; }
-  .wf-cell:hover { transform: scale(1.4); z-index:1;
-                   box-shadow: 0 0 0 1.5px var(--accent),
-                               0 6px 14px -4px color-mix(in oklab, var(--accent) 50%, transparent); }
-  .wf-cell.l1 { background: color-mix(in oklab, var(--accent) 22%, transparent); }
-  .wf-cell.l2 { background: color-mix(in oklab, var(--accent) 45%, transparent); }
-  .wf-cell.l3 { background: color-mix(in oklab, var(--accent) 72%, transparent); }
-  .wf-cell.l4 { background: var(--accent);
-                box-shadow: 0 0 6px -1px color-mix(in oklab, var(--accent) 60%, transparent); }
-  .wf-heat-legend { display:flex; align-items:center; gap: 10px;
-                    margin-top: 16px; font-size: 11px; color: var(--muted); }
-  .wf-heat-legend-bar { width: 88px; height: 8px; border-radius: 999px;
-                        background: linear-gradient(90deg,
-                          color-mix(in oklab, var(--panel-2) 70%, var(--text) 4%),
-                          color-mix(in oklab, var(--accent) 25%, transparent),
-                          color-mix(in oklab, var(--accent) 55%, transparent),
-                          color-mix(in oklab, var(--accent) 80%, transparent),
-                          var(--accent));
-                        border: 1px solid color-mix(in oklab, var(--border) 50%, transparent); }
-
-  /* Quality trajectory: premium sparkline.
-     The plot stretches to full width (preserveAspectRatio="none"), so every
-     stroke uses vector-effect:non-scaling-stroke to keep an even weight and the
-     SVG clips to its own box, so no filters bleed past the card. End/start points
-     are CSS pucks layered over the plot so they stay perfectly round despite the
-     horizontal stretch. */
-  .wf-trajectory { padding: 4px 0 0; }
-  .wf-traj-plot  { position: relative; margin-top: 12px; }
-  .wf-traj-plot svg { width:100%; height: 116px; display:block;
-                      overflow: hidden; border-radius: 8px; }
-  .wf-trajectory .area { fill: url(#wf-traj-area); }
-  .wf-trajectory .line { fill:none; stroke: url(#wf-traj-line); stroke-width: 2.2;
-                         stroke-linecap: round; stroke-linejoin: round;
-                         vector-effect: non-scaling-stroke; }
-  .wf-trajectory .baseline { stroke: color-mix(in oklab, var(--muted) 50%, transparent);
-                             stroke-width: 1; stroke-dasharray: 3 4;
-                             vector-effect: non-scaling-stroke; }
-  .wf-trajectory .grid { stroke: color-mix(in oklab, var(--border) 65%, transparent);
-                         stroke-width: 1; vector-effect: non-scaling-stroke; }
-  /* Endpoint pucks: round regardless of the plot's horizontal stretch. */
-  .wf-traj-marker { position:absolute; border-radius:50%; pointer-events:none; }
-  .wf-traj-marker.start { left:0; width:8px; height:8px;
-                          transform: translate(-50%,-50%);
-                          background: color-mix(in oklab, var(--accent) 55%, var(--panel));
-                          border: 1.5px solid color-mix(in oklab, var(--accent) 70%, transparent); }
-  .wf-traj-marker.end   { right:0; width:11px; height:11px;
-                          transform: translate(50%,-50%);
-                          background: var(--accent);
-                          box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 16%, transparent),
-                                      0 2px 10px -2px color-mix(in oklab, var(--accent) 55%, transparent); }
-
-  .wf-empty { color: var(--muted); font-size: 12.5px; padding: 14px 0; }
-
-  /* Unified in-card heading: replaces ad-hoc inline font-sizes so every card
-     titles itself the same way (accent tick + consistent weight). */
-  .wf-card-title { font-size: 15px; font-weight: 650; letter-spacing: -0.01em;
-                   color: var(--text); display:flex; align-items:center; gap:9px; }
-  .wf-card-title::before { content:""; width:3px; height:14px; border-radius:2px;
-                   background: linear-gradient(180deg, var(--accent),
-                      color-mix(in oklab, var(--accent) 55%, var(--accent-2)));
-                   box-shadow: 0 0 8px -1px color-mix(in oklab, var(--accent) 55%, transparent); }
-
-  /* Voice tab: ranked rows with meters. Replaces the .wf-app-pct reuse that
-     had no CSS, so pace/phrase lists rendered as raw unstyled numbers. */
-  .wf-rank { display:flex; flex-direction:column; gap:4px; margin-top: 16px; }
-  .wf-rank-row { display:grid; grid-template-columns: 28px 1fr auto;
-                 align-items:center; gap:12px; padding: 9px 10px;
-                 border-radius: 9px; transition: background .15s ease; }
-  .wf-rank-row:hover { background: color-mix(in oklab, var(--accent) 5%, transparent); }
-  .wf-rank-row + .wf-rank-row { border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent); }
-  .wf-rank-n { font-family: var(--font-mono); font-size: 12px; font-weight: 700;
-               color: var(--accent); font-variant-numeric: tabular-nums; text-align:center; }
-  .wf-rank-n.dim { color: var(--muted-2); opacity:.55; }
-  .wf-rank-lbl { font-size: 13px; font-weight: 600; color: var(--text); }
-  .wf-rank-cnt { font-size: 12px; color: var(--muted);
-                 font-variant-numeric: tabular-nums; font-weight: 600; }
-  .wf-rank-meter { grid-column: 1 / -1; height: 6px; border-radius: 999px;
-                   background:
-                      linear-gradient(180deg,
-                         color-mix(in oklab, black 7%, transparent), transparent 55%),
-                      color-mix(in oklab, var(--panel-2) 85%, transparent);
-                   overflow:hidden;
-                   box-shadow: inset 0 1px 2px color-mix(in oklab, black 12%, transparent),
-                               inset 0 0 0 1px color-mix(in oklab, var(--border) 40%, transparent); }
-  .wf-rank-meter > span { display:block; height:100%; border-radius: 999px;
-                   position:relative; overflow:hidden;
-                   background:
-                      linear-gradient(180deg,
-                         color-mix(in oklab, white 40%, transparent) 0%,
-                         color-mix(in oklab, white 8%, transparent) 42%,
-                         transparent 62%,
-                         color-mix(in oklab, black 12%, transparent) 100%),
-                      linear-gradient(90deg,
-                         color-mix(in oklab, var(--accent) 72%, var(--accent-2) 28%),
-                         var(--accent) 62%,
-                         color-mix(in oklab, var(--accent) 82%, white 18%));
-                   box-shadow:
-                      inset 0 1px 0 color-mix(in oklab, white 45%, transparent),
-                      inset 0 -1px 2px color-mix(in oklab, black 16%, transparent),
-                      0 0 9px -2px color-mix(in oklab, var(--accent) 48%, transparent);
-                   transition: width .8s cubic-bezier(.2,.7,.2,1); }
-  .wf-rank-meter > span::after { content:""; position:absolute; inset:0;
-                   background: linear-gradient(115deg, transparent 32%,
-                      color-mix(in oklab, white 50%, transparent) 50%, transparent 68%);
-                   transform: translateX(-130%);
-                   animation: wf-sheen 1.8s ease-out .3s 1 both; }
-
-  /* Shared SVG gradient stops: a luminous green ramp used by the WPM gauge
-     and the quality-trajectory line. Kept green-only so they stay cohesive
-     with the page's sage palette instead of fading through the secondary blue. */
-  .gstop-0 { stop-color: color-mix(in oklab, var(--accent) 55%, white); }
-  .gstop-1 { stop-color: var(--accent); }
-
-  /* Graceful degradation on narrow windows. The dashboard is desktop-first,
-     but a single column keeps the cards readable if the window is shrunk. */
-  @media (max-width: 940px) {
-    .wf-grid-top, .wf-grid-bot { grid-template-columns: 1fr; }
+  /* Depth tokens, held on the body so each theme can retune them: the inset
+     that reads as a shallow recess on the dark panel reads as a smudge on
+     warm paper. */
+  body[data-page="insights"] {
+    --w-bg:    color-mix(in oklab, var(--bg) 80%, var(--panel));
+    --w-inset: color-mix(in oklab, black 34%, transparent);
+    --w-lip:   color-mix(in oklab, var(--text) 7%, transparent);
+    --w-drop:  color-mix(in oklab, black 58%, transparent);
+    --w-cast:  color-mix(in oklab, black 24%, transparent);
+    --grid-ln: color-mix(in oklab, var(--text) 7%, transparent);
+  }
+  [data-theme="light"] body[data-page="insights"] {
+    --w-bg:    color-mix(in oklab, var(--bg) 65%, var(--panel));
+    --w-inset: color-mix(in oklab, black 9%, transparent);
+    --w-lip:   color-mix(in oklab, white 70%, transparent);
+    --w-drop:  color-mix(in oklab, black 16%, transparent);
+    --w-cast:  color-mix(in oklab, black 6%, transparent);
+    --grid-ln: color-mix(in oklab, var(--text) 9%, transparent);
   }
 
+  .oc-top { display: flex; align-items: flex-end; justify-content: space-between;
+            gap: 24px; flex-wrap: wrap; }
+  .oc-h1  { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -0.022em; }
+  .oc-h1-sub { margin-top: 5px; font-size: 12.5px; color: var(--muted); }
+
+  /* Source filter. Page level, because it rescopes every reading on the page
+     rather than the one card it used to be buried inside. */
+  .oc-seg { display: inline-flex; border: 1px solid var(--border);
+            border-radius: 8px; overflow: hidden; background: var(--panel);
+            box-shadow: inset 0 1px 0 var(--w-lip), 0 1px 2px var(--w-cast); }
+  .oc-seg a { padding: 7px 13px; font-size: 12px; font-weight: 500;
+              color: var(--muted); border-right: 1px solid var(--border);
+              transition: color .12s ease, background .12s ease; }
+  .oc-seg a:last-child { border-right: 0; }
+  .oc-seg a:hover { color: var(--text); }
+  .oc-seg a.on { color: var(--text); font-weight: 600;
+                 background: color-mix(in oklab, var(--accent) 10%, transparent);
+                 box-shadow: inset 0 -2px 0 var(--accent); }
+
+  .oc-tabs { display: flex; gap: 22px; margin: 20px 0 0;
+             border-bottom: 1px solid var(--border); }
+  .oc-tab  { padding: 10px 1px; margin-bottom: -1px; font-size: 13px;
+             font-weight: 500; color: var(--muted);
+             border-bottom: 2px solid transparent; transition: color .12s ease; }
+  .oc-tab:hover { color: var(--text); }
+  .oc-tab.on { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+
+  /* Status line: the plain-language answer, before any instrument. */
+  .oc-lead { margin: 22px 0 18px; }
+  .oc-lead p { margin: 0; font-size: 16.5px; line-height: 1.5;
+               letter-spacing: -0.01em; max-width: 78ch; }
+  .oc-lead b { font-family: var(--font-mono); font-weight: 600; font-size: 17px;
+               letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+               box-shadow: inset 0 -0.3em 0 color-mix(in oklab, var(--accent) 26%, transparent);
+               padding: 0 2px; }
+
+  /* ---- instrument tile ---- */
+  .oc-rack { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+             gap: 14px; }
+  .oc-i { border: 1px solid var(--border); border-radius: 10px;
+          padding: 12px 14px 13px; min-width: 0;
+          background: linear-gradient(180deg,
+             color-mix(in oklab, var(--panel) 96%, var(--text) 2%),
+             var(--panel) 60%);
+          box-shadow: inset 0 1px 0 var(--w-lip),
+                      0 1px 1px var(--w-cast),
+                      0 10px 20px -16px var(--w-drop); }
+  .oc-i-hd { display: flex; align-items: baseline; justify-content: space-between;
+             gap: 10px; }
+  /* Legend type. Caps here is instrument convention, not the letterspaced
+     caps-under-a-giant-gradient-number pattern that made the old page read as
+     generated: it is small, quiet, and sits on the bezel, above the value. */
+  .oc-i-k, .oc-i-w { font-size: 9.5px; font-weight: 600; letter-spacing: .085em;
+                     text-transform: uppercase; white-space: nowrap; }
+  .oc-i-k { color: var(--muted); }
+  .oc-i-w { color: var(--muted-2); font-variant-numeric: tabular-nums; }
+  .oc-i-rd { display: flex; align-items: baseline; justify-content: space-between;
+             gap: 10px; margin-top: 9px; flex-wrap: wrap; }
+  .oc-i-v { font-family: var(--font-mono); font-size: 25px; font-weight: 600;
+            letter-spacing: -0.035em; line-height: 1; color: var(--text);
+            font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .oc-i-v .u { font-size: 12px; font-weight: 500; color: var(--muted);
+               letter-spacing: 0; margin-left: 3px; }
+  .oc-i.off .oc-i-v { color: var(--muted-2); }
+  .oc-i-d { font-size: 11px; font-variant-numeric: tabular-nums;
+            color: var(--muted-2); text-align: right; line-height: 1.4; }
+  .oc-i-d b { font-weight: 600; font-family: var(--font-mono); }
+  .oc-i-d .up   { color: var(--accent); }
+  .oc-i-d .down { color: var(--danger); }
+  .oc-i-ft { margin-top: 8px; font-size: 11px; color: var(--muted-2);
+             line-height: 1.45; font-variant-numeric: tabular-nums; }
+
+  /* Recessed well. Every chart on the page sits in one. */
+  .oc-w { margin-top: 11px; border-radius: 5px; padding: 8px 9px 6px;
+          background: var(--w-bg);
+          box-shadow: inset 0 1px 3px var(--w-inset),
+                      inset 0 0 0 1px color-mix(in oklab, var(--border) 85%, transparent); }
+
+  /* Axis rails printed under a chart. */
+  .oc-ax { position: relative; height: 12px; margin-top: 5px;
+           font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-2);
+           font-variant-numeric: tabular-nums; }
+  .oc-ax > span { position: absolute; top: 0; transform: translateX(-50%);
+                  white-space: nowrap; }
+  .oc-ax > span.a0 { transform: none; }
+  .oc-ax > span.a1 { transform: translateX(-100%); }
+  .oc-ax-flex { display: flex; justify-content: space-between; gap: 8px;
+                margin-top: 5px; font-family: var(--font-mono); font-size: 9.5px;
+                color: var(--muted-2); font-variant-numeric: tabular-nums; }
+
+  /* Column charts: daily bars, kept/edited stacks, latency histogram. */
+  .oc-cols { display: flex; align-items: flex-end; gap: 1px; height: 40px;
+             position: relative; }
+  .oc-cols > i { flex: 1 1 0; min-width: 0; background: var(--accent);
+                 border-radius: 1px 1px 0 0; display: block; }
+  .oc-cols > i.nil { background: color-mix(in oklab, var(--muted) 30%, transparent); }
+  .oc-cols.tall { height: 52px; }
+
+  /* Stacked kept vs edited. */
+  .oc-stack { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+              justify-content: flex-end; border-radius: 1px 1px 0 0;
+              overflow: hidden; }
+  .oc-stack > span { display: block; width: 100%; }
+  .oc-stack .k { background: var(--accent); }
+  .oc-stack .e { background: color-mix(in oklab, var(--muted) 62%, transparent); }
+  .oc-stack.nil { background: color-mix(in oklab, var(--muted) 30%, transparent);
+                  height: 1px; }
+
+  /* Pinned scale with the distribution behind it and two marks on it. */
+  .oc-scale { position: relative; height: 40px; }
+  .oc-scale > i { position: absolute; bottom: 0; display: block;
+                  background: color-mix(in oklab, var(--accent) 45%, transparent);
+                  border-radius: 1px 1px 0 0;
+                  border-right: 1px solid var(--w-bg); }
+  .oc-mk { position: absolute; top: -2px; bottom: 0; width: 0;
+           border-left: 1.5px solid var(--accent); }
+  .oc-mk::after { content: ""; position: absolute; top: -4px; left: -3.5px;
+                  border: 3.5px solid transparent; border-top-color: var(--accent); }
+  .oc-mk.soft { border-left: 1px dashed color-mix(in oklab, var(--muted) 80%, transparent); }
+  .oc-mk.soft::after { display: none; }
+  .oc-mk.p95 { border-left: 1px dashed color-mix(in oklab, var(--warn) 90%, transparent); }
+  .oc-mk.p95::after { border-top-color: var(--warn); border-width: 2.5px; left: -2.5px; }
+
+  /* Day strip: same ramp as the long activity grid, short horizon. */
+  .oc-strip { display: flex; gap: 3px; height: 26px; }
+  .oc-strip > i { flex: 1 1 0; min-width: 0; border-radius: 2px;
+                  background: color-mix(in oklab, var(--text) 8%, transparent); }
+  .l1 { background: color-mix(in oklab, var(--accent) 26%, transparent) !important; }
+  .l2 { background: color-mix(in oklab, var(--accent) 50%, transparent) !important; }
+  .l3 { background: color-mix(in oklab, var(--accent) 75%, transparent) !important; }
+  .l4 { background: var(--accent) !important; }
+
+  /* Cumulative line. */
+  .oc-line { position: relative; height: 40px; }
+  .oc-line svg { width: 100%; height: 100%; display: block; }
+  .oc-line .fill { fill: color-mix(in oklab, var(--accent) 16%, transparent); }
+  .oc-line .stroke { fill: none; stroke: var(--accent); stroke-width: 1.6;
+                     stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+
+  /* ---- panels ---- */
+  .oc-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+             gap: 14px; margin-top: 14px; align-items: start; }
+  .oc-w9 { grid-column: span 9; } .oc-w8 { grid-column: span 8; }
+  .oc-w7 { grid-column: span 7; } .oc-w5 { grid-column: span 5; }
+  .oc-w4 { grid-column: span 4; } .oc-w3 { grid-column: span 3; }
+  .oc-panel { border: 1px solid var(--border); border-radius: 10px; min-width: 0;
+              padding: 14px 16px 16px;
+              background: linear-gradient(180deg,
+                 color-mix(in oklab, var(--panel) 96%, var(--text) 2%),
+                 var(--panel) 60%);
+              box-shadow: inset 0 1px 0 var(--w-lip),
+                          0 1px 1px var(--w-cast),
+                          0 10px 20px -16px var(--w-drop); }
+  .oc-ph { display: flex; align-items: center; gap: 6px 12px; margin-bottom: 13px;
+           flex-wrap: wrap; }
+  .oc-ph h2 { margin: 0; font-size: 11.5px; font-weight: 600; letter-spacing: .075em;
+              text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  .oc-ph .rule { flex: 1 1 auto; min-width: 14px; height: 1px; background: var(--border); }
+  .oc-ph .win { font-size: 9.5px; font-weight: 600; letter-spacing: .085em;
+                text-transform: uppercase; color: var(--muted-2); white-space: nowrap;
+                font-variant-numeric: tabular-nums; }
+
+  .oc-note { font-size: 12.5px; line-height: 1.65; color: var(--muted); margin: 0 0 13px; }
+  .oc-note b { color: var(--text); font-family: var(--font-mono); font-weight: 600;
+               font-variant-numeric: tabular-nums; }
+
+  .oc-churn-bar { display: flex; height: 9px; border-radius: 2px; overflow: hidden;
+                  background: color-mix(in oklab, var(--text) 8%, transparent); }
+  .oc-churn-bar > span { display: block; height: 100%;
+                         transition: width .7s cubic-bezier(.2,.7,.2,1); }
+  .oc-churn-bar .add { background: var(--accent); }
+  .oc-churn-bar .cut { background: color-mix(in oklab, var(--muted) 55%, transparent); }
+  .oc-churn-key { display: flex; gap: 18px; margin-top: 9px; font-size: 11.5px;
+                  color: var(--muted); flex-wrap: wrap; }
+  .oc-churn-key span { display: inline-flex; align-items: center; gap: 7px; }
+  .oc-churn-key i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .oc-churn-key i.add { background: var(--accent); }
+  .oc-churn-key i.cut { background: color-mix(in oklab, var(--muted) 55%, transparent); }
+  .oc-churn-key b { color: var(--text); font-family: var(--font-mono); font-weight: 600;
+                    font-variant-numeric: tabular-nums; }
+
+  .oc-dl { display: grid; grid-template-columns: 1fr auto; margin: 16px 0 0;
+           font-size: 13px; }
+  .oc-dl dt, .oc-dl dd { padding: 9px 0;
+           border-top: 1px solid color-mix(in oklab, var(--border) 65%, transparent); }
+  .oc-dl dt { color: var(--muted); }
+  .oc-dl dd { margin: 0; text-align: right; color: var(--text); font-weight: 500;
+              font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .oc-dl dd .of { color: var(--muted-2); font-weight: 400; }
+
+  .oc-rank { display: flex; flex-direction: column; gap: 12px; }
+  .oc-rank-row { display: grid; grid-template-columns: 16px 1fr auto;
+                 align-items: baseline; gap: 5px 10px; }
+  .oc-rank-i { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-2);
+               font-variant-numeric: tabular-nums; }
+  .oc-rank-l { font-size: 13px; font-weight: 500; color: var(--text);
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .oc-rank-v { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted-2);
+               font-variant-numeric: tabular-nums; }
+  .oc-rank-v b { color: var(--text); font-weight: 600; }
+  .oc-bar { grid-column: 2 / -1; height: 6px; border-radius: 2px; overflow: hidden;
+            background: var(--w-bg);
+            box-shadow: inset 0 1px 2px var(--w-inset),
+                        inset 0 0 0 1px color-mix(in oklab, var(--border) 70%, transparent); }
+  .oc-bar > span { display: block; height: 100%; background: var(--accent);
+                   transition: width .7s cubic-bezier(.2,.7,.2,1); }
+
+  /* Activity grid: month axis, weekday gutter and cells in one grid, so the
+     three can never drift out of alignment. */
+  .oc-heat { display: grid; gap: 3px; grid-auto-rows: min-content;
+             overflow-x: auto; }
+  .oc-heat-m { font-size: 9.5px; color: var(--muted-2); grid-row: 1;
+               white-space: nowrap; letter-spacing: .04em; }
+  .oc-heat-d { font-size: 9.5px; color: var(--muted-2); grid-column: 1;
+               display: flex; align-items: center; }
+  .oc-cell { aspect-ratio: 1; border-radius: 2px; min-width: 8px;
+             background: color-mix(in oklab, var(--text) 8%, transparent); }
+  .oc-cell:hover { outline: 1.5px solid var(--text); outline-offset: 1px; }
+  .oc-heat-key { display: flex; align-items: center; gap: 4px; margin-top: 12px;
+                 font-size: 10.5px; color: var(--muted-2); }
+  .oc-heat-key i { width: 10px; height: 10px; border-radius: 2px;
+                   background: color-mix(in oklab, var(--text) 8%, transparent); }
+  .oc-heat-key i:first-of-type { margin-left: 4px; }
+  .oc-heat-key i:last-of-type { margin-right: 4px; }
+
+  /* Quality plot: gridlines, y ticks and the zoomed bounds printed, because a
+     four point spread on a hundred point scale otherwise reads as a cliff. */
+  .oc-plot { display: grid; grid-template-columns: 26px 1fr; gap: 4px 8px; }
+  .oc-plot-y { display: flex; flex-direction: column; justify-content: space-between;
+               align-items: flex-end; font-family: var(--font-mono); font-size: 9.5px;
+               color: var(--muted-2); font-variant-numeric: tabular-nums;
+               padding-bottom: 17px; }
+  .oc-plot-b { position: relative; min-width: 0; }
+  .oc-plot-b svg { width: 100%; height: 108px; display: block; }
+  .oc-plot .grid { stroke: var(--grid-ln); stroke-width: 1;
+                   vector-effect: non-scaling-stroke; }
+  .oc-plot .mid  { stroke: color-mix(in oklab, var(--muted) 55%, transparent);
+                   stroke-width: 1; stroke-dasharray: 2 4;
+                   vector-effect: non-scaling-stroke; }
+  .oc-plot .area { fill: color-mix(in oklab, var(--accent) 12%, transparent); }
+  .oc-plot .line { fill: none; stroke: var(--accent); stroke-width: 1.7;
+                   stroke-linejoin: round; stroke-linecap: round;
+                   vector-effect: non-scaling-stroke; }
+  .oc-plot-dot { position: absolute; right: 0; width: 6px; height: 6px;
+                 border-radius: 50%; background: var(--accent);
+                 transform: translate(50%, -50%); pointer-events: none; }
+
+  .oc-empty { color: var(--muted); font-size: 12.5px; padding: 8px 0 4px; }
+  .oc-w .oc-empty { padding: 13px 0; text-align: center; font-size: 11.5px; }
+
+  @media (max-width: 1400px) { .oc-rack { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 1240px) { .oc-w9 { grid-column: span 7; } .oc-w3 { grid-column: span 5; } }
+  @media (max-width: 940px) {
+    .oc-w9, .oc-w8, .oc-w7, .oc-w5, .oc-w4, .oc-w3 { grid-column: span 12; }
+  }
+  @media (max-width: 700px) { .oc-rack { grid-template-columns: minmax(0, 1fr); } }
   @media (prefers-reduced-motion: reduce) {
-    .wf-card, .wf-tab, .wf-cell, .wf-source button,
-    .wf-app-bar > span, .wf-gauge-fill, .wf-rank-meter > span,
-    .wf-split-bar > span, .wf-row .sparkbar > span { transition: none !important; }
-    .wf-card:hover, .wf-cell:hover { transform: none !important; }
-    .wf-app-bar > span::after, .wf-split-bar .seg-trim::after,
-    .wf-rank-meter > span::after { animation: none !important; display: none; }
+    .oc-bar > span, .oc-churn-bar > span { transition: none; }
   }
 </style>
 
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    {# Gauge + trajectory share one luminous green ramp (light → accent) so they
-       stay on-palette with the rest of the page. Stop colours live in CSS
-       (.gstop-*) so color-mix() resolves reliably. #}
-    <linearGradient id="wf-gauge-grad" x1="0" y1="0" x2="1" y2="0">
-      <stop class="gstop-0" offset="0%" />
-      <stop class="gstop-1" offset="100%" />
-    </linearGradient>
-    <linearGradient id="wf-traj-line" x1="0" y1="0" x2="1" y2="0">
-      <stop class="gstop-0" offset="0%" />
-      <stop class="gstop-1" offset="100%" />
-    </linearGradient>
-    <linearGradient id="wf-traj-area" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28" />
-      <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
-    </linearGradient>
-  </defs>
-</svg>
+{# Latency reads in ms below a second and in seconds above it. Value and unit
+   come back separately so the unit keeps its own smaller type and the count-up
+   in app.js only walks the numeric text node. #}
+{% macro ms_v(v) -%}
+{% if v is none %}n/a{% elif v < 1000 %}{{ v }}{% else %}{{ (v / 1000) | round(1) }}{% endif %}
+{%- endmacro %}
+{% macro ms_u(v) -%}
+{% if v is none %}{% elif v < 1000 %}ms{% else %}s{% endif %}
+{%- endmacro %}
 
-<div class="wf-header">
+<header class="oc-top">
   <div>
-    <div class="wf-title">Outcomes</div>
-    <div class="wf-subtitle">How Echo is showing up in your work.</div>
+    <h1 class="oc-h1">Outcomes</h1>
+    <div class="oc-h1-sub">What Echo did to your words, and what it saved you.</div>
   </div>
-</div>
+  {% if tab == 'usage' %}
+    {% set _src = source or 'desktop' %}
+    <nav class="oc-seg" aria-label="Filter by source">
+      {% for key, label in [('desktop', 'Desktop'), ('mobile', 'Mobile'), ('all', 'All')] %}
+        <a href="/insights?source={{ key }}"{% if _src == key %} class="on" aria-current="true"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+</header>
 
-<div class="wf-tabs">
-  <a class="wf-tab{% if tab == 'usage' %} active{% endif %}"
-     href="/insights?source={{ source or 'desktop' }}">Your Usage</a>
-  <a class="wf-tab{% if tab == 'voice' %} active{% endif %}"
-     href="/insights/voice">Your Voice</a>
-</div>
+<nav class="oc-tabs">
+  <a class="oc-tab{% if tab == 'usage' %} on{% endif %}"
+     href="/insights?source={{ source or 'desktop' }}">Your usage</a>
+  <a class="oc-tab{% if tab == 'voice' %} on{% endif %}" href="/insights/voice">Your voice</a>
+</nav>
 
 {% if tab == 'usage' %}
-{# ===== Top row: 3 hero tiles ===== #}
-<div class="wf-grid-top">
+{% set _tw = total_words or 0 %}
+{% set _td = fixes.total_dictations or 0 %}
+{% set _touched = fixes.dictionary_fixes or 0 %}
+{% set _churn = fixes.words_corrected or 0 %}
+{% set _added = fixes.words_added or 0 %}
+{% set _cut = fixes.words_removed or 0 %}
+{# 250 words is the standard double spaced manuscript page. A unit you can
+   check, rather than the old "that's an instruction manual". #}
+{% set _pages = (_tw / 250) | round | int %}
 
-  {# --- WPM with gauge --- #}
-  <div class="wf-card wf-card-col">
-    <div class="wf-hero-num">{{ wpm or 0 }}</div>
-    <div class="wf-hero-lbl">Words per minute</div>
-    {% set wpm_val = wpm or 0 %}
-    {# Adaptive ceiling: a fast dictator (>160 wpm) shouldn't peg the gauge at
-       100%. Round up to the next 100 so the arc stays a meaningful fraction. #}
-    {% set wpm_target = 200 if wpm_val < 160 else (((wpm_val // 100) + 1) * 100) %}
-    {% set wpm_frac = (wpm_val / wpm_target) if wpm_val < wpm_target else 1.0 %}
-    {# Arc r=70, viewBox padded to clear the stroke. Length = pi*r = 220. #}
-    <div class="wf-gauge">
-      <div class="wf-gauge-wrap">
-        <svg width="200" height="120" viewBox="0 0 200 110"
-             role="img" aria-label="Words per minute: {{ wpm_val }} of {{ wpm_target }}">
-          <path class="wf-gauge-track" d="M 25 95 A 75 75 0 0 1 175 95" />
-          <path class="wf-gauge-fill"  d="M 25 95 A 75 75 0 0 1 175 95"
-                stroke-dasharray="236" stroke-dashoffset="{{ 236 * (1 - wpm_frac) }}" />
-          {# tick scale: 11 evenly-spaced ticks across the semicircle.
-             Precomputed: outer point on r=75, inner on r=67 (major) / r=70 (minor),
-             centered at (100,95). Angles 180°→0° in 18° steps. #}
-          <g class="wf-gauge-ticks">
-            <line class="wf-gauge-tick major" x1="33" y1="95" x2="25" y2="95" />
-            <line class="wf-gauge-tick" x1="33.7" y1="71.8" x2="32.0" y2="68.6" />
-            <line class="wf-gauge-tick" x1="38.0" y1="49.4" x2="33.4" y2="44.4" />
-            <line class="wf-gauge-tick" x1="46.5" y1="29.8" x2="36.6" y2="22.5" />
-            <line class="wf-gauge-tick" x1="60.4" y1="14.0" x2="44.6" y2="6.4" />
-            <line class="wf-gauge-tick major" x1="100" y1="28" x2="100" y2="20" />
-            <line class="wf-gauge-tick" x1="139.6" y1="14.0" x2="155.4" y2="6.4" />
-            <line class="wf-gauge-tick" x1="153.5" y1="29.8" x2="163.4" y2="22.5" />
-            <line class="wf-gauge-tick" x1="162.0" y1="49.4" x2="166.6" y2="44.4" />
-            <line class="wf-gauge-tick" x1="166.3" y1="71.8" x2="168.0" y2="68.6" />
-            <line class="wf-gauge-tick major" x1="167" y1="95" x2="175" y2="95" />
-          </g>
-        </svg>
-        <span class="wf-gauge-min">0</span>
-        <span class="wf-gauge-max">{{ wpm_target }}</span>
-      </div>
-      <div class="wf-gauge-val">
-        {% if wpm_val == 0 %}Awaiting first dictation
-        {% elif wpm_val >= 150 %}Top tier
-        {% elif wpm_val >= baseline_wpm * 2 %}Fast
-        {% elif wpm_val >= baseline_wpm %}On pace
-        {% else %}Building up{% endif %}
-      </div>
-      <div class="wf-gauge-cap">vs. typing baseline {{ baseline_wpm }} WPM</div>
+<section class="oc-lead">
+  {% if _tw == 0 %}
+    <p>Nothing recorded yet. Dictate a few times and every instrument below
+       starts reading.</p>
+  {% elif saved.ms > 0 %}
+    <p>Echo saved you about <b>{{ saved.value }} {{ saved.unit }}</b> of typing
+       time in the last {{ windows.saved_days }} days, across
+       <b>{{ "{:,}".format(_td) }}</b> dictations and
+       <b>{{ "{:,}".format(_tw) }}</b> words all time, roughly {{ _pages }}
+       double spaced pages.</p>
+  {% else %}
+    <p>You have dictated <b>{{ "{:,}".format(_tw) }}</b> words. Not enough
+       activity in the last {{ windows.saved_days }} days to estimate typing
+       time saved.</p>
+  {% endif %}
+</section>
+
+<div class="oc-rack">
+
+  {# ---- 1. time saved: the bars are the number ---- #}
+  {% set _smax = (daily | map(attribute='saved_ms') | max) if daily else 0 %}
+  <article class="oc-i{% if not saved.ms %} off{% endif %}">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Typing time saved</span>
+      <span class="oc-i-w">Last {{ windows.saved_days }} days</span>
     </div>
-  </div>
-
-  {# --- Fixes made --- #}
-  <div class="wf-card">
-    <div class="wf-hero-num">{{ "{:,}".format(fixes.total or 0) }}</div>
-    <div class="wf-hero-lbl">Fixes made by Echo</div>
-
-    {% set _wc = fixes.words_corrected or 0 %}
-    {% set _df = fixes.dictionary_fixes or 0 %}
-    {% set _td = fixes.total_dictations or 0 %}
-    {% set _added = fixes.words_added or 0 %}
-    {% set _removed = fixes.words_removed or 0 %}
-    {% set _chars = fixes.chars_corrected or 0 %}
-    {% set _rowmax = [_wc, _df, 1] | max %}
-
-    {% if _td %}
-      {% set _touch = ((fixes.touch_rate or 0) * 100) | round | int %}
-      <div class="wf-delta up">↻ Refined {{ _touch }}% of {{ "{:,}".format(_td) }} dictation{{ '' if _td == 1 else 's' }}</div>
-    {% endif %}
-
-    <div class="wf-divider"></div>
-
-    {% if fixes.total %}
-      <div class="wf-row">
-        <span class="lbl"><span class="dot"></span>Words corrected</span>
-        <span class="val">
-          <span class="sparkbar"><span style="width: {{ (_wc / _rowmax * 100) | round(1) }}%;"></span></span>
-          {{ "{:,}".format(_wc) }}
+    <div class="oc-i-rd">
+      <span class="oc-i-v">{{ saved.value }}<span class="u">{{ saved.unit }}</span></span>
+      {% if saved.delta_pct is not none %}
+        <span class="oc-i-d">
+          {%- if saved.delta_pct > 0 %}<b class="up">+{{ saved.delta_pct }}%</b>
+          {%- elif saved.delta_pct < 0 %}<b class="down">{{ saved.delta_pct }}%</b>
+          {%- else %}<b>level</b>{% endif %}<br>vs prior {{ windows.saved_days }}
         </span>
-      </div>
-      <div class="wf-row">
-        <span class="lbl"><span class="dot"></span>Dictionary fixes</span>
-        <span class="val">
-          <span class="sparkbar"><span style="width: {{ (_df / _rowmax * 100) | round(1) }}%;"></span></span>
-          {{ "{:,}".format(_df) }}
-        </span>
-      </div>
-
-      {% if _wc %}
-        <div class="wf-split">
-          <div class="wf-split-head">
-            <span>How Echo edits</span>
-            <span class="tot">{{ "{:,}".format(_wc) }} words</span>
-          </div>
-          <div class="wf-split-bar">
-            <span class="seg-trim" style="width: {{ (_removed / _wc * 100) | round(1) }}%;"></span>
-            <span class="seg-add"  style="width: {{ (_added / _wc * 100) | round(1) }}%;"></span>
-          </div>
-          <div class="wf-split-legend">
-            <span class="k"><span class="sw trim"></span>Trimmed <strong>{{ "{:,}".format(_removed) }}</strong></span>
-            <span class="k"><span class="sw add"></span>Added <strong>{{ "{:,}".format(_added) }}</strong></span>
-          </div>
-        </div>
       {% endif %}
-
-      <div class="wf-microstats">
-        <div class="wf-microstat">
-          <div class="n">{{ "{:,}".format(_chars) }}</div>
-          <div class="k">Characters polished</div>
+    </div>
+    <div class="oc-w">
+      {% if daily and _smax > 0 %}
+        <div class="oc-cols" role="img"
+             aria-label="Typing time saved per day over the last {{ windows.saved_days }} days">
+          {% for d in daily %}
+            <i class="{% if d.saved_ms <= 0 %}nil{% endif %}"
+               style="height: {% if d.saved_ms <= 0 %}1px{% else %}{{ [(d.saved_ms / _smax * 100), 3] | max | round(1) }}%{% endif %};"
+               title="{{ d.date }}: {{ (d.saved_ms / 60000) | round(1) }} min saved from {{ d.words }} words"></i>
+          {% endfor %}
         </div>
-        <div class="wf-microstat">
-          <div class="n">{% if _df %}{{ (_wc / _df) | round(1) }}{% else %}0{% endif %}</div>
-          <div class="k">Words per fix</div>
+        <div class="oc-ax-flex">
+          <span>{{ daily[0].date[5:] }}</span>
+          <span>peak {{ (_smax / 60000) | round | int }} min</span>
+          <span>{{ daily[-1].date[5:] }}</span>
         </div>
-      </div>
-    {% else %}
-      <div class="wf-empty">Echo's edits will show up here as you dictate.</div>
-    {% endif %}
-  </div>
-
-  {# --- Total words dictated --- #}
-  <div class="wf-card wf-card-col">
-    <div class="wf-hero-num">{{ "{:,}".format(total_words or 0) }}</div>
-    <div class="wf-hero-lbl">Total words dictated</div>
-    <div class="wf-divider"></div>
-    <div class="wf-context">
-      {% if total_words and total_words >= 50000 %}
-        You've written a novella, {{ ((total_words or 0) // 50000) }}× over.
-      {% elif total_words and total_words >= 10000 %}
-        That's an instruction manual.
-      {% elif total_words and total_words >= 2000 %}
-        That's a long-form essay.
-      {% elif total_words and total_words > 0 %}
-        Keep going. Milestones unlock at 2k, 10k, 50k words.
       {% else %}
-        Dictate to see your words add up.
+        <div class="oc-empty">No time saved in this window.</div>
       {% endif %}
     </div>
+  </article>
 
-    {# Milestone meter: find the next unreached tier and how far we've climbed
-       toward it from the previous one. Gives the card a goal and a clean fill. #}
-    {% set _tw = total_words or 0 %}
-    {% set _ns = namespace(next=0, prev=0, label='') %}
-    {% for _m, _name in [(2000, 'long-form essay'), (10000, 'instruction manual'), (50000, 'novella')] %}
-      {% if _ns.next == 0 and _tw < _m %}{% set _ns.next = _m %}{% set _ns.label = _name %}
-      {% elif _tw >= _m %}{% set _ns.prev = _m %}{% endif %}
-    {% endfor %}
-    {% if _ns.next %}
-      {% set _span = _ns.next - _ns.prev %}
-      {% set _frac = ((_tw - _ns.prev) / _span) if _span else 0 %}
-      <div class="wf-milestone">
-        <div class="wf-milestone-head">
-          <span>Next milestone</span>
-          <span class="goal">{{ "{:,}".format(_ns.next) }} · {{ _ns.label }}</span>
-        </div>
-        <div class="wf-milestone-bar"><span style="width: {{ (_frac * 100) | round(1) }}%;"></span></div>
-        <div class="wf-milestone-foot">{{ "{:,}".format(_ns.next - _tw) }} words to go</div>
-      </div>
-    {% else %}
-      <div class="wf-milestone">
-        <div class="wf-milestone-head">
-          <span>All milestones reached</span>
-          <span class="goal">✦ 50,000+</span>
-        </div>
-        <div class="wf-milestone-bar"><span style="width:100%;"></span></div>
-      </div>
-    {% endif %}
-
-    {% set _src = source or 'desktop' %}
-    <div class="wf-source" role="tablist" aria-label="Source">
-      <a class="wf-source-btn{% if _src == 'desktop' %} active{% endif %}"
-         role="tab" aria-selected="{{ 'true' if _src == 'desktop' else 'false' }}"
-         href="/insights?source=desktop">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
-        </svg>Desktop</a>
-      <a class="wf-source-btn{% if _src == 'mobile' %} active{% endif %}"
-         role="tab" aria-selected="{{ 'true' if _src == 'mobile' else 'false' }}"
-         href="/insights?source=mobile">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="6" y="2" width="12" height="20" rx="2"/><path d="M12 18h.01"/>
-        </svg>Mobile</a>
+  {# ---- 2. pace on a pinned scale, distribution behind it ---- #}
+  {% set _pmax = (pace.buckets | map(attribute='count') | max) if pace.buckets else 0 %}
+  <article class="oc-i{% if not pace.mean %} off{% endif %}">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Speaking pace</span>
+      <span class="oc-i-w">Last {{ windows.wpm_days }} days</span>
     </div>
-  </div>
+    <div class="oc-i-rd">
+      <span class="oc-i-v">{{ pace.mean }}<span class="u">wpm</span></span>
+      <span class="oc-i-d">
+        {%- if pace.mean and pace.baseline %}<b class="up">{{ (pace.mean / pace.baseline) | round(1) }}×</b><br>
+        typing at {{ pace.baseline }}
+        {%- else %}no samples<br>yet{% endif %}
+      </span>
+    </div>
+    <div class="oc-w">
+      {% if pace.n and _pmax %}
+        <div class="oc-scale" role="img"
+             aria-label="Distribution of your speaking pace over {{ pace.n }} dictations">
+          {% for b in pace.buckets %}
+            {% if b.count %}
+              <i style="left: {{ (b.lo / pace.scale_max * 100) | round(2) }}%;
+                        width: {{ ((b.hi - b.lo) / pace.scale_max * 100) | round(2) }}%;
+                        height: {{ (b.count / _pmax * 100) | round(1) }}%;"
+                 title="{{ b.label }} wpm: {{ b.count }} dictation{{ '' if b.count == 1 else 's' }}"></i>
+            {% endif %}
+          {% endfor %}
+          <span class="oc-mk soft" style="left: {{ (pace.baseline_pos * 100) | round(2) }}%;"
+                title="Typing baseline {{ pace.baseline }} wpm"></span>
+          <span class="oc-mk" style="left: {{ (pace.mean_pos * 100) | round(2) }}%;"
+                title="Your mean {{ pace.mean }} wpm"></span>
+        </div>
+        <div class="oc-ax">
+          {% for t in [0, 60, 120, 180, 240] %}
+            <span class="{% if loop.first %}a0{% elif loop.last %}a1{% endif %}"
+                  style="left: {{ (t / pace.scale_max * 100) | round(2) }}%;">{{ t }}</span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="oc-empty">Not enough dictations to plot pace.</div>
+      {% endif %}
+    </div>
+    <div class="oc-i-ft">
+      {%- if pace.n -%}
+        {{ pace.n }} dictation{{ '' if pace.n == 1 else 's' }} · median {{ pace.median }} wpm ·
+        dashed mark is typing speed
+      {%- else -%}
+        Scale pinned to 0 to {{ pace.scale_max }} wpm
+      {%- endif -%}
+    </div>
+  </article>
+
+  {# ---- 3. words: all time headline, recent accumulation drawn ---- #}
+  {% set ns = namespace(run=0, pts=[]) %}
+  {% for d in daily %}{% set ns.run = ns.run + d.words %}{% set _ = ns.pts.append(ns.run) %}{% endfor %}
+  <article class="oc-i{% if not _tw %} off{% endif %}">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Words dictated</span>
+      <span class="oc-i-w">All time</span>
+    </div>
+    <div class="oc-i-rd">
+      <span class="oc-i-v">{{ "{:,}".format(_tw) }}</span>
+      <span class="oc-i-d">
+        {%- if saved.words %}<b class="up">+{{ "{:,}".format(saved.words) }}</b><br>
+        last {{ windows.saved_days }} days
+        {%- else %}nothing new<br>this window{% endif %}
+      </span>
+    </div>
+    <div class="oc-w">
+      {% if ns.run > 0 %}
+        {% set _cn = ns.pts | length %}
+        {% set _cstep = 300 / (_cn - 1 if _cn > 1 else 1) %}
+        <div class="oc-line" role="img"
+             aria-label="Words accumulated over the last {{ windows.saved_days }} days">
+          <svg viewBox="0 0 300 40" preserveAspectRatio="none">
+            <polygon class="fill" points="0,40
+              {%- for v in ns.pts %} {{ (loop.index0 * _cstep) | round(2) }},{{ (40 - (v / ns.run) * 38) | round(2) }}{% endfor %} 300,40"/>
+            <polyline class="stroke" points="
+              {%- for v in ns.pts %}{{ (loop.index0 * _cstep) | round(2) }},{{ (40 - (v / ns.run) * 38) | round(2) }} {% endfor %}"/>
+          </svg>
+        </div>
+        <div class="oc-ax-flex">
+          <span>{{ daily[0].date[5:] }}</span>
+          <span>cumulative</span>
+          <span>{{ daily[-1].date[5:] }}</span>
+        </div>
+      {% else %}
+        <div class="oc-empty">No words dictated in this window.</div>
+      {% endif %}
+    </div>
+    <div class="oc-i-ft">Roughly {{ "{:,}".format(_pages) }} double spaced pages</div>
+  </article>
+
+  {# ---- 4. kept as written: counts, not a per-day rate ---- #}
+  {% set _n = acceptance.n_current or 0 %}
+  {% set _dpp = (acceptance.delta_pp or 0) | round | int %}
+  {% set _kmax = (kept_series | map(attribute='total') | max) if kept_series else 0 %}
+  <article class="oc-i{% if not _n %} off{% endif %}">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Kept as written</span>
+      <span class="oc-i-w">Last {{ windows.accept_days }} days</span>
+    </div>
+    <div class="oc-i-rd">
+      <span class="oc-i-v">
+        {%- if _n %}{{ acceptance_pct }}<span class="u">%</span>{% else %}n/a{% endif -%}
+      </span>
+      <span class="oc-i-d">
+        {%- if _n and acceptance.n_prior -%}
+          {% if _dpp > 0 %}<b class="up">+{{ _dpp }} pts</b>
+          {%- elif _dpp < 0 %}<b class="down">{{ _dpp }} pts</b>
+          {%- else %}<b>level</b>{% endif %}<br>vs prior {{ windows.accept_days }}
+        {%- elif _n -%}
+          no prior<br>window
+        {%- else -%}
+          nothing<br>dictated
+        {%- endif -%}
+      </span>
+    </div>
+    <div class="oc-w">
+      {% if _kmax %}
+        <div class="oc-cols" role="img"
+             aria-label="Dictations kept as written versus edited, per day, last {{ windows.kept_days }} days">
+          {% for d in kept_series %}
+            {% if d.total %}
+              <span class="oc-stack" style="height: {{ (d.total / _kmax * 100) | round(1) }}%;"
+                    title="{{ d.date }}: {{ d.kept }} kept, {{ d.edited }} edited">
+                {% if d.edited %}<span class="e" style="height: {{ (d.edited / d.total * 100) | round(1) }}%;"></span>{% endif %}
+                {% if d.kept %}<span class="k" style="height: {{ (d.kept / d.total * 100) | round(1) }}%;"></span>{% endif %}
+              </span>
+            {% else %}
+              <span class="oc-stack nil" title="{{ d.date }}: nothing dictated"></span>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <div class="oc-ax-flex">
+          <span>{{ kept_series[0].date[5:] }}</span>
+          <span>peak {{ _kmax }} a day</span>
+          <span>{{ kept_series[-1].date[5:] }}</span>
+        </div>
+      {% else %}
+        <div class="oc-empty">No dictations in the last {{ windows.kept_days }} days.</div>
+      {% endif %}
+    </div>
+    <div class="oc-i-ft">
+      Filled means kept as Echo wrote it, grey means you opened the editor.
+    </div>
+  </article>
+
+  {# ---- 5. response time: the distribution, p50 and p95 on the axis ---- #}
+  {% set _lmax = (latency.bins | map(attribute='count') | max) if latency.bins else 0 %}
+  <article class="oc-i{% if not latency.n %} off{% endif %}">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Response time</span>
+      <span class="oc-i-w">Last {{ latency.n or windows.latency_n }}</span>
+    </div>
+    <div class="oc-i-rd">
+      <span class="oc-i-v">
+        {%- if latency.p50 is not none -%}
+          {{ ms_v(latency.p50) }}<span class="u">{{ ms_u(latency.p50) }}</span>
+        {%- else -%}n/a{%- endif -%}
+      </span>
+      <span class="oc-i-d">
+        {%- if latency.n %}<b>{{ ms_v(latency.p95) }} {{ ms_u(latency.p95) }}</b><br>
+        95th percentile
+        {%- else %}not measured<br>yet{% endif %}
+      </span>
+    </div>
+    <div class="oc-w">
+      {% if _lmax %}
+        <div class="oc-cols tall" role="img"
+             aria-label="Distribution of the last {{ latency.n }} response times">
+          {% for b in latency.bins %}
+            <i class="{% if not b.count %}nil{% endif %}"
+               style="height: {% if b.count %}{{ [(b.count / _lmax * 100), 3] | max | round(1) }}%{% else %}1px{% endif %};"
+               title="{{ (b.lo / 1000) | round(1) }} to {{ (b.hi / 1000) | round(1) }} s: {{ b.count }}"></i>
+          {% endfor %}
+          <span class="oc-mk" style="left: {{ (latency.p50_pos * 100) | round(2) }}%;"
+                title="Median {{ ms_v(latency.p50) }} {{ ms_u(latency.p50) }}"></span>
+          <span class="oc-mk p95" style="left: {{ (latency.p95_pos * 100) | round(2) }}%;"
+                title="95th percentile {{ ms_v(latency.p95) }} {{ ms_u(latency.p95) }}"></span>
+        </div>
+        <div class="oc-ax-flex">
+          <span>0 s</span>
+          <span>solid median, dashed p95</span>
+          <span>{{ (latency.axis_max / 1000) | round(1) }} s</span>
+        </div>
+      {% else %}
+        <div class="oc-empty">No response times recorded yet.</div>
+      {% endif %}
+    </div>
+    <div class="oc-i-ft">
+      {%- if latency.over -%}
+        Axis stops at the 95th percentile. {{ latency.over }} slower
+        {{ 'run is' if latency.over == 1 else 'runs are' }} folded into the last bar.
+      {%- else -%}
+        From the end of speech to text on screen.
+      {%- endif -%}
+    </div>
+  </article>
+
+  {# ---- 6. streak: short horizon, same ramp as the long grid ---- #}
+  <article class="oc-i{% if not streak %} off{% endif %}">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Current streak</span>
+      <span class="oc-i-w">Last 14 days</span>
+    </div>
+    <div class="oc-i-rd">
+      <span class="oc-i-v">{{ streak or 0 }}<span class="u">day{{ '' if streak == 1 else 's' }}</span></span>
+      <span class="oc-i-d">
+        {%- if heatmap.max %}<b>{{ heatmap.max }}</b><br>busiest day
+        {%- else %}no activity<br>recorded{% endif %}
+      </span>
+    </div>
+    <div class="oc-w">
+      {% if daily %}
+        <div class="oc-strip" role="img" aria-label="Dictations per day, last 14 days">
+          {% for d in daily[-14:] %}
+            <i class="l{{ d.level }}"
+               title="{{ d.date }}: {{ d.dictations }} dictation{{ '' if d.dictations == 1 else 's' }}"></i>
+          {% endfor %}
+        </div>
+        <div class="oc-ax-flex">
+          <span>{{ daily[-14].date[5:] }}</span>
+          <span>{{ daily[-14:] | selectattr('dictations') | list | length }} active</span>
+          <span>{{ daily[-1].date[5:] }}</span>
+        </div>
+      {% else %}
+        <div class="oc-empty">Nothing recorded yet.</div>
+      {% endif %}
+    </div>
+    <div class="oc-i-ft">
+      {%- if heatmap.span -%}
+        Active on {{ heatmap.active or 0 }} of the last {{ heatmap.span }} days
+      {%- else -%}
+        Consecutive days with at least one dictation
+      {%- endif -%}
+    </div>
+  </article>
+
 </div>
 
-{# ===== Bottom row: usage + streak ===== #}
-<div class="wf-grid-bot">
+<div class="oc-grid">
 
-  {# --- Desktop usage breakdown --- #}
-  <div class="wf-card">
-    <div class="wf-heat-head">
-      <div class="wf-card-title">{{ (source or 'desktop')|capitalize }} usage</div>
-      <div class="wf-heat-longest">Total apps · {{ apps|length }}</div>
+  {# The old card led with fixes.total, which is words_corrected plus
+     dictionary_fixes: a word count added to a dictation count. That sum is
+     not a quantity of anything, so it is gone. Its two components are shown
+     separately, each labelled as what it actually counts. #}
+  <section class="oc-panel oc-w7">
+    <div class="oc-ph">
+      <h2>What Echo changed</h2><span class="rule"></span><span class="win">All time</span>
+    </div>
+    {% if _td %}
+      <p class="oc-note">
+        Echo rewrote the wording in <b>{{ "{:,}".format(_touched) }}</b> of your
+        <b>{{ "{:,}".format(_td) }}</b> dictations. Across all of them the word
+        count moved by <b>{{ "{:,}".format(_churn) }}</b> words.
+      </p>
+      {% if _churn %}
+        <div class="oc-churn-bar" aria-hidden="true">
+          <span class="add" style="width: {{ (_added / _churn * 100) | round(1) }}%;"></span>
+          <span class="cut" style="width: {{ (_cut / _churn * 100) | round(1) }}%;"></span>
+        </div>
+        <div class="oc-churn-key">
+          <span><i class="add"></i><b>{{ "{:,}".format(_added) }}</b> words added</span>
+          <span><i class="cut"></i><b>{{ "{:,}".format(_cut) }}</b> words trimmed</span>
+        </div>
+      {% endif %}
+      <dl class="oc-dl">
+        <dt>Dictations Echo altered</dt>
+        <dd>{{ "{:,}".format(_touched) }} <span class="of">of {{ "{:,}".format(_td) }}</span></dd>
+        <dt>Characters changed</dt>
+        <dd>{{ "{:,}".format(fixes.chars_corrected or 0) }}</dd>
+        <dt>Words changed per altered dictation</dt>
+        <dd>{% if _touched %}{{ (_churn / _touched) | round(1) }}{% else %}0{% endif %}</dd>
+      </dl>
+    {% else %}
+      <div class="oc-empty">Echo's edits will show up here as you dictate.</div>
+    {% endif %}
+  </section>
+
+  <section class="oc-panel oc-w5">
+    <div class="oc-ph">
+      <h2>Where you dictate</h2><span class="rule"></span>
+      <span class="win">Last {{ windows.apps_days }} days</span>
     </div>
     {% if apps %}
-      <div class="wf-apps">
+      <p class="oc-note">
+        <b>{{ "{:,}".format(apps | sum(attribute='count')) }}</b> dictations,
+        grouped by the window that had focus.
+      </p>
+      <div class="oc-rank">
         {% for row in apps[:7] %}
-          {% set lbl_lower = (row.label or '') | lower %}
-          {% set glyph = '◆' %}
-          {% if 'code' in lbl_lower or 'editor' in lbl_lower or 'cursor' in lbl_lower or 'vim' in lbl_lower %}{% set glyph = '⌘' %}
-          {% elif 'browser' in lbl_lower or 'chrome' in lbl_lower or 'edge' in lbl_lower or 'firefox' in lbl_lower or 'safari' in lbl_lower %}{% set glyph = '◐' %}
-          {% elif 'terminal' in lbl_lower or 'shell' in lbl_lower or 'console' in lbl_lower or 'powershell' in lbl_lower %}{% set glyph = '▦' %}
-          {% elif 'mail' in lbl_lower or 'outlook' in lbl_lower %}{% set glyph = '✉' %}
-          {% elif 'slack' in lbl_lower or 'discord' in lbl_lower or 'teams' in lbl_lower or 'chat' in lbl_lower %}{% set glyph = '◍' %}
-          {% elif 'note' in lbl_lower or 'doc' in lbl_lower or 'word' in lbl_lower %}{% set glyph = '✎' %}
-          {% endif %}
-          <div class="wf-app">
-            <div class="wf-app-lbl"><span class="glyph">{{ glyph }}</span>{{ row.label }}</div>
-            <div class="wf-app-cnt">
-              <strong style="color:var(--text);">{{ (row.pct * 100) | round | int }}%</strong>
-              · {{ row.count }}
-            </div>
-            <div class="wf-app-bar">
-              <span style="width: {{ (row.pct * 100) | round(1) }}%; transition-delay: {{ loop.index0 * 60 }}ms;"></span>
-            </div>
+          <div class="oc-rank-row">
+            <span class="oc-rank-i">{{ loop.index }}</span>
+            <span class="oc-rank-l">{{ row.label }}</span>
+            <span class="oc-rank-v"><b>{{ (row.pct * 100) | round | int }}%</b> · {{ row.count }}</span>
+            <span class="oc-bar">
+              <span style="width: {{ (row.pct * 100) | round(1) }}%;"></span>
+            </span>
           </div>
         {% endfor %}
       </div>
+      <div class="oc-ax-flex" style="margin-top:10px;">
+        <span>0%</span><span>50%</span><span>100%</span>
+      </div>
     {% else %}
-      <div class="wf-empty">Not enough usage to chart yet.</div>
+      <div class="oc-empty">Not enough usage to chart yet.</div>
     {% endif %}
-  </div>
+  </section>
 
-  {# --- Streak heatmap --- #}
-  <div class="wf-card">
-    <div class="wf-heat-head">
-      <div class="wf-heat-streak">
-        {{ streak or 0 }}
-        {% if streak and streak >= 3 %}<span class="chip">▲ on a roll</span>{% endif %}
-        <small>day{{ '' if streak == 1 else 's' }} streak</small>
-      </div>
-      <div class="wf-heat-longest">
-        Peak · {{ heatmap.max or 0 }} per day
-      </div>
+  <section class="oc-panel oc-w3">
+    <div class="oc-ph">
+      <h2>When you dictate</h2><span class="rule"></span>
+      <span class="win">Last {{ heatmap.span or 0 }} days</span>
     </div>
     {% if heatmap.days %}
-      <div class="wf-heat-wrap">
-        <div class="wf-heat-days">
-          <div>Mon</div><div></div><div>Wed</div><div></div>
-          <div>Fri</div><div></div><div></div>
-        </div>
-        <div class="wf-heat-grid" style="grid-template-columns: repeat({{ heatmap.weeks }}, 13px);">
+      <div class="oc-w" style="padding:10px 11px 9px;">
+        <div class="oc-heat" role="img"
+             aria-label="Dictations per day over the last {{ heatmap.span or 0 }} days"
+             style="grid-template-columns: 22px repeat({{ heatmap.weeks }}, minmax(8px, 1fr));">
+          {% for m in heatmap.months %}
+            <span class="oc-heat-m" style="grid-column: {{ m.week + 2 }};">{{ m.label }}</span>
+          {% endfor %}
+          <span class="oc-heat-d" style="grid-row: 2;">Mon</span>
+          <span class="oc-heat-d" style="grid-row: 4;">Wed</span>
+          <span class="oc-heat-d" style="grid-row: 6;">Fri</span>
           {% for d in heatmap.days %}
-            <div class="wf-cell l{{ d.level }}"
-                 style="grid-row: {{ d.weekday + 1 }}; grid-column: {{ d.week + 1 }};"
-                 title="{{ d.date }} · {{ d.count }} dictation{{ '' if d.count == 1 else 's' }}"></div>
+            <span class="oc-cell l{{ d.level }}"
+                  style="grid-row: {{ d.weekday + 2 }}; grid-column: {{ d.week + 2 }};"
+                  title="{{ d.date }}: {{ d.count }} dictation{{ '' if d.count == 1 else 's' }}"></span>
           {% endfor %}
         </div>
       </div>
-      <div class="wf-heat-legend">
-        Less
-        <span class="wf-heat-legend-bar" aria-hidden="true"></span>
-        More
+      <div class="oc-heat-key">
+        None
+        <i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i>
+        11 or more
       </div>
     {% else %}
-      <div class="wf-empty">Heatmap will fill in as you dictate.</div>
+      <div class="oc-empty">The activity grid fills in as you dictate.</div>
     {% endif %}
-  </div>
-</div>
+  </section>
 
-{# ===== Quality trajectory: kept compact below the hero ===== #}
-{% if trend and trend|length >= 2 %}
-  <div class="wf-card wf-trajectory" style="margin-top:16px;">
-    <div class="wf-heat-head" style="margin-bottom:6px;">
-      <div class="wf-card-title">Quality trajectory</div>
-      <div class="wf-heat-longest">Last {{ trend|length }} dictations</div>
+  <section class="oc-panel oc-w9">
+    <div class="oc-ph">
+      <h2>Cleanup quality</h2><span class="rule"></span>
+      <span class="win">Last {{ trend | length }} dictations</span>
     </div>
-    {% set w = 800 %}{% set h = 80 %}{% set n = trend|length %}
-    {% set first = trend[0] | round | int %}{% set last = trend[-1] | round | int %}
-    {# Scale y to actual data range so a flat-ish series doesn't render as a dead line.
-       Pad by 4 on each side and clamp to a minimum visible span of 12. #}
-    {% set tmax = (trend | max) | round | int %}
-    {% set tmin = (trend | min) | round | int %}
-    {% set span = tmax - tmin if (tmax - tmin) >= 12 else 12 %}
-    {# Pad the value range by ~22% each side so peaks and troughs never kiss the
-       card edges, giving the line room to breathe. #}
-    {% set pad = (span * 22) // 100 %}{% set pad = pad if pad >= 6 else 6 %}
-    {% set ymin = tmin - pad %}
-    {% set ymax = tmax + pad %}
-    <div class="wf-context" style="margin: 0;">
-      Q <strong style="color:var(--text)">{{ first }}</strong>
-      → <strong style="color:var(--text)">{{ last }}</strong>
-      {% set delta = last - first %}
-      {% if delta > 0 %}<span style="color:var(--accent)">↑ {{ delta }}</span>
-      {% elif delta < 0 %}<span style="color:var(--danger)">↓ {{ delta * -1 }}</span>
-      {% else %}<span style="color:var(--muted)">· steady</span>{% endif %}
-      <span class="muted small" style="margin-left:8px;">range {{ tmin }} to {{ tmax }}</span>
-    </div>
-    {% set median = (tmin + tmax) // 2 %}
-    {% set median_y = h - ((median - ymin) / (ymax - ymin)) * h %}
-    {% set last_x = (n - 1) * (w / (n - 1 if n > 1 else 1)) %}
-    {% set last_y = h - ((last - ymin) / (ymax - ymin)) * h %}
-    {% set first_y = h - ((first - ymin) / (ymax - ymin)) * h %}
-    <div class="wf-traj-plot">
-      <svg viewBox="0 0 {{ w }} {{ h }}" preserveAspectRatio="none"
-           role="img" aria-label="Quality trajectory: {{ first }} to {{ last }} across the last {{ n }} dictations">
-        {# vertical grid hashes at 25/50/75% #}
-        <line class="grid" x1="{{ w * 0.25 }}" y1="0" x2="{{ w * 0.25 }}" y2="{{ h }}" />
-        <line class="grid" x1="{{ w * 0.50 }}" y1="0" x2="{{ w * 0.50 }}" y2="{{ h }}" />
-        <line class="grid" x1="{{ w * 0.75 }}" y1="0" x2="{{ w * 0.75 }}" y2="{{ h }}" />
-        {# median baseline #}
-        <line class="baseline" x1="0" y1="{{ median_y }}" x2="{{ w }}" y2="{{ median_y }}" />
-        <polygon class="area"
-                 points="0,{{ h }} {% for q in trend -%}
-                   {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
-                 {%- endfor -%} {{ w }},{{ h }}"/>
-        <polyline class="line"
-                  points="{%- for q in trend -%}
-                    {{ loop.index0 * (w / (n - 1 if n > 1 else 1)) }},{{ h - ((q - ymin) / (ymax - ymin)) * h }}{{ ' ' }}
-                  {%- endfor -%}"/>
-      </svg>
-      <span class="wf-traj-marker start" style="top: {{ (first_y / h * 100) | round(2) }}%;"></span>
-      <span class="wf-traj-marker end"   style="top: {{ (last_y / h * 100) | round(2) }}%;"></span>
-    </div>
-  </div>
-{% endif %}
-{% endif %}{# end if tab == 'usage' #}
+    {% if trend and trend | length >= 2 %}
+      {% set _first = trend[0] | round | int %}
+      {% set _last = trend[-1] | round | int %}
+      {% set _tmin = (trend | min) | round | int %}
+      {% set _tmax = (trend | max) | round | int %}
+      {% set _spread = _tmax - _tmin %}
+      {% set _pad = 2 if _spread < 8 else (_spread // 4) %}
+      {# Quality is scored out of 100, so padding must not invent headroom
+         past either end of the scale. #}
+      {% set _ymin = [_tmin - _pad, 0] | max %}
+      {% set _ymax = [_tmax + _pad, 100] | min %}
+      {% set _yspan = _ymax - _ymin %}
+      <p class="oc-note">
+        {% if _spread <= 4 %}Holding steady around <b>{{ _last }}</b> out of 100.
+        {% elif _last > _first %}Up from <b>{{ _first }}</b> to <b>{{ _last }}</b> out of 100.
+        {% elif _last < _first %}Down from <b>{{ _first }}</b> to <b>{{ _last }}</b> out of 100.
+        {% else %}Flat at <b>{{ _last }}</b> out of 100.{% endif %}
+        Every score falls between <b>{{ _tmin }}</b> and <b>{{ _tmax }}</b>,
+        so the plot is zoomed to that band.
+      </p>
+      {% set w = 800 %}{% set h = 100 %}{% set n = trend | length %}
+      {% set step = w / (n - 1) %}
+      {% set _midy = (h - (((_tmin + _tmax) / 2 - _ymin) / _yspan) * h) | round(2) %}
+      <div class="oc-w" style="padding:10px 12px 8px;">
+        <div class="oc-plot">
+          <div class="oc-plot-y">
+            <span>{{ _ymax }}</span>
+            <span>{{ ((_ymax + _ymin) / 2) | round | int }}</span>
+            <span>{{ _ymin }}</span>
+          </div>
+          <div class="oc-plot-b">
+            <svg viewBox="0 0 {{ w }} {{ h }}" preserveAspectRatio="none" aria-hidden="true">
+              {% for f in [0.25, 0.5, 0.75] %}
+                <line class="grid" x1="0" y1="{{ (h * f) | round(2) }}" x2="{{ w }}" y2="{{ (h * f) | round(2) }}"/>
+                <line class="grid" x1="{{ (w * f) | round(2) }}" y1="0" x2="{{ (w * f) | round(2) }}" y2="{{ h }}"/>
+              {% endfor %}
+              <polygon class="area" points="0,{{ h }}
+                {%- for q in trend %} {{ (loop.index0 * step) | round(2) }},{{ (h - ((q - _ymin) / _yspan) * h) | round(2) }}{% endfor %} {{ w }},{{ h }}"/>
+              <line class="mid" x1="0" y1="{{ _midy }}" x2="{{ w }}" y2="{{ _midy }}"/>
+              <polyline class="line" points="
+                {%- for q in trend %}{{ (loop.index0 * step) | round(2) }},{{ (h - ((q - _ymin) / _yspan) * h) | round(2) }} {% endfor %}"/>
+            </svg>
+            <span class="oc-plot-dot"
+                  style="top: {{ (((_ymax - trend[-1]) / _yspan) * 100) | round(2) }}%;"></span>
+            <div class="oc-ax-flex">
+              <span>oldest</span>
+              <span>dashed line is the midpoint of the range</span>
+              <span>most recent</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <div class="oc-empty">Two or more graded dictations will draw the trend here.</div>
+    {% endif %}
+  </section>
+
+</div>
+{% endif %}{# end usage tab #}
 
 {% if tab == 'voice' %}
-{# ---------- Your Voice tab ---------- #}
 {% if voice %}
-<div class="wf-grid-top">
-  <div class="wf-card">
-    <div class="wf-hero-num">{{ voice.pace.median_wpm }}</div>
-    <div class="wf-hero-lbl">Speaking pace · median WPM</div>
-    <div class="wf-context">{{ voice.pace.n }} dictations · last {{ voice.days }}d</div>
-  </div>
-  <div class="wf-card">
-    <div class="wf-hero-num">{{ voice.filler.ratio_pct }}%</div>
-    <div class="wf-hero-lbl">Filler ratio</div>
-    <div class="wf-context">{{ voice.filler.count }} of {{ voice.filler.total_words }} words</div>
-  </div>
-  <div class="wf-card">
-    <div class="wf-hero-num">{{ voice.vocabulary.diversity_pct }}%</div>
-    <div class="wf-hero-lbl">Vocabulary diversity</div>
-    <div class="wf-context">{{ voice.vocabulary.unique }} unique / {{ voice.vocabulary.total }} total</div>
-  </div>
+<section class="oc-lead">
+  <p>You speak at about <b>{{ voice.pace.median_wpm }}</b> words a minute, and
+     <b>{{ voice.filler.ratio_pct }}%</b> of what you say is filler. Measured over
+     {{ voice.pace.n }} dictations in the last {{ voice.days }} days.</p>
+</section>
+
+<div class="oc-rack">
+  {% set _vmax = (voice.pace.buckets | map(attribute='count') | max) if voice.pace.buckets else 0 %}
+  <article class="oc-i">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Speaking pace</span>
+      <span class="oc-i-w">Last {{ voice.days }} days</span>
+    </div>
+    <div class="oc-i-rd">
+      <span class="oc-i-v">{{ voice.pace.median_wpm }}<span class="u">wpm</span></span>
+      <span class="oc-i-d"><b>{{ voice.pace.n }}</b><br>dictations</span>
+    </div>
+    <div class="oc-w">
+      {% if _vmax %}
+        <div class="oc-cols" role="img" aria-label="Pace distribution across fixed buckets">
+          {% for b in voice.pace.buckets %}
+            <i class="{% if not b.count %}nil{% endif %}"
+               style="height: {% if b.count %}{{ [(b.count / _vmax * 100), 3] | max | round(1) }}%{% else %}1px{% endif %};"
+               title="{{ b.label }} wpm: {{ b.count }}"></i>
+          {% endfor %}
+        </div>
+        <div class="oc-ax-flex">
+          <span>{{ voice.pace.buckets[0].label }}</span>
+          <span>median {{ voice.pace.median_wpm }}</span>
+          <span>{{ voice.pace.buckets[-1].label }}</span>
+        </div>
+      {% else %}
+        <div class="oc-empty">Not enough dictations to chart pace.</div>
+      {% endif %}
+    </div>
+    <div class="oc-i-ft">Buckets are fixed, so the shape stays comparable over time.</div>
+  </article>
+
+  <article class="oc-i">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Filler words</span>
+      <span class="oc-i-w">Last {{ voice.days }} days</span>
+    </div>
+    <div class="oc-i-rd">
+      <span class="oc-i-v">{{ voice.filler.ratio_pct }}<span class="u">%</span></span>
+      <span class="oc-i-d"><b>{{ "{:,}".format(voice.filler.count) }}</b><br>filler words</span>
+    </div>
+    <div class="oc-w">
+      <div class="oc-cols" style="height:22px;" role="img"
+           aria-label="Filler share of everything you said">
+        <i style="height:100%; flex: {{ voice.filler.ratio_pct or 0.01 }};"></i>
+        <i class="nil" style="height:100%; flex: {{ 100 - (voice.filler.ratio_pct or 0) }};"></i>
+      </div>
+      <div class="oc-ax-flex">
+        <span>filler</span>
+        <span>of {{ "{:,}".format(voice.filler.total_words) }} words</span>
+        <span>everything else</span>
+      </div>
+    </div>
+    <div class="oc-i-ft">Counts um, uh, like, actually, basically, literally, you know.</div>
+  </article>
+
+  <article class="oc-i">
+    <div class="oc-i-hd">
+      <span class="oc-i-k">Vocabulary diversity</span>
+      <span class="oc-i-w">Last {{ voice.days }} days</span>
+    </div>
+    <div class="oc-i-rd">
+      <span class="oc-i-v">{{ voice.vocabulary.diversity_pct }}<span class="u">%</span></span>
+      <span class="oc-i-d"><b>{{ "{:,}".format(voice.vocabulary.unique) }}</b><br>distinct words</span>
+    </div>
+    <div class="oc-w">
+      <div class="oc-cols" style="height:22px;" role="img"
+           aria-label="Distinct words as a share of everything you said">
+        <i style="height:100%; flex: {{ voice.vocabulary.diversity_pct or 0.01 }};"></i>
+        <i class="nil" style="height:100%; flex: {{ 100 - (voice.vocabulary.diversity_pct or 0) }};"></i>
+      </div>
+      <div class="oc-ax-flex">
+        <span>distinct</span>
+        <span>of {{ "{:,}".format(voice.vocabulary.total) }} words</span>
+        <span>repeats</span>
+      </div>
+    </div>
+    <div class="oc-i-ft">Higher means a wider working vocabulary, not necessarily better.</div>
+  </article>
 </div>
 
-<div class="wf-grid-bot">
-  <div class="wf-card">
-    <div class="wf-heat-head">
-      <div class="wf-card-title">Pace distribution</div>
-      <div class="wf-heat-longest">WPM buckets</div>
+<div class="oc-grid">
+  <section class="oc-panel oc-w7">
+    <div class="oc-ph">
+      <h2>Pace distribution</h2><span class="rule"></span>
+      <span class="win">Last {{ voice.days }} days</span>
     </div>
     {% set peak = voice.pace.buckets | map(attribute='count') | max %}
-    {% if peak and peak > 0 %}
-      <div class="wf-rank">
+    {% if peak %}
+      <p class="oc-note">
+        How your <b>{{ voice.pace.n }}</b> dictations split across speaking speeds.
+        Bars are scaled to the busiest band.
+      </p>
+      <div class="oc-rank">
         {% for b in voice.pace.buckets %}
-          <div class="wf-rank-row">
-            <div class="wf-rank-n{% if b.count == 0 %} dim{% endif %}">{{ b.count }}</div>
-            <div class="wf-rank-lbl">{{ b.label }}</div>
-            <div class="wf-rank-cnt">{{ ((b.count / peak) * 100) | round | int }}%</div>
-            <div class="wf-rank-meter">
-              <span style="width: {{ ((b.count / peak) * 100) | round(1) }}%;
-                           transition-delay: {{ loop.index0 * 50 }}ms;"></span>
-            </div>
+          <div class="oc-rank-row">
+            <span class="oc-rank-i">{{ loop.index }}</span>
+            <span class="oc-rank-l">{{ b.label }} wpm</span>
+            <span class="oc-rank-v"><b>{{ b.count }}</b> ·
+              {{ ((b.count / voice.pace.n) * 100) | round | int if voice.pace.n else 0 }}%</span>
+            <span class="oc-bar">
+              <span style="width: {{ ((b.count / peak) * 100) | round(1) }}%;"></span>
+            </span>
           </div>
         {% endfor %}
       </div>
     {% else %}
-      <div class="wf-empty">Not enough dictations yet to chart pace.</div>
+      <div class="oc-empty">Not enough dictations yet to chart pace.</div>
     {% endif %}
-  </div>
+  </section>
 
-  <div class="wf-card">
-    <div class="wf-heat-head">
-      <div class="wf-card-title">Most-used phrases</div>
-      <div class="wf-heat-longest">Top bigrams</div>
+  <section class="oc-panel oc-w5">
+    <div class="oc-ph">
+      <h2>Phrases you lean on</h2><span class="rule"></span>
+      <span class="win">Last {{ voice.days }} days</span>
     </div>
     {% if voice.phrases %}
       {% set pmax = voice.phrases | map(attribute='count') | max %}
-      <div class="wf-rank">
+      <p class="oc-note">
+        Two word pairs, by how often you say them.
+        {%- if pmax < 5 %} Counts are still low, so treat the order as
+        provisional.{% endif %}
+      </p>
+      <div class="oc-rank">
         {% for p in voice.phrases %}
-          <div class="wf-rank-row">
-            <div class="wf-rank-n">{{ loop.index }}</div>
-            <div class="wf-rank-lbl" style="text-transform:none;">{{ p.phrase }}</div>
-            <div class="wf-rank-cnt">{{ p.count }}</div>
-            <div class="wf-rank-meter">
-              <span style="width: {{ ((p.count / pmax) * 100) | round(1) }}%;
-                           transition-delay: {{ loop.index0 * 50 }}ms;"></span>
-            </div>
+          <div class="oc-rank-row">
+            <span class="oc-rank-i">{{ loop.index }}</span>
+            <span class="oc-rank-l">{{ p.phrase }}</span>
+            <span class="oc-rank-v"><b>{{ p.count }}</b></span>
+            {# A meter drawn against a top count of four says "this phrase
+               fills the bar" about something said four times. Below five the
+               number carries the whole signal and the bar only inflates it. #}
+            {% if pmax >= 5 %}
+              <span class="oc-bar">
+                <span style="width: {{ ((p.count / pmax) * 100) | round(1) }}%;"></span>
+              </span>
+            {% endif %}
           </div>
         {% endfor %}
       </div>
     {% else %}
-      <div class="wf-empty">No phrases yet. Keep dictating.</div>
+      <div class="oc-empty">No repeated phrases yet. Keep dictating.</div>
     {% endif %}
-  </div>
+  </section>
 </div>
 {% else %}
-<div class="wf-card">
-  <div class="wf-empty">No voice data yet. Dictate a few times and check back.</div>
+<div class="oc-panel" style="margin-top:20px;">
+  <div class="oc-empty">No voice data yet. Dictate a few times and check back.</div>
 </div>
 {% endif %}
-{% endif %}{# end if tab == 'voice' #}
+{% endif %}{# end voice tab #}
 {% endblock %}

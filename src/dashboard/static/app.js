@@ -205,10 +205,8 @@ window.EF = { $, $$, escapeHtml, fetchJson };
   if (!root.classList.contains("ef-js")) return;     // no gate → no JS path
   if (prefersReducedMotion()) return;                // respect the user
 
-  const NUM_SEL   = ".wf-hero-num, .stat-value, .tile-value, .wf-microstat .n";
-  const BAR_SEL   = ".wf-app-bar > span, .wf-split-bar > span, " +
-                    ".wf-rank-meter > span, .wf-row .sparkbar > span, .usage-bar";
-  const GAUGE_SEL = ".wf-gauge-fill";
+  const NUM_SEL = ".oc-i-v, .stat-value, .tile-value";
+  const BAR_SEL = ".oc-bar > span, .oc-churn-bar > span, .usage-bar";
 
   // Group commas back in, preserving a fixed number of decimals.
   function fmt(value, decimals, comma) {
@@ -256,12 +254,6 @@ window.EF = { $, $$, escapeHtml, fetchJson };
   const barEls = $$(BAR_SEL).filter(el => el.style.width);
   barEls.forEach(el => { el.dataset.efW = el.style.width; el.style.width = "0%"; });
 
-  const gaugeEls = $$(GAUGE_SEL).filter(el => el.getAttribute("stroke-dasharray"));
-  gaugeEls.forEach(el => {
-    el.dataset.efOff = el.getAttribute("stroke-dashoffset");
-    el.setAttribute("stroke-dashoffset", el.getAttribute("stroke-dasharray"));
-  });
-
   // --- activation: run the animation for one element, once. ---
   const done = new WeakSet();
   function countUp(el) {
@@ -289,10 +281,9 @@ window.EF = { $, $$, escapeHtml, fetchJson };
     done.add(el);
     if (el.dataset.efFinal !== undefined) countUp(el);
     else if (el.dataset.efW !== undefined) el.style.width = el.dataset.efW;
-    else if (el.dataset.efOff !== undefined) el.setAttribute("stroke-dashoffset", el.dataset.efOff);
   }
 
-  const targets = numEls.concat(barEls, gaugeEls);
+  const targets = numEls.concat(barEls);
   if ("IntersectionObserver" in window) {
     const io = new IntersectionObserver((entries) => {
       entries.forEach(e => {
