@@ -4,6 +4,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 
+from . import cuda_dlls
+from .log import get as _get_log
+
+_log = _get_log("transcribe")
+
 
 @dataclass
 class WhisperConfig:
@@ -28,55 +33,104 @@ class WhisperConfig:
     word_conf_floor: float = 0.6
 
 
-def _select_cuda_model() -> str:
-    """Pick the largest Whisper model that fits remaining VRAM.
+# On an 8 GB card the working set is Whisper + the cleanup LLM + Windows, and
+# the LLM is now pinned resident (cleanup.ollama.keep_alive) so it no longer
+# pages out between dictations. Measured on an RTX 5060 (8151 MiB):
+#   Windows display + apps      ~1.3 GB
+#   qwen2.5:3b-instruct-q4_K_M   2.4 GB  (resident, does not page out)
+#   large-v3-turbo fp16          1.5 GB
+#   CUDA contexts                ~0.5 GB
+# That totals ~5.7 GB and leaves real headroom. large-v3 fp16 would add another
+# ~1.5 GB and put the total over 7 GB, which OOMs the moment anything else wants
+# VRAM — so turbo is the ceiling on this class of card, not a compromise.
+_CUDA_MODEL = "large-v3-turbo"
 
-    Real-world budget on an 8GB RTX 5060:
-      - large-v3 fp16:           ~3.0 GB
-      - qwen2.5:3b cleanup LLM:  ~2.5 GB (loads lazily; must reserve)
-      - PyTorch CUDA runtime:    ~1.0 GB
-      - Windows display + apps:  ~2.0 GB
-    Total live working set with large-v3 ≈ 8.5 GB. Anything less and
-    we OOM mid-dictation when Ollama pages in. Only upgrade to large-v3
-    when free VRAM >= 8.5 GB at startup; otherwise stay on turbo (~1.5 GB).
+
+def _cuda_is_usable() -> bool:
+    """Is there a CUDA device CTranslate2 can use?
+
+    Deliberately NOT ``torch.cuda.is_available()``. faster-whisper does not use
+    torch at all; it runs on CTranslate2. Gating on torch means the stock
+    CPU-only torch wheel (``2.x.y+cpu``, what you get by default on Windows)
+    reports no CUDA and silently pins Whisper to the CPU even when the GPU is
+    perfectly usable. Ask the runtime that actually does the inference.
     """
     try:
-        import torch
-        free, _ = torch.cuda.mem_get_info()
-        free_gb = free / (1024 ** 3)
-        if free_gb >= 8.5:
-            return "large-v3"
-        return "large-v3-turbo"
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
     except Exception:
-        return "large-v3-turbo"
+        return False
+
+
+def _probe_cuda(model) -> bool:
+    """Run one real encode to prove the CUDA libraries actually load.
+
+    ``get_cuda_device_count()`` only asks the driver whether a device exists; it
+    does not check that cuBLAS and cuDNN can be loaded, and CTranslate2 resolves
+    those lazily on first inference. A broken install therefore builds the model
+    without complaint and raises partway through a dictation, which costs the
+    user the words they just spoke. Failing over here instead is cheap (~200 ms,
+    once, at startup) and keeps dictation working.
+
+    The probe needs the VAD off and a non-silent signal: with the VAD on, silence
+    yields zero segments, the encoder never runs, and a broken GPU passes.
+    """
+    try:
+        import numpy as np
+        rng = np.random.default_rng(0)
+        audio = (rng.standard_normal(16000) * 0.05).astype(np.float32)
+        segments, _ = model.transcribe(audio, language="en", beam_size=1,
+                                       vad_filter=False)
+        list(segments)   # generator: the encode happens on iteration
+        return True
+    except Exception as e:
+        hint = ""
+        if not cuda_dlls.ensure():
+            hint = (" — the CUDA runtime wheels are not installed; "
+                    "pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 "
+                    "to run Whisper on the GPU")
+        _log.warning("CUDA probe failed (%s: %s), using CPU%s",
+                     type(e).__name__, str(e)[:200], hint)
+        return False
+
+
+def _resolve(cfg: WhisperConfig, device: str) -> tuple[str, str]:
+    """Resolve ``auto`` model/compute against a concrete device."""
+    compute = cfg.compute_type
+    if compute == "auto":
+        compute = "float16" if device == "cuda" else "int8"
+    model = cfg.model
+    if model == "auto":
+        # CPU: base balances accuracy against a ~400-600 ms transcribe.
+        # GPU: turbo is both faster than CPU base and far more accurate.
+        model = _CUDA_MODEL if device == "cuda" else "base"
+    return model, compute
 
 
 class Transcriber:
     def __init__(self, cfg: WhisperConfig):
+        # Must precede the faster-whisper import: it pulls in CTranslate2, whose
+        # DLL search path is fixed at import time. See src/cuda_dlls.py.
+        cuda_dlls.ensure()
         from faster_whisper import WhisperModel
         device = cfg.device
-        compute = cfg.compute_type
         if device == "auto":
-            try:
-                import torch
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-            except Exception:
-                device = "cpu"
-        if compute == "auto":
-            compute = "float16" if device == "cuda" else "int8"
-        model = cfg.model
-        if model == "auto":
-            # CPU: base balances accuracy (~85% WER) with ~1-2s latency.
-            # GPU: turbo by default; upgrade to large-v3 only if there is real
-            # VRAM headroom (>=8.5 GB free, see _select_cuda_model for math).
-            if device != "cuda":
-                model = "base"
-            else:
-                model = _select_cuda_model()
+            device = "cuda" if _cuda_is_usable() else "cpu"
+        model, compute = _resolve(cfg, device)
+        built = WhisperModel(model, device=device, compute_type=compute)
+        if device == "cuda" and not _probe_cuda(built):
+            # Explicit device="cuda" falls back too. Surprising the user with a
+            # slower device beats breaking every dictation on the machine.
+            device = "cpu"
+            model, compute = _resolve(cfg, device)
+            built = WhisperModel(model, device=device, compute_type=compute)
         self.cfg = cfg
         self.resolved_model = model
         self.resolved_device = device
-        self.model = WhisperModel(model, device=device, compute_type=compute)
+        self.model = built
+        # Say which device actually won. The torch/CTranslate2 mix-up sat here
+        # unnoticed precisely because nothing ever reported the resolved device.
+        _log.info("whisper: model=%s device=%s compute=%s", model, device, compute)
 
     def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> tuple[str, str, dict]:
         """Returns (text, detected_language, meta).

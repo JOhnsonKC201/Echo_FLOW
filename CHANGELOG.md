@@ -42,6 +42,19 @@ All notable changes are documented here. Format roughly follows
   subtractive, so the "we keep YOUR words" contract still holds.
 
 ### Changed
+
+- **The cleanup model stays resident between dictations.**
+  `cleanup.ollama.keep_alive` was `10m`, so any gap longer than a coffee break
+  paid a cold model load on the next dictation: 1966ms of `load_duration`
+  against 60ms warm. 31% of dictations in a 1,001-sample history landed past
+  that window, and it showed up as a clean gradient in end-to-end latency,
+  1144ms median warm against 1860ms after a gap over 10 minutes. Now `8h`.
+  Holding the model costs ~2.4 GB of VRAM, and with Whisper now on the GPU too
+  the pair leave about 1.9 GB free on an 8 GB card. That is also why the `auto`
+  model is capped at `large-v3-turbo`: the old `large-v3` upgrade path needed
+  another ~1.5 GB and would now OOM, and it was dead code regardless, since it
+  measured free VRAM with `torch.cuda.mem_get_info()` on a torch build that
+  raises.
 - **Outcomes is an instrument panel, not a wall of numbers.** The page showed
   three headline figures over a decorative gauge and printed the window for
   none of them, while five different windows (30 days, 7 days, last 200, last
@@ -88,6 +101,34 @@ All notable changes are documented here. Format roughly follows
   is now a table of what rules-only cleanup does and does not do.
 
 ### Fixed
+
+- **Whisper runs on the GPU. The device check was asking the wrong library.**
+  `Transcriber` chose its device with `torch.cuda.is_available()`, but
+  faster-whisper does not use torch at all: it runs on CTranslate2. The stock
+  CPU-only torch wheel (`2.12.0+cpu`, what Windows installs by default) reports
+  no CUDA, so Whisper was pinned to the CPU and the `base` model on a machine
+  whose GPU CTranslate2 could see the whole time. Detection now asks
+  CTranslate2. Measured on an RTX 5060, a 2.5s dictation transcribes in 264ms
+  instead of 396ms and a 15s one in 422ms instead of 625ms, and the `auto` model
+  moves from `base` to `large-v3-turbo`, so accuracy improves at the same time.
+
+  A device existing is not the same as a device working. CTranslate2 loads
+  cuBLAS and cuDNN lazily, at the first inference rather than at model load, so
+  a missing DLL surfaced *mid-dictation* and cost the user the words they had
+  just spoken. Startup now runs one real encode as a probe and falls back to the
+  CPU if it fails, re-resolving model and compute type on the way down. A pinned
+  `device: cuda` falls back too, because being slower than asked beats breaking
+  every dictation on the machine. The probe deliberately runs with the VAD off:
+  with it on, silence yields no segments, the encoder never runs, and a broken
+  GPU would pass.
+
+  The CUDA runtime wheels (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`) are ~2 GB,
+  so they stay optional and out of the packaged build; without them Echo Flow
+  transcribes on the CPU exactly as before. `src/cuda_dlls.py` puts them on
+  `PATH` before CTranslate2 is imported, which is the only approach that works:
+  `os.add_dll_directory` is ignored, because the extension fixes its search path
+  at import time. The resolved device is now logged at startup, since nothing
+  ever reported it and that is precisely why this sat unnoticed.
 - **A source checkout no longer starts with cloud cleanup on.** 0.3.1 stopped
   the installers from shipping the maintainer's working `config.yaml`, but the
   seeding that replaced it was gated on `sys.frozen`, so only frozen installs

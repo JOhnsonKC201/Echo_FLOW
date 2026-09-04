@@ -23,5 +23,15 @@ pymupdf>=1.24
 python-docx>=1.1
 dateparser>=1.2
 
+# --- Optional: run Whisper on an NVIDIA GPU -------------------------------
+# faster-whisper runs on CTranslate2, which needs cuBLAS and cuDNN at inference
+# time. These wheels are ~2 GB on disk, so they are NOT installed by default and
+# are deliberately not bundled into the packaged build. Without them Echo Flow
+# transcribes on the CPU, which works fine; with them, transcription of a short
+# dictation drops from ~400ms to ~60-270ms on an RTX 5060.
+#   pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+# Nothing else changes: device detection picks the GPU up on its own, and falls
+# back to the CPU automatically if the libraries cannot be loaded.
+
 # Test/dev tooling lives in requirements-dev.txt — it is NOT needed to run
 # Echo Flow. Contributors: pip install -r requirements.txt -r requirements-dev.txt

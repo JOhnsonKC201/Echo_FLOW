@@ -115,7 +115,13 @@ cleanup:
     base_url: "http://localhost:11434"
     model: "qwen2.5:3b-instruct-q4_K_M"   # 3B Q4 (~2 GB VRAM) — leaves headroom for Whisper on an 8 GB RTX 5060. Previously qwen3.5:latest (6.5 GB).
     timeout_sec: 8.0        # tight cleanup timeout; fallback chain catches stalls
-    keep_alive: "10m"       # how long Ollama keeps the model resident after a call
+    keep_alive: "8h"        # how long Ollama keeps the model resident after a call.
+    # Was "10m", which meant any gap longer than a coffee break paid a ~2.0s
+    # cold load on the next dictation (measured: load_duration 1966ms vs 60ms
+    # warm). 31% of dictations landed past that window, and it showed up as a
+    # clean latency gradient: 1144ms median warm vs 1860ms after a >10m gap.
+    # The cost of holding it is ~2.4 GB of VRAM; see the budget in
+    # src/transcribe.py. Lower it if you need that VRAM back for something else.
   # Cloud — used ONLY by Prompt-Engineering mode (Ctrl+Shift+Alt). Regular
   # dictation never calls Groq. Reads GROQ_API_KEY from the environment.
   groq:
