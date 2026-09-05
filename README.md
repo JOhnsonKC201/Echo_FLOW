@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/banner.svg" alt="Echo Flow — local-first voice dictation for Windows" width="100%">
+<img src="assets/banner.svg" alt="Echo Flow - local-first voice dictation for Windows" width="100%">
 
 <p>
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20iOS-1f6fd0">
