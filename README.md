@@ -12,7 +12,7 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-<strong>Hold a hotkey, talk, release — polished text lands wherever your cursor is.</strong>
+<strong>Hold a hotkey, talk, release - polished text lands wherever your cursor is.</strong>
 
 No subscription, no account, and your audio never leaves your machine unless you opt in.
 
@@ -108,10 +108,10 @@ Two features on the **My Voice** page, different jobs:
 
 The humanizer gives you **three targets**, and needs no setup to start:
 
-- **A natural human** — plain, natural prose, AI tells removed. The default.
-- **Me** — also match your writing samples (add a couple on the same page). With
+- **A natural human** - plain, natural prose, AI tells removed. The default.
+- **Me** - also match your writing samples (add a couple on the same page). With
   none, it falls back to the natural-human rewrite and tells you why.
-- **A specific tone** — casual, professional, friendly, plain, confident, concise.
+- **A specific tone** - casual, professional, friendly, plain, confident, concise.
 
 You also steer it: a **strength** slider (light / balanced / aggressive) and a
 **custom tone** box, plus a **Try again** button to re-roll.
