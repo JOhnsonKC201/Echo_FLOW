@@ -204,7 +204,7 @@ def _run_loop(log, *, sleep=time.sleep, now=time.time, startup_delay: float = 15
             # until the user fixes the cause and manually starts a daemon
             # (which we observe as an alive PID), then resume watching.
             if alive:
-                log.info("daemon is back (pid %s) — resuming watch", pid)
+                log.info("daemon is back (pid %s), resuming watch", pid)
                 breaker_open = False
                 limiter = RestartLimiter()
                 _clear_crashloop_flag(log)
@@ -217,12 +217,12 @@ def _run_loop(log, *, sleep=time.sleep, now=time.time, startup_delay: float = 15
             # clears wispr.stop (singleton._clear_stop_flag) and the next
             # tick resumes normal watching.
             if not idle_logged:
-                log.info("stop requested — idling until manual relaunch")
+                log.info("stop requested, idling until manual relaunch")
                 idle_logged = True
             sleep(POLL_SECONDS)
             continue
         if idle_logged:
-            log.info("stop flag cleared — resuming watch")
+            log.info("stop flag cleared, resuming watch")
             idle_logged = False
 
         if action == "relaunch":
@@ -231,7 +231,7 @@ def _run_loop(log, *, sleep=time.sleep, now=time.time, startup_delay: float = 15
                 # broken build/config and leave a trace + marker so the
                 # user knows recovery was paused (not silently looping).
                 log.error(
-                    "daemon crash-looped (>=%d restarts in %ds) — pausing "
+                    "daemon crash-looped (>=%d restarts in %ds), pausing "
                     "relaunches; fix the cause and start it manually",
                     MAX_RESTARTS, RESTART_WINDOW_S)
                 try:
@@ -253,10 +253,10 @@ def _run_loop(log, *, sleep=time.sleep, now=time.time, startup_delay: float = 15
                 # it on disk, where a recycled OS PID (Windows reuses PIDs) could
                 # later read as "alive" and mask a genuine crash. Defer to the
                 # next poll instead of relaunching over stale state.
-                log.warning("stale PID unlink failed (%s) — deferring relaunch", e)
+                log.warning("stale PID unlink failed (%s), deferring relaunch", e)
                 sleep(POLL_SECONDS)
                 continue
-            log.warning("daemon (pid %s) is dead — relaunching", pid)
+            log.warning("daemon (pid %s) is dead, relaunching", pid)
             _relaunch()
         sleep(POLL_SECONDS)
 

@@ -17,7 +17,7 @@ if not exist ".venv" (
 )
 
 if "%GROQ_API_KEY%"=="" (
-    echo [WARN] GROQ_API_KEY not set — will use local fallback only.
+    echo [WARN] GROQ_API_KEY not set. Using the local fallback only.
 ) else (
     echo [OK] GROQ_API_KEY loaded.
 )

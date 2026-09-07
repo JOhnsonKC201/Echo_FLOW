@@ -544,7 +544,7 @@ def make_app(app_ref, bound_port: int | None = None):
         # corrections are read by the cleanup layer's "learned" provider, which
         # a new install only reaches after auto-phasing flips over.
         n_pin, n_fix = summary["pinned"], summary["recorded"]
-        msg = (f"Calibrated. Pinned {n_pin} term{'' if n_pin == 1 else 's'} — "
+        msg = (f"Calibrated. Pinned {n_pin} term{'' if n_pin == 1 else 's'}, "
                f"active in speech recognition now. Learned {n_fix} "
                f"correction{'' if n_fix == 1 else 's'}, applied once cleanup "
                f"runs in learned mode.")
@@ -1346,7 +1346,7 @@ def make_app(app_ref, bound_port: int | None = None):
             _log.warning("actions save failed: %s", e)
             return _back(f"Error: {e}")
         verb = "app" if kind == "app" else "folder"
-        return _back(f"Saved {verb} “{name}” — say “open {name}”.")
+        return _back(f"Saved {verb} “{name}”. Say “open {name}”.")
 
     @flask_app.post("/actions/delete")
     def actions_delete():

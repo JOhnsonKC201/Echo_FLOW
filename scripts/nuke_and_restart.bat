@@ -2,7 +2,7 @@
 cd /d "%~dp0"
 echo.
 echo ============================================================
-echo   NUCLEAR RESTART — wipes ALL learning + restarts clean
+echo   NUCLEAR RESTART: wipes ALL learning + restarts clean
 echo ============================================================
 echo.
 echo This will:
@@ -43,6 +43,6 @@ echo You should see exactly ONE python.exe above.
 echo Look at system tray for ONE green microphone.
 echo Right-click tray then Language then click AUTO to be safe.
 echo.
-echo Then dictate "hi how you" — should give "Hi, how are you?"
+echo Then dictate "hi how you", which should give "Hi, how are you?"
 echo.
 pause

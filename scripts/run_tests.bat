@@ -1,5 +1,5 @@
 @echo off
-REM This script lives in scripts\ — operate from the repo root, where .venv is.
+REM This script lives in scripts\ but operates from the repo root, where .venv is.
 cd /d "%~dp0.."
 call .venv\Scripts\activate
 REM Ensure the test tooling is present (it lives in requirements-dev.txt, not the

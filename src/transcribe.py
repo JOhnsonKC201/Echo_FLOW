@@ -86,7 +86,7 @@ def _probe_cuda(model) -> bool:
     except Exception as e:
         hint = ""
         if not cuda_dlls.ensure():
-            hint = (" — the CUDA runtime wheels are not installed; "
+            hint = (". The CUDA runtime wheels are not installed; "
                     "pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 "
                     "to run Whisper on the GPU")
         _log.warning("CUDA probe failed (%s: %s), using CPU%s",

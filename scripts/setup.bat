@@ -1,7 +1,7 @@
 @echo off
-REM This script lives in scripts\ — set up the venv at the repo root.
+REM This script lives in scripts\ but sets up the venv at the repo root.
 cd /d "%~dp0.."
-echo === Echo Flow — setup ===
+echo === Echo Flow setup ===
 where python >nul 2>&1
 if errorlevel 1 (
     echo Python not found. Install Python 3.11+ from python.org and re-run.
