@@ -10,10 +10,10 @@ PackageUrl: https://github.com/JOhnsonKC201/Echo_FLOW
 License: MIT
 LicenseUrl: https://github.com/JOhnsonKC201/Echo_FLOW/blob/main/LICENSE
 Copyright: Copyright (c) Echo Flow
-ShortDescription: Local-first voice dictation for Windows — hold a hotkey, talk, release, and polished text lands at your cursor.
+ShortDescription: Local-first voice dictation for Windows. Hold a hotkey, talk, release, and polished text lands at your cursor.
 Description: |-
   Echo Flow is local-first voice dictation for Windows. Hold a hotkey, talk,
-  release — Whisper transcribes on your own CPU/GPU, a local LLM lightly
+  release, and Whisper transcribes on your own CPU/GPU, a local LLM lightly
   polishes the text, and the result is pasted wherever your cursor is. No
   subscription, no account, and your audio never leaves your machine unless
   you explicitly opt in to a cloud cleanup path. It also learns your

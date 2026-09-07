@@ -2,7 +2,7 @@
 cd /d "%~dp0"
 echo.
 echo ============================================================
-echo   Echo Flow  —  Uninstall
+echo   Echo Flow: Uninstall
 echo ============================================================
 echo.
 

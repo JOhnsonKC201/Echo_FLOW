@@ -1,4 +1,4 @@
-"""Echo Flow — entry point."""
+"""Echo Flow: entry point."""
 from __future__ import annotations
 
 import os
@@ -173,7 +173,7 @@ def _audit_cloud_keys(cfg: dict) -> None:
     for env_key, features in needs.items():
         if not os.environ.get(env_key, "").strip():
             _log.warning(
-                "%s is required by: %s — but it is not set in the environment. "
+                "%s is required by: %s, but it is not set in the environment. "
                 "Set it via `setx %s your-key-here` (Windows) and restart the "
                 "daemon. The affected feature will silently fall back until then.",
                 env_key, ", ".join(features), env_key,
@@ -233,13 +233,13 @@ def load_config() -> dict:
     # cryptic AttributeError. Fail with an actionable message instead.
     if cfg is None:
         raise ValueError(
-            f"config file {CONFIG_PATH} is empty or invalid — restore it from "
+            f"config file {CONFIG_PATH} is empty or invalid. Restore it from "
             f"config.yaml in the install bundle or delete it to reseed defaults"
         )
     if not isinstance(cfg, dict):
         raise ValueError(
             f"config file {CONFIG_PATH} did not parse to a mapping (got "
-            f"{type(cfg).__name__}) — check its YAML syntax"
+            f"{type(cfg).__name__}). Check its YAML syntax"
         )
     return cfg
 
@@ -296,7 +296,7 @@ class App:
         db_path = cfg["history"]["db_path"]
         self.phase = phase_mod.decide(cfg, db_path)
         _announce(
-            f"[magenta]Phase: {self.phase.name}[/magenta] — {self.phase.reason}"
+            f"[magenta]Phase: {self.phase.name}[/magenta]: {self.phase.reason}"
         )
         if getattr(self.phase, "degraded", False):
             # Raw-ish mode used to be silent — the user only noticed when
@@ -744,7 +744,7 @@ class App:
 
     def _do_dictation(self, audio, t_release: float | None = None):
         if self._paused:
-            console.print("[dim]Paused — discarding audio.[/dim]")
+            console.print("[dim]Paused, discarding audio.[/dim]")
             self._tray_idle()
             return
         if audio.size == 0:
@@ -756,7 +756,7 @@ class App:
         sr = self.cfg["audio"]["sample_rate"]
         duration_ms = int(len(audio) / sr * 1000)
         if duration_ms < 400:
-            console.print(f"[yellow]Too short ({duration_ms}ms) — ignored.[/yellow]")
+            console.print(f"[yellow]Too short ({duration_ms}ms), ignored.[/yellow]")
             self._tray_idle()
             return
         import numpy as np
@@ -764,12 +764,12 @@ class App:
         audio_f32 = audio if audio.dtype == np.float32 else audio.astype(np.float32)
         rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
         if rms < 0.003:
-            console.print(f"[yellow]Too quiet (RMS={rms:.4f}) — likely silence, ignored.[/yellow]")
+            console.print(f"[yellow]Too quiet (RMS={rms:.4f}), likely silence, ignored.[/yellow]")
             self._tray_idle()
             return
         if self.tray:
             self.tray.set_state("thinking")
-        console.print(f"[dim]Captured {duration_ms} ms (RMS={rms:.3f}) — transcribing…[/dim]")
+        console.print(f"[dim]Captured {duration_ms} ms (RMS={rms:.3f}), transcribing…[/dim]")
         t0 = time.perf_counter()
         with self._pipeline_lock:
             raw, lang, whisper_meta = self.transcriber.transcribe(audio, sr)
@@ -798,7 +798,7 @@ class App:
         # The set lives in `asr_artifacts` — calibration peels the same phrases
         # off the END of an otherwise-real utterance.
         if raw.strip().lower() in HALLUCINATIONS and duration_ms < 2000:
-            console.print(f"[yellow]Likely Whisper hallucination on silence — dropped.[/yellow]")
+            console.print(f"[yellow]Likely Whisper hallucination on silence, dropped.[/yellow]")
             if self.tray: self.tray.set_state("ok")
             return
 
@@ -823,7 +823,7 @@ class App:
             console.print("[magenta]🪄 Prompt Engineering mode active for this dictation.[/magenta]")
             wnotify.notify(
                 "Echo Flow",
-                "Prompt-Engineering mode armed — your next dictation will be rewritten via Groq.",
+                "Prompt-Engineering mode armed. Your next dictation will be rewritten via Groq.",
                 "info",
             )
 
@@ -1268,7 +1268,7 @@ class App:
                     else:
                         self.injector.inject(cleaned)
                 except Exception as e:
-                    _log.warning("scratchpad append failed: %s — falling back to inject", e)
+                    _log.warning("scratchpad append failed: %s, falling back to inject", e)
                     self.injector.inject(cleaned)
             else:
                 # Phase 12: trailing voice command. If experimental.press_enter_command
@@ -1304,12 +1304,12 @@ class App:
                         "info",
                     )
         except Exception:
-            _log.exception("inject failed — dictation NOT pasted; "
+            _log.exception("inject failed, dictation NOT pasted; "
                            "recoverable via the paste-last hotkey")
             try:
                 wnotify.notify(
                     "Echo Flow",
-                    "Paste failed — use the paste-last hotkey to recover your dictation.",
+                    "Paste failed. Use the paste-last hotkey to recover your dictation.",
                     "error",
                 )
             except Exception:
@@ -1367,7 +1367,7 @@ class App:
                             if quality.overall < 50:
                                 wnotify.notify(
                                     "Echo Flow",
-                                    f"Low-confidence dictation ({quality.overall:.0f}/100) — review?",
+                                    f"Low-confidence dictation ({quality.overall:.0f}/100). Review?",
                                     "warning",
                                 )
                             self._last_quality = quality
@@ -1875,7 +1875,7 @@ class App:
         combo = self.cfg["hotkey"]["combo"]
         try:
             console.print(Panel.fit(
-                f"[bold]Echo Flow[/bold] — ready\n"
+                f"[bold]Echo Flow[/bold] is ready\n"
                 f"Hotkey: [cyan]{combo}[/cyan]  mode: [cyan]{self._mode}[/cyan]\n"
                 f"Tray icon ↗ in system tray for status, pause, edit, history, quit.",
                 border_style="green",

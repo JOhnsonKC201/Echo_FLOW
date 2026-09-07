@@ -1,6 +1,6 @@
 @echo off
 REM ================================================================
-REM  Echo Flow — prepare a clean copy for distribution.
+REM  Echo Flow: prepare a clean copy for distribution.
 REM
 REM  Creates C:\echo flow dist\ with only the files a recipient
 REM  needs. Strips: your dictation history, logs, caches, venv,
@@ -66,7 +66,7 @@ echo ================================================================
 echo  Ready. Your friend needs to:
 echo    1. Unzip the folder anywhere
 echo    2. Double-click INSTALL.bat (creates venv, installs deps)
-echo    3. Speak — hold Ctrl+Shift to dictate
+echo    3. Speak: hold Ctrl+Shift to dictate
 echo.
 echo  No personal data inside this copy.
 echo ================================================================

@@ -1,7 +1,7 @@
 @echo off
 REM Launches the Echo Flow desktop dashboard as a native window.
 REM
-REM The daemon must already be running (run.bat / run_silent.vbs) — this
+REM The daemon must already be running (run.bat / run_silent.vbs). This
 REM script only opens the window. The window connects to the daemon's
 REM Flask server at the port written to data\dashboard.port.
 

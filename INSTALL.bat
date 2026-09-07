@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 echo.
 echo ============================================================
-echo   Echo Flow  —  One-Click Installer
+echo   Echo Flow: One-Click Installer
 echo ============================================================
 echo.
 
@@ -25,7 +25,7 @@ if errorlevel 1 (
 for /f "tokens=2" %%v in ('python --version 2^>^&1') do set "PYVER=%%v"
 echo [OK] Python found: %PYVER%
 
-REM ---------- 2. Groq API key (OPTIONAL — only used for cloud bootstrap) ----------
+REM ---------- 2. Groq API key (OPTIONAL, only used for cloud bootstrap) ----------
 echo.
 echo Echo Flow runs fully offline by default ^(local Whisper + Ollama^).
 echo Groq is OPTIONAL and only used to bootstrap learning faster ^(first 50 dictations^).

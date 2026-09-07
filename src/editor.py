@@ -103,13 +103,13 @@ def open_editor(db_path: str, row_id: int | None = None,
         conn.close()
         # Show a tiny error dialog
         root = tk.Tk(); root.withdraw()
-        messagebox.showinfo("Echo Flow", "No dictations yet — speak something first.")
+        messagebox.showinfo("Echo Flow", "No dictations yet. Speak something first.")
         root.destroy()
         return
     rid, raw, cleaned, lang, style = row
 
     root = tk.Tk()
-    root.title("Echo Flow — Correct Last Dictation")
+    root.title("Echo Flow: Correct Last Dictation")
     root.geometry("720x520")
     root.attributes("-topmost", True)
 
@@ -305,7 +305,7 @@ def open_editor(db_path: str, row_id: int | None = None,
     _render_tags()
     _render_actions()
 
-    ttk.Label(root, text="YOUR CORRECTION (edit this — it becomes the new ground truth):",
+    ttk.Label(root, text="YOUR CORRECTION (edit this to set the new ground truth):",
               foreground="#2a7").pack(anchor="w", **pad)
     fix_box = tk.Text(root, height=6, wrap="word")
     fix_box.insert("1.0", cleaned or "")
@@ -318,7 +318,7 @@ def open_editor(db_path: str, row_id: int | None = None,
     def save():
         corrected = fix_box.get("1.0", "end").strip()
         if not corrected:
-            status_var.set("Correction is empty — not saving.")
+            status_var.set("Correction is empty. Not saving.")
             return
         try:
             conn.execute(
@@ -427,7 +427,7 @@ def open_review_queue(db_path: str, n: int = 20, learn_casing: bool = True) -> N
     from tkinter import ttk, messagebox
 
     root = tk.Tk()
-    root.title("Echo Flow — Review Queue (worst first)")
+    root.title("Echo Flow: Review Queue (worst first)")
     root.geometry("760x480")
     root.attributes("-topmost", True)
     pad = {"padx": 12, "pady": 6}
@@ -451,7 +451,7 @@ def open_review_queue(db_path: str, n: int = 20, learn_casing: bool = True) -> N
         lb.delete(0, "end")
         id_map.clear()
         if not rows:
-            header_var.set("🎉 Nothing to review — all recent dictations look fine.")
+            header_var.set("Nothing to review. All recent dictations look fine.")
             return
         header_var.set(f"{len(rows)} dictation(s) sorted by quality (worst first). "
                        f"Double-click or Enter to edit.")
