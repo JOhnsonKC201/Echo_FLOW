@@ -190,7 +190,7 @@ final class DictationModel: ObservableObject {
     func beginIfNeeded() {
         guard case .idle = state else { return }
         guard AVAudioSession.sharedInstance().recordPermission == .granted else {
-            state = .error("Mic permission denied — open Echo Flow app")
+            state = .error("Mic permission denied. Open Echo Flow app")
             scheduleClearError()
             return
         }
