@@ -1,4 +1,4 @@
-# Code Signing — Echo Flow Windows Artifacts
+# Code Signing for Echo Flow Windows Artifacts
 
 Echo Flow ships two PyInstaller-built executables and two Inno Setup
 installers. All four should be Authenticode-signed before release so that
@@ -16,12 +16,12 @@ download as trusted.
 
 ## Order of operations
 
-1. `.\build_all.ps1`        — builds both `.exe`s into `dist\`.
-2. `.\installer\sign.ps1`   — signs the two bundled exes (so the payload
+1. `.\build_all.ps1`:        builds both `.exe`s into `dist\`.
+2. `.\installer\sign.ps1`:   signs the two bundled exes (so the payload
    carried inside the installer is itself signed).
 3. `iscc installer\EchoFlow.iss` and `iscc installer\EchoFlow-Daemon.iss`
-   — package the installers.
-4. `.\installer\sign.ps1`   — re-run to sign the freshly built `*-Setup-*.exe`s.
+   package the installers.
+4. `.\installer\sign.ps1`:   re-run to sign the freshly built `*-Setup-*.exe`s.
 
 If you prefer Inno Setup to invoke `signtool` for you during step 3,
 configure a SignTool inside Inno Setup (`Tools -> Configure Sign Tools…`)
@@ -32,7 +32,7 @@ the top of both `.iss` files.
 
 - Use an **OV** or **EV** code-signing certificate from a CA Microsoft
   trusts (DigiCert, Sectigo, GlobalSign, SSL.com, …).
-- Export it as a `.pfx` (PKCS#12). Keep the password in a secrets store —
+- Export it as a `.pfx` (PKCS#12). Keep the password in a secrets store,
   never commit it.
 - EV certs unlock instant SmartScreen reputation; OV certs accumulate
   reputation over downloads.

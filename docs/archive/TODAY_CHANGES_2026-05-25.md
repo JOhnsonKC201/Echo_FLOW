@@ -1,11 +1,11 @@
-# Today's changes — 2026-05-25
+# Today's changes (2026-05-25)
 
 Seven-phase remediation against `AUDIT.md`. All phases executed in order on
 branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
 `.venv`, RTX 5060 8 GB, Ollama 0.x with `qwen3.5:latest` and (newly pulled)
 `qwen2.5:3b-instruct-q4_K_M`.
 
-## Phase 1 — Safety net (`chore: log silent failures, fix changelog`)
+## Phase 1: Safety net (`chore: log silent failures, fix changelog`)
 - Replaced `except Exception: pass` blocks with `_log.exception(...)`
   while preserving suppression behavior in:
   - `src/audio.py:35-36, 80-81` (silero_vad load, torch import)
@@ -15,7 +15,7 @@ branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
   so no text edit was needed.
 - pytest: 81/81 pass.
 
-## Phase 2 — Rip the cloud (`feat: enforce local-only, remove cloud paths`)
+## Phase 2: Rip the cloud (`feat: enforce local-only, remove cloud paths`)
 - Deleted `src/transcribe_cloud.py` (Groq Whisper + HybridTranscriber).
 - `src/cleanup.py`: removed `_via_groq`, `_via_anthropic`, `_via_openai`;
   dispatcher rewrites legacy provider names (`groq`/`anthropic`/`openai`)
@@ -38,7 +38,7 @@ branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
   - `cleanup.groq` and `cleanup.anthropic` blocks removed.
   - `cleanup.provider` comment updated to "ollama | learned | none".
   - `prompt_engineering.provider: ollama` (was `groq`).
-  - `phasing` section simplified — removed `bootstrap_until` and
+  - `phasing` section simplified: removed `bootstrap_until` and
     `independent_after`.
 - `tests/test_smoke.py`: rewrote the two phase tests to assert
   local-only behavior + cloud-name normalization.
@@ -48,8 +48,8 @@ branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
 - **Not performed by me (user-required):** running `run.bat` and
   dictating a sentence with no `GROQ_API_KEY` to confirm end-to-end UX.
 
-## Phase 3 — Eval harness (`test: add polish eval harness`)
-- `tests/eval/polish_evals.yaml`: 30 cases — 10 filler, 8 punctuation,
+## Phase 3: Eval harness (`test: add polish eval harness`)
+- `tests/eval/polish_evals.yaml`: 30 cases: 10 filler, 8 punctuation,
   5 technical vocab (FastAPI, Supabase, node2vec, PostgreSQL, regex),
   4 tone, 3 edge.
 - `tests/eval/run_polish_evals.py`: loads YAML, constructs a `Cleaner`
@@ -58,10 +58,10 @@ branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
   (+ optional `exact` bonus), prints per-case table and total.
 - `tests/eval/baseline_qwen3.5.txt`: baseline run with
   `qwen3.5:latest`. **Result: 50/60 (83.3%) in 1210.6s.** Several cases
-  hit the 60s HTTP read timeout — those cases still scored partial
+  hit the 60s HTTP read timeout: those cases still scored partial
   because the cleaner returned raw text on failure.
 
-## Phase 4 — Smaller model (`perf: switch to qwen2.5:3b for VRAM headroom`)
+## Phase 4: Smaller model (`perf: switch to qwen2.5:3b for VRAM headroom`)
 - `ollama pull qwen2.5:3b-instruct-q4_K_M` succeeded.
 - `config.yaml` `cleanup.ollama.model` switched to
   `qwen2.5:3b-instruct-q4_K_M`.
@@ -75,7 +75,7 @@ branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
   `tests/eval/swap_qwen2.5-3b_tight.txt` → **56/60 (93.3%) in 5.1s**.
   Kept the tighter prompt as well.
 
-## Phase 5 — Whisper initial_prompt biasing (`feat: bias Whisper decoder with custom vocab`)
+## Phase 5: Whisper initial_prompt biasing (`feat: bias Whisper decoder with custom vocab`)
 - `src/transcribe.py`: added optional `WhisperConfig.initial_prompt`
   field and passed it through to `model.transcribe(...)`.
 - `src/main.py`: new `App._build_custom_vocabulary()` merges (in
@@ -91,11 +91,11 @@ branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
 - **Not performed by me (user-required):** recording or TTS-synthesizing
   audio fixtures, then writing `tests/eval/run_asr_evals.py`.
 
-## Phase 6 — Remove vestigial ruvector (`chore: remove unused ruvector`)
+## Phase 6: Remove vestigial ruvector (`chore: remove unused ruvector`)
 - Verified `ruvector` is referenced only by `.gitignore`, CHANGELOG.md,
-  and the distribution script — never by any `src/` module.
+  and the distribution script, never by any `src/` module.
 - Deleted `C:\Echo_FLOW\ruvector.db` (1.5 MB, already gitignored).
-- Did **not** remove `sentence-transformers` from `requirements.txt` —
+- Did **not** remove `sentence-transformers` from `requirements.txt`:
   it is the embedding model used by `src/retrieval.py`
   (`all-MiniLM-L6-v2`) for the in-`data/history.db` BLOB vector store.
 - Added an "Unreleased" section to `CHANGELOG.md` documenting the
@@ -103,7 +103,7 @@ branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
   and the eval harness; flagged correction-learning personalization as
   planned for a future v0.X release.
 
-## Phase 7 — Verification (`test: verify all phases green`)
+## Phase 7: Verification (`test: verify all phases green`)
 - pytest: 81/81 pass.
 - Polish eval re-run: `tests/eval/final_qwen2.5-3b_tight.txt` →
   **56/60 (93.3%) in 5.3s**. Above baseline (50/60).
@@ -116,14 +116,14 @@ branch `main`. Working tree was Windows / PowerShell, Python 3.13 in
     line writes the four checkpoint deltas to `data/wispr.log` per
     dictation. The toggle/silence path (where there is no release event)
     falls back to a three-segment log line.
-- Actual end-to-end latency numbers: **NOT measured by me** — measuring
+- Actual end-to-end latency numbers: **NOT measured by me**: measuring
   requires physically holding the hotkey, dictating, and reading
   `data/wispr.log`. The user must run `run.bat`, dictate a sentence,
   and read the latest "latency: ..." line.
-- Offline / no-wifi sanity test: **NOT performed by me** — also
+- Offline / no-wifi sanity test: **NOT performed by me**: also
   requires interactive setup (disabling wifi). The code path is
   exercised: with cloud paths gone, the only outbound HTTP is to
-  `http://localhost:11434/api/{chat,tags}` (Ollama) — both local.
+  `http://localhost:11434/api/{chat,tags}` (Ollama), both local.
 
 ## Phases skipped or reverted
 

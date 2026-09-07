@@ -59,7 +59,7 @@ PR if preferred.
 - **Signing.** Microsoft accepts unsigned installers, but an unsigned package
   shows a SmartScreen prompt on install and may draw extra reviewer scrutiny.
   Signing is wired as an optional step in `.github/workflows/release.yml` (see
-  `installer/SIGNING.md`) — add the cert secret and it activates.
+  `installer/SIGNING.md`): add the cert secret and it activates.
 - **First submission** creates a new package; the moderation bot runs an
   automated install/uninstall in a sandbox, so the SHA256 and URL must be
   correct and the asset must be publicly downloadable (publish the draft
