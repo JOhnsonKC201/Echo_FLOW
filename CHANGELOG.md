@@ -98,7 +98,7 @@ All notable changes are documented here. Format roughly follows
   midnight-aligned.
 
 - **The degraded-mode toast says what still works.** It read "Cleanup LLM
-  offline — using deterministic polish only. Start Ollama or set GROQ_API_KEY,
+  offline: using deterministic polish only. Start Ollama or set GROQ_API_KEY,
   then restart", which is wrong twice over now: the daemon has already tried to
   start Ollama, and a user who simply has no model needs to know the app is
   still doing something for them. It now names the cleanup they are getting
@@ -508,10 +508,10 @@ All notable changes are documented here. Format roughly follows
 ## 0.3.0 - 2026-07-25
 
 ### Added
-- **Speaker adaptation, Phase 3 — guided voice calibration.** A new **Calibrate**
+- **Speaker adaptation, Phase 3: guided voice calibration.** A new **Calibrate**
   page: read ~8 known sentences aloud (with your normal dictation hotkey), and
   Echo Flow compares what Whisper *heard* to the known *target* to get ground
-  truth — then **pins the names it fumbled** straight into your dictionary and
+  truth, then **pins the names it fumbled** straight into your dictionary and
   **learns the (heard → target) corrections**, instead of waiting for the same
   errors to surface organically. It reuses the real mic + Whisper path: while a
   session is active the daemon (`_do_dictation`) routes each utterance to the
@@ -521,17 +521,17 @@ All notable changes are documented here. Format roughly follows
   `src/calibration.py` (`CalibrationSession`, `word_accuracy`, `apply_seeds`);
   `/calibration` routes; shares the in-process `App` so no IPC is needed. Full
   Whisper weight fine-tuning remains intentionally out of scope.
-- **Speaker adaptation, Phase 2 — language selection & auto-detect.** Echo Flow
+- **Speaker adaptation, Phase 2: language selection & auto-detect.** Echo Flow
   was pinned to English. Settings → General now has a **language dropdown**
   (Auto-detect + 16 languages); picking **Auto-detect** writes `whisper.language:
   null` so Whisper detects the language per dictation (needed for non-English or
   code-switching), and pinning a language keeps the ~20ms detect-skip speed win.
-  The change is **hot-applied** — `reload_config` now refreshes
+  The change is **hot-applied**: `reload_config` now refreshes
   `transcriber.cfg.language` alongside the decoder bias, so it takes effect on
   your next dictation with no restart. (Per-language vocabulary filtering is
   deferred: it only helps pinned bilingual setups, and language-neutral terms
   like "Kubernetes" don't meaningfully bias other languages.)
-- **Speaker adaptation, Phase 1 — Echo Flow learns your voice's recurring errors
+- **Speaker adaptation, Phase 1: Echo Flow learns your voice's recurring errors
   faster and visibly.** An accent isn't tuned at the acoustic level (Whisper is
   already accent-robust, and it's a single-user app); it shows up as the *same
   words misheard the same way*, so the win is a stronger text-level correction
@@ -539,9 +539,9 @@ All notable changes are documented here. Format roughly follows
   - **Multi-word ("n-gram") substitution learning.** The pattern miner only
     learned 1↔1 word fixes; a phrase mishearing like "note to vec" → "node2vec"
     (3 tokens → 1) fell through entirely. New `learn._diff_ngram_pairs` captures
-    2–3 word `replace` spans, gated by a vendored, dependency-free **phonetic
+    2 to 3 word `replace` spans, gated by a vendored, dependency-free **phonetic
     check** (`src/phonetic.py`, Metaphone) so a genuine mishearing is learned but
-    an LLM paraphrase that changed meaning is rejected — "the weather is nice" →
+    an LLM paraphrase that changed meaning is rejected: "the weather is nice" →
     "let us ship it" scores 0.12 similarity and is dropped. Stored in a sibling
     `learned_ngrams` table with a stricter confidence bar
     (`PatternMiner.confident_ngrams`), applied longest-phrase-first before the
@@ -550,37 +550,37 @@ All notable changes are documented here. Format roughly follows
   - **Low-confidence → dictionary suggestions.** Whisper now returns the words it
     was unsure about (`word_timestamps`, surfaced as `meta["low_conf_words"]`);
     content words (names / technical tokens, never plain words or already-known
-    terms — `src/vocab_suggest.py`) are recorded as suggestions
+    terms; see `src/vocab_suggest.py`) are recorded as suggestions
     (`History.record_vocab_suggestion`, `vocab_suggestions` table).
   - **Review surface.** The Dictionary page now shows "Suggested terms" ranked by
     how often each was fumbled; one click **Pins** a term into the dictionary
     (feeding the Whisper decoder bias on the next reload) or dismisses the noise
     (`src/dashboard/suggestions.py`). `whisper.word_confidence` /
     `word_conf_floor` toggle the per-word signal.
-- **Humanize hard-exclude zones — the facts are never sent to the model.** In a
+- **Humanize hard-exclude zones: the facts are never sent to the model.** In a
   methods section the numbers, hyperparameters, splits, metrics, citations,
   quotes and code ARE the content; precision there reads "competent" to a
   reviewer, and a humanizer that "improves the flow" of "F1 of 0.79" into "an F1
   of about 0.8" is doing damage. So instead of trusting the model to be careful,
   the tool now makes it impossible for it to be careless: a new detector
   (`src/protected.py`) finds every protected span, and any **sentence** carrying
-  one is held byte-for-byte and never sent to the model — only the free-prose
+  one is held byte-for-byte and never sent to the model. Only the free-prose
   runs around it are rewritten. The protection is deliberately structural rather
   than a prompt instruction: no local model reliably preserves an inline
   placeholder token (the 3B and the escalation model alike paraphrase a masked
   `⟦0⟧` into "zero"), so masking would silently corrupt the very figures it was
-  meant to guard. Keeping the whole sentence is coarser but honest — the tool
+  meant to guard. Keeping the whole sentence is coarser but honest: the tool
   refuses to edit the facts rather than gamble on them. The result notes how many
   spans were held exact. Sentence-splitting is span-aware, so a period inside
   `et al.`, `0.001`, or a closing quote is never mistaken for a sentence end.
   `protected.find/count`; `humanize_text(protect_spans=…)`;
   `experimental.humanize_text_protect_spans` (default true).
 
-- **Humanize delete-first pass — cut the dead sentences before rewriting.** Most
+- **Humanize delete-first pass: cut the dead sentences before rewriting.** Most
   of the de-AI win is subtraction, not rephrasing, and it has to be
   deterministic: a small local model told to "be concise" paraphrases instead of
   cutting, locking in the dead structure. So a new pass (`src/deadweight.py`)
-  runs BEFORE the model and removes the sentences that do no work —
+  runs BEFORE the model and removes the sentences that do no work:
   topic-announcement openers ("X has transformed the landscape of Y"),
   empty-optimism closers ("… continues to evolve rapidly", "the future is
   bright"), and pure throat-clearing ("It is important to note that …"). It is
@@ -591,25 +591,25 @@ All notable changes are documented here. Format roughly follows
   `deadweight.trim`; `humanize_text(delete_first=…)`;
   `experimental.humanize_text_delete_first` (default true).
 
-- **Humanize diagnostic pass — "reads empty, add the specifics".** A humanizer
+- **Humanize diagnostic pass: "reads empty, add the specifics".** A humanizer
   can strip the machine's tics but can't invent what the writer never said, and
   the absence of concrete detail is the biggest tell. So the result now ships a
   deterministic **"specify" pass** (`src/vagueness.py`): it finds vague, abstract
-  claims in the source — "significant improvements", "a variety of", "researchers
-  have shown", "recently" — and turns each into a question ("By how much? Give
+  claims in the source ("significant improvements", "a variety of", "researchers
+  have shown", "recently") and turns each into a question ("By how much? Give
   the number.", "Which study or source?", "When, specifically?"). It never fills
   them in (that would be a bluff); it asks. Suppressed when a real number is
   already in the sentence, so a concrete claim isn't nagged. This turns the tool
   from a rewriter into an editor. `vagueness.find/prompts/segments/count`.
 
-- **Humanize reads more human — dashes killed, side-by-side compare, instant
+- **Humanize reads more human: dashes killed, side-by-side compare, instant
   feedback.**
   - **No more long dashes.** The AI-tell detector only counted em-dashes with
-    spaces around them, so a tight `word—word` slipped through — uncounted,
+    spaces around them, so a tight dash with no spaces slipped through: uncounted,
     unhighlighted, and left in the output (the score even claimed "0" while
     dashes remained). Fixed: any em/en dash is now detected, and a deterministic
     pass (`Cleaner._normalize_dashes`) rewrites every long dash to human
-    punctuation — a comma, or "to" for number ranges — so **no em-dash ever
+    punctuation (a comma, or "to" for number ranges) so **no em-dash ever
     survives**, whatever the model does. Meaning-preserving; a hyphenated
     compound (`well-tested`) is left alone.
   - **Broader cleanup.** The detector (and the prompt) now also flag stiff
@@ -619,42 +619,42 @@ All notable changes are documented here. Format roughly follows
     columns, next to the existing inline "What changed" diff.
   - **Instant, in-place feedback.** Clicking Humanize now shows a "Humanizing…"
     state and drops the result into its own box below without a full-page reload
-    (progressive enhancement — a plain POST still works with JS off). Fixes the
+    (progressive enhancement: a plain POST still works with JS off). Fixes the
     "it did nothing" feel on longer text.
 
-- **Prompt-Engineering techniques — Simple / Reflection / Chain-of-Thought.**
+- **Prompt-Engineering techniques: Simple / Reflection / Chain-of-Thought.**
   PE mode used to do one thing: clean a dictation into a faithful, well-phrased
   request. It now has a **Technique** selector (Settings → Vibe, or
   `prompt_engineering.style`):
-  - **Simple** — the original faithful rewrite (default, unchanged).
-  - **Reflection** — wraps your request in Draft → Reflect → Refine steps, so the
+  - **Simple**: the original faithful rewrite (default, unchanged).
+  - **Reflection**: wraps your request in Draft → Reflect → Refine steps, so the
     receiving agent drafts, critiques its own draft, then rewrites.
-  - **Chain-of-Thought** — wraps it in brainstorm → methodology → score → build
+  - **Chain-of-Thought**: wraps it in brainstorm → methodology → score → build
     steps, so the agent reasons before answering.
 
   The two scaffolds deliberately *expand* the prompt (guard bypassed, as PE mode
-  already is) but keep your actual task faithful — the "invent no requirements"
+  already is) but keep your actual task faithful: the "invent no requirements"
   rule still holds, extended to concrete specifics (budgets, counts, dates) and
   ALL-CAPS/echo artifacts a small local model tends to add. Composes with the
   existing audience (claude-code / chatgpt / generic) and provider settings.
   `build_pe_prompt(audience, provider, style)`, `PE_STYLES`,
   `normalize_pe_style()`.
 
-- **Humanize — paste AI-written text, get a human version back**
+- **Humanize: paste AI-written text, get a human version back**
   (`Cleaner.humanize_text`, dashboard → **My Voice → Humanize**). Paste prose a
   language model wrote and get it back reading like a person. Separate from the
-  dictation "My Voice" pass, which only nudges text the user already wrote — a
+  dictation "My Voice" pass, which only nudges text the user already wrote: a
   genuine de-AI rewrite deletes LLM vocabulary, dropping token overlap to ~0.15,
   far under that pass's 0.35/0.85 floors, so it declined every real rewrite.
   This is its own method, prompt, and guards; the dictation path is untouched.
 
   **Three selectable targets** (no writing samples required to start):
-  - **A natural human** — strip the AI tells (em-dash rhythm, *delve / moreover
+  - **A natural human**: strip the AI tells (em-dash rhythm, *delve / moreover
     / a testament to*, "it's not just X, it's Y", tricolons, hedging stacks) and
     return plain natural prose. The default; needs no setup.
-  - **Me** — additionally match your writing samples. With none it falls back to
+  - **Me**: additionally match your writing samples. With none it falls back to
     the natural-human rewrite and says so, rather than refusing.
-  - **A specific tone** — casual, professional, friendly, plain, confident, or
+  - **A specific tone**: casual, professional, friendly, plain, confident, or
     concise, chosen from a dropdown.
 
   **It always returns a result.** A risky-but-readable rewrite (a number
@@ -669,7 +669,7 @@ All notable changes are documented here. Format roughly follows
     lets one bad paragraph fall back without sinking the rest.
   - **Numbers are checked exactly, in both directions.** The benchmark caught
     the model turning *"caught 14 regressions before release"* into *"shows how
-    solid the process is"* — fluent, close, and no longer true. A changed number
+    solid the process is"*: fluent, close, and no longer true. A changed number
     is now surfaced as a warning on the shown rewrite.
   - **Voice-profile regurgitation is rejected** (voice mode). A small model may
     reproduce the samples' *subject matter*; detected per sentence, and a purely
@@ -683,11 +683,11 @@ All notable changes are documented here. Format roughly follows
   `Cleaner.humanize_text` returns a `HumanizeOutcome(text, reason, warnings,
   changed, total)`. `experimental` keys: `humanize_text_model` (blank = the
   cleanup model; this pass runs on a button press, so a larger local model is an
-  option — editable in **Settings → Experimental**), `humanize_text_timeout_sec`,
+  option, editable in **Settings → Experimental**), `humanize_text_timeout_sec`,
   `humanize_text_min_sim`, `humanize_text_max_chars`.
 
   Then, in the same cycle:
-  - **Deterministic AI-tell detector** (`src/aitells.py`) — a pure, tested module
+  - **Deterministic AI-tell detector** (`src/aitells.py`): a pure, tested module
     that scores how much a passage still reads like a model (LLM vocabulary,
     em-dash rhythm, the "not just X" antithesis, hedging, throat-clearers). The
     page shows an **"AI tells: N → M"** score on every result and lists what
@@ -700,27 +700,27 @@ All notable changes are documented here. Format roughly follows
     clean rewrite, and most cases to zero remaining tells.
   - **Auto model escalation** (`humanize_text_escalate_model`, default `"auto"`).
     When the main model mangles a paragraph, it retries once on the next-step-up
-    installed model — chosen by size so it won't jump to one too big for the GPU
-    — before falling back to your original. Verified live: the 3B's hardest case
+    installed model (chosen by size so it won't jump to one too big for the GPU)
+    before falling back to your original. Verified live: the 3B's hardest case
     is rescued by `qwen3.5`.
   - **More control.** A **strength** selector (light / balanced / aggressive)
     that steers how far to rewrite: it scales the length budget, adds a steering
     line to the prompt, AND sets the model's sampling temperature (0.15 / 0.4 /
     0.75). Light stays stable (re-rolls barely move); aggressive samples hotter,
-    so **Try again** gives a genuinely different take — measured 1/5 vs 4/5
+    so **Try again** gives a genuinely different take, measured 1/5 vs 4/5
     distinct re-rolls. The dictation pass keeps its fixed 0.2. Plus a **custom
     free-text tone** box (sanitized) alongside the presets.
-  - **`scripts/eval_humanize.py`** — a committed quality benchmark (fixture
+  - **`scripts/eval_humanize.py`**: a committed quality benchmark (fixture
     corpus + `--check` release gate) that measures acceptance, tells-removed (via
     `aitells`), facts-kept, and voice contamination against the real model.
   - **Inline tell highlighting + broader detection.** The detector grew from ~65
     to ~130 tells (more LLM vocabulary, "plays a crucial role", "a wide range
     of", "in conclusion", "unlock the potential", "first and foremost", …). The
     result now marks any remaining tells *in place* (`aitells.segments`), and a
-    "AI tells in your paste" panel shows exactly what the pass targeted — so both
+    "AI tells in your paste" panel shows exactly what the pass targeted, so both
     ends are legible, not just a number.
 
-- **Local intent model — a regex-miss fallback for Action Mode**
+- **Local intent model: a regex-miss fallback for Action Mode**
   (`src/intent_model.py`, opt-in, **off by default**). Action Mode classifies a
   prefixed command with tight anchored regexes; that is high-precision but
   brittle to phrasing (*"launch spotify"* instead of *"open spotify"*, *"play
@@ -732,7 +732,7 @@ All notable changes are documented here. Format roughly follows
   wouldn't.** The predictor proposes only a handler name + a slot string, which
   is re-validated by `build_match()` through the *same* guards as the regex path
   (`_domain_to_url` / `_is_safe_url` / the `action_apps`/`action_folders`
-  allowlists) — and it is *stricter* than the regex path, refusing an
+  allowlists), and it is *stricter* than the regex path, refusing an
   unconfigured app/folder at construction time. Today's predictor is a
   dependency-free keyword heuristic (no ML deps, no import cost); the module is
   the load-once seam where an embedding + logistic-regression head can be
@@ -744,30 +744,30 @@ All notable changes are documented here. Format roughly follows
   - **Offline eval harness** `scripts/eval_intent.py`: scores the predictor on a
     labeled fixture set (precision / recall / F1 + a `min_conf` sweep and
     confusion of misses), and a `--check` gate that fails CI if precision or
-    recall regress — the empirical basis for the `0.75` default. Covered by
+    recall regress, the empirical basis for the `0.75` default. Covered by
     `tests/test_intent_model.py` (safety re-validation, recovery, abstain, floor,
     never-raises) and `tests/test_main_intent_model.py` (off-by-default, live
     recovery, shadow-does-not-execute, and *unconfigured-app-can't-launch*).
   - **Dashboard control.** Settings → Experimental now surfaces the fallback as
     an Off / On / Shadow select plus a confidence-floor field, so it is reachable
     without hand-editing `config.yaml`. The tri-state maps to real YAML types
-    (`false` / `true` / `"shadow"`) — "off" writes a boolean, never the truthy
-    string `"false"` — and the floor is validated to `0–1`.
+    (`false` / `true` / `"shadow"`): "off" writes a boolean, never the truthy
+    string `"false"`, and the floor is validated to `0-1`.
   - **Learned model backend** (`action_intent_backend: model`). Beyond the
     keyword rules, a tiny embedding + logistic-regression head
-    (`src/intent_classifier.py`) generalizes to phrasings no rule anticipated —
-    *"hush"* → mute, *"make a memo that…"* → note, *"the thing I just copied"* →
-    clipboard — by embedding the utterance with the app's existing local
+    (`src/intent_classifier.py`) generalizes to phrasings no rule anticipated
+    (*"hush"* → mute, *"make a memo that…"* → note, *"the thing I just copied"* →
+    clipboard) by embedding the utterance with the app's existing local
     sentence-transformers model (`retrieval.embed`, 384-dim, CPU) and classifying
     the intent. It emits only a handler + slot, so it flows through the same
     `build_match` guards as everything else (an unconfigured app it proposes
     still resolves to nothing). No new dependencies (numpy LR, ~13 classes), and
-    it trains out-of-the-box from a shipped seed corpus (`src/intent_seed.py`) —
+    it trains out-of-the-box from a shipped seed corpus (`src/intent_seed.py`), so
     a fresh install works with zero user data; the artifact is cached lazily to
     `data/intent_model.npz`. `scripts/train_intent.py` (`--train` / `--eval` /
     `--probe`) builds it, measures stratified-holdout accuracy (~0.83 on the
     seed) to tune the model floor (`action_intent_model_min_conf`, default
-    `0.4` — the diffuse 13-class softmax sits lower than the keyword floor), and
+    `0.4`, since the diffuse 13-class softmax sits lower than the keyword floor), and
     can sharpen it by mining the user's own `voice_actions` history. Covered by
     `tests/test_intent_classifier.py` (LR train/serialize, slot extraction,
     predict/abstain/never-raise, backend selection, and the same
@@ -776,7 +776,7 @@ All notable changes are documented here. Format roughly follows
   (`.github/workflows/release.yml`) builds the daemon installer on a tagged
   push (`v*`): PyInstaller → Inno Setup → SHA256 → draft GitHub Release with the
   installer + checksum attached. Code signing is an **opt-in step** that
-  activates automatically when a `CODESIGN_PFX_BASE64` secret is present — ship
+  activates automatically when a `CODESIGN_PFX_BASE64` secret is present: ship
   unsigned today, drop a cert in later with zero workflow changes. A
   `workflow_dispatch` path does a dry-run build without creating a release. The
   job also fails fast if the tag doesn't match `src/__init__.py` `__version__`.
@@ -794,7 +794,7 @@ All notable changes are documented here. Format roughly follows
   web installer, and the `EchoFlow-Daemon-Payload-<ver>.zip` it fetches.
 - **Opt-in self-update check** (`update.check_on_startup`, default **off**).
   When enabled, the daemon makes a single anonymous GitHub Releases API call at
-  launch and shows a tray toast if a newer version exists — no history, config,
+  launch and shows a tray toast if a newer version exists. No history, config,
   or identifiers are ever sent (`src/update_check.py`). The /privacy ledger is
   updated to report this honestly: with the check on, it no longer claims zero
   egress and names the endpoint. Fully covered by `tests/test_update_check.py`.
@@ -834,18 +834,18 @@ across the daemon lifecycle.
   of local Ollama, trading the local-only guarantee for cleanup quality. Off by
   default; when on, a missing API key or a failed cloud call falls back to local
   Ollama so dictation never breaks. PE mode and the teacher loop already used the
-  cloud — this extends it to regular cleanup. (Set `cleanup.provider: groq` +
+  cloud. This extends it to regular cleanup. (Set `cleanup.provider: groq` +
   `cleanup.allow_cloud_cleanup: true`, and export `GROQ_API_KEY`.)
-- **Phase 14 — Action Mode** (`experimental.action_mode`, off by default).
+- **Phase 14: Action Mode** (`experimental.action_mode`, off by default).
   Semantic voice actions behind the shared `"computer"` prefix: `open_app`
   (allowlisted `action_apps` map, no shell-from-voice), `open_url`
   (http/https/mailto only), and `web_search`. Command Mode runs first and
   falls through to Action Mode on a no-match. Every attempt is logged to the
   new `voice_actions` table.
-- **Phase 14 PR 2** — the deferred Action Mode handlers plus security
+- **Phase 14 PR 2**: the deferred Action Mode handlers plus security
   hardening of the shipped trio. New handlers: `summarize_focused` (local
   Ollama only, never a cloud call; reads the focused pdf/txt/md/docx),
-  `draft_event` (writes a local `.ics` draft — never a calendar API), and
+  `draft_event` (writes a local `.ics` draft, never a calendar API), and
   `quick_note` (appends to the notes store). Adds the `focused_document_path()`
   Win32 injector helper. Hardening: `_is_safe_url` now rejects userinfo
   spoofing, percent-encoded control chars, IDN homographs, and `mailto:`
@@ -896,7 +896,7 @@ across the daemon lifecycle.
   unflattened whenever cleanup took a raw-passthrough exit: the hallucination
   guard (model went off-track), total provider failure (all providers down),
   and the `learned` provider with `fallback_to_ollama: false`. All three now
-  run the LLM-free, content-preserving casing/punctuation pass — your words are
+  run the LLM-free, content-preserving casing/punctuation pass: your words are
   kept verbatim, only the casing is normalized. (Root cause of the "sometimes
   capitalized, sometimes correct" reports; note a running daemon must be
   restarted to pick up the fix.)
@@ -910,7 +910,7 @@ across the daemon lifecycle.
   detection with no indicator. Activate/deactivate callbacks are now guarded
   and logged, so the listener survives.
 - **Semantic backlinks link the right dictation.** `notes.backlinks_for` used
-  the retriever's match then re-looked-up the row by `raw_text` (not unique —
+  the retriever's match then re-looked-up the row by `raw_text` (not unique, since
   repeated utterances collide), occasionally attributing the wrong dictation.
   It now uses the matched row's real primary key.
 - **Curly-apostrophe casings are learned.** `_meaningful_casing` only stripped
@@ -938,11 +938,11 @@ across the daemon lifecycle.
   `_flatten` possessive path also matches an ALLCAPS `'S` suffix, matching the
   canon path.
 - **Possessives keep their casing.** `London's`/`Sam's` are no longer flattened
-  to lowercase — the de-Title-Case pass now strips a trailing `'s`/`'` before
+  to lowercase: the de-Title-Case pass now strips a trailing `'s`/`'` before
   the protected-word lookup. Learned casings also apply through the possessive
   (`tiktok's` → `TikTok's`).
 - Successful cleanup output (LLM and fallback paths) is now casing/punctuation-
-  normalized — previously only the skip-clean fast path was, so model
+  normalized. Previously only the skip-clean fast path was, so model
   Title-Casing could reach the paste buffer untouched. Raw-on-failure,
   `provider: none`, and user-defined transform outputs are left verbatim.
 - **Watchdog defers relaunch when a stale PID file can't be removed.**
@@ -968,7 +968,7 @@ across the daemon lifecycle.
 First numbered version. The day a lot happened.
 
 ### Added
-- Self-grading layer (`src/grade.py`): every dictation gets a 0–100 quality score from four signals (Whisper confidence, hallucination guard, semantic coherence, pattern coverage). Stored alongside each row.
+- Self-grading layer (`src/grade.py`): every dictation gets a 0 to 100 quality score from four signals (Whisper confidence, hallucination guard, semantic coherence, pattern coverage). Stored alongside each row.
 - Self-improving loops: online weight calibration via SGD against user-edited dictations + exponential pattern decay (14-day half-life) so old jargon fades.
 - LLM-free `learned` cleanup provider: uses past corrections + learned token substitutions + deterministic polish. Falls back to Ollama when not confident.
 - Four-phase auto-progression: Bootstrap (Groq) → Hybrid (local Whisper + Groq cleanup) → Independent (local + Ollama) → Self-Sufficient (no LLM).
@@ -978,7 +978,7 @@ First numbered version. The day a lot happened.
 - Knowledge graph: D3.js force-directed visualization with Notes mode (default when notes exist), Dictations mode, Concepts mode. Tag filter chip cloud, search box, quality slider with green/amber/red rings, refresh button, time slider.
 - Notes layer: pinning promotes a dictation to a long-lived knowledge object with title and description.
 - Tags: three-signal auto-suggestion (cluster, similar, concept) with manual confirm. Persists to `dictation_tags`.
-- Action items: regex-based extraction of TODO-style phrases. Blocklist for daily drivel (`go to bed`, `eat lunch`). Silent — only surfaces in the editor.
+- Action items: regex-based extraction of TODO-style phrases. Blocklist for daily drivel (`go to bed`, `eat lunch`). Silent: only surfaces in the editor.
 - Review queue: tray menu opens a worst-quality-first list of un-edited dictations.
 - Pin last dictation: tray menu shortcut to promote the most recent dictation to a Note.
 - Editor extensions: tag chip row with accept/reject, manual tag entry, pin button, action items checklist.
@@ -991,7 +991,7 @@ First numbered version. The day a lot happened.
 ### Fixed
 - Race condition where Ctrl+Shift+Win pasted the previous dictation instead of the most recent one (async DB write hadn't committed). RAM cache now sourcing.
 - Synthetic Ctrl+V from re-paste landed mangled by user's still-held physical modifiers. Re-paste now fires on key release with a 60 ms safety delay.
-- Dictation hotkey vetoes when Win is added mid-press — recording silently aborts instead of leaving stale audio.
+- Dictation hotkey vetoes when Win is added mid-press: recording silently aborts instead of leaving stale audio.
 - TF-IDF cluster labels duplicated word stems (`Thank · Thank Thank`). Unigrams only now, with dedupe.
 
 ### Infrastructure
