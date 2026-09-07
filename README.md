@@ -19,7 +19,7 @@ No subscription, no account, and your audio never leaves your machine unless you
 </div>
 
 > Everything the commercial dictation apps charge a monthly fee for, running
-> entirely on your hardware, where your voice never touches someone else's server.
+> entirely on your own hardware. Your voice never touches someone else's server.
 
 ```
 Hold Ctrl+Shift → talk → release → polished text appears at your cursor.
@@ -34,14 +34,14 @@ the Whisper model once; after that it works fully offline.
 
 ### Echo Flow vs. the subscription apps
 
-| | 🟢 Echo Flow | ☁️ Typical cloud dictation app |
+| | Echo Flow | Typical cloud dictation app |
 |---|---|---|
-| **Price** | Free · MIT | $10–30 / month |
+| **Price** | Free · MIT | $10 to $30 a month |
 | **Your audio** | Stays on device (cloud is opt-in) | Uploaded every time |
-| **Works offline** | ✅ | ❌ |
-| **Account required** | ❌ none | ✅ sign-up |
-| **Learns your corrections** | ✅ locally, forever | Limited / cloud-side |
-| **Knowledge layer** (notes · tags · graph · search) | ✅ built in | ❌ |
+| **Works offline** | Yes | No |
+| **Account required** | No | Yes |
+| **Learns your corrections** | Yes, locally | Limited, and cloud-side |
+| **Knowledge layer** (notes · tags · graph · search) | Built in | No |
 
 ---
 
@@ -68,11 +68,11 @@ the Whisper model once; after that it works fully offline.
 ### Dictation
 | Feature | What it gives you |
 |---|---|
-| **Local transcription** | OpenAI Whisper on-device (`tiny` → `large-v3-turbo`, or `auto` by hardware). Nothing uploaded. |
-| **Local cleanup** | A small LLM via Ollama (`qwen2.5:3b-instruct`) polishes raw output: punctuation, capitalization, filler removal. No Ollama and no key → deterministic rules-only cleanup, which still handles casing, punctuation and fillers. |
-| **Re-paste** (`Ctrl+Shift+Win`) | Drops your last dictation into a new window — say it once in Slack, paste it again in email. |
+| **Local transcription** | OpenAI Whisper on-device (`tiny` through `large-v3-turbo`, or `auto` by hardware). Nothing uploaded. |
+| **Local cleanup** | A small LLM via Ollama (`qwen2.5:3b-instruct`) polishes raw output: punctuation, capitalization, filler removal. With no Ollama and no key you get deterministic rules-only cleanup, which still handles casing, punctuation and fillers. |
+| **Re-paste** (`Ctrl+Shift+Win`) | Drops your last dictation into a new window: say it once in Slack, paste it again in email. |
 | **Snippets** | Short codes expand after cleanup: `btw` → "by the way", `lgtm` → "looks good to me". Case- and word-boundary-aware. |
-| **App-aware profiles** | Cleanup style adapts to the focused app — casual punctuation in Slack, symbol-aware in VS Code, full sentences in Gmail. |
+| **App-aware profiles** | Cleanup style adapts to the focused app: casual punctuation in Slack, symbol-aware in VS Code, full sentences in Gmail. |
 | **Casing control** | Learns a word's casing from one edit (`tiktok` → `TikTok` sticks forever, possessives included) and flattens Whisper's accidental "Every Word Capitalized" back to normal sentence case. |
 | **Hallucination guard** | Length + RMS gate drops silent/short clips so Whisper can't invent "thank you for watching"; if the model goes off-track, your raw words are pasted (casing-normalized) instead. |
 
@@ -82,9 +82,9 @@ few hundred dictations it knows your jargon, names, and writing style.
 
 ```mermaid
 flowchart LR
-    D["🎙️ You dictate"] --> G["Self-grade<br/>0–100 quality"]
+    D["You dictate"] --> G["Self-grade<br/>0-100 quality"]
     G --> H[("history.db")]
-    E["✏️ You fix it once<br/>(tray edit)"] --> L["Learn<br/>casings + patterns"]
+    E["You fix it once<br/>(tray edit)"] --> L["Learn<br/>casings + patterns"]
     L --> H
     H -->|"few-shot + learned rules"| C["Next cleanup<br/>gets smarter"]
     C --> D
@@ -93,37 +93,37 @@ flowchart LR
 
 | Capability | Detail |
 |---|---|
-| **Self-grading** | Every dictation gets a 0–100 quality score from four signals (Whisper confidence, hallucination guard, semantic coherence, pattern coverage). |
+| **Self-grading** | Every dictation gets a 0 to 100 quality score from four signals (Whisper confidence, hallucination guard, semantic coherence, pattern coverage). |
 | **Self-improving loops** | Online weight calibration (SGD against your edits) + exponential pattern decay (14-day half-life) so stale jargon fades. |
-| **LLM-free mode** | A `learned` cleanup provider built from your past corrections — runs with no LLM at all once it has enough signal. |
-| **Auto-phasing** | Progresses from Whisper + Ollama cleanup → fully self-sufficient LLM-free cleanup as your history grows. |
+| **LLM-free mode** | A `learned` cleanup provider built from your past corrections. It runs with no LLM at all once it has enough signal. |
+| **Auto-phasing** | Progresses from Whisper + Ollama cleanup to fully LLM-free cleanup as your history grows. |
 
-### My Voice — and the humanizer
+### My Voice and the humanizer
 Two features on the **My Voice** page, different jobs:
 
 | | What it does |
 |---|---|
 | **My Voice (dictation)** | A light-touch pass after cleanup that nudges your dictated text toward your own phrasing. Off by default; `shadow` previews it without changing anything. Meaning is preserved exactly, and the rewrite is dropped if it drifts at all. |
-| **Humanize (paste-in)** | Paste AI-written text and get a human version back — the LLM tells stripped out (em-dash rhythm, *delve / moreover / a testament to*, "it's not just X, it's Y", tricolons, hedging stacks). Pick how it should sound. |
+| **Humanize (paste-in)** | Paste AI-written text and get a human version back with the LLM tells stripped out (em-dash rhythm, *delve / moreover / a testament to*, "it's not just X, it's Y", tricolons, hedging stacks). Pick how it should sound. |
 
 The humanizer gives you **three targets**, and needs no setup to start:
 
-- **A natural human** - plain, natural prose, AI tells removed. The default.
-- **Me** - also match your writing samples (add a couple on the same page). With
+- **A natural human.** Plain prose with the AI tells removed. The default.
+- **Me.** Also match your writing samples (add a couple on the same page). With
   none, it falls back to the natural-human rewrite and tells you why.
-- **A specific tone** - casual, professional, friendly, plain, confident, concise.
+- **A specific tone.** Casual, professional, friendly, plain, confident, concise.
 
 You also steer it: a **strength** slider (light / balanced / aggressive) and a
 **custom tone** box, plus a **Try again** button to re-roll.
 
-It **always gives you a result.** A risky-but-readable rewrite (a number changed,
-meaning drifted) is shown *with a warning* rather than dropped; only genuinely
-broken output falls back to your original. It rewrites **one paragraph at a time**
-so structure survives, checks **every number in both directions** (a dropped
-figure falsifies a document as surely as an invented one), and shows a word-level
-diff plus an **"AI tells: N → M"** score so you can see exactly what it stripped.
-When the small default model struggles on a paragraph it **auto-escalates once**
-to the next-larger model you have installed. All local by default.
+It always gives you a result. A risky but readable rewrite (a number changed,
+meaning drifted) is shown with a warning rather than dropped; only genuinely
+broken output falls back to your original. It rewrites one paragraph at a time
+so structure survives, checks every number in both directions (a dropped
+figure is as wrong as an invented one), and shows a word-level diff plus an
+"AI tells: N → M" score so you can see exactly what it stripped. When the small
+default model struggles on a paragraph it escalates once to the next-larger
+model you have installed. All local by default.
 
 ### Knowledge layer
 | Feature | Detail |
@@ -145,7 +145,7 @@ voice-action shortcuts, settings, light/dark theme, and notification sounds.
   auth model, with a `Host:` header check on every request as DNS-rebinding defense.
 - **Never blocks dictation.** Flask runs in a daemon thread; the window runs in a
   separate process. A crash in either can't wedge the hotkey path.
-- **Works offline forever.** No SPA framework, no Node toolchain.
+- **Works offline.** No SPA framework, no Node toolchain.
 - **Keyboard-first.** Press **⌘/Ctrl+K** anywhere in the dashboard to jump to any
   page; the sidebar collapses to a drawer on narrow windows.
 
@@ -160,18 +160,18 @@ it are opt-in and gated behind your own API key.
 
 ```mermaid
 flowchart LR
-    A["🎙️ Hold Ctrl+Shift<br/>push to talk"] --> B["Whisper STT<br/>local CPU / GPU"]
+    A["Hold Ctrl+Shift<br/>push to talk"] --> B["Whisper STT<br/>local CPU / GPU"]
     B --> C{"Cleanup"}
     C -->|"default · local"| D["Ollama LLM"]
-    C -.->|"PE mode · opt-in"| E["Groq / Anthropic<br/>☁ cloud, your key"]
-    D --> F["📋 Paste at cursor"]
+    C -.->|"PE mode · opt-in"| E["Groq / Anthropic<br/>cloud, your key"]
+    D --> F["Paste at cursor"]
     E -.-> F
-    F --> G[("history.db<br/>local — learns from you")]
+    F --> G[("history.db<br/>local, learns from you")]
     G -.->|"few-shot examples"| C
-    P["📱 iOS keyboard"] -.->|"Wi-Fi bridge"| B
-    DB["🖥️ Dashboard<br/>127.0.0.1:8766"] --- G
+    P["iOS keyboard"] -.->|"Wi-Fi bridge"| B
+    DB["Dashboard<br/>127.0.0.1:8766"] --- G
 
-    subgraph LOCAL["🔒 Your machine — no network"]
+    subgraph LOCAL["Your machine · no network"]
         B
         C
         D
@@ -181,7 +181,7 @@ flowchart LR
     end
 ```
 
-**What happens when you talk** — the live path, end to end:
+**What happens when you talk**, the live path end to end:
 
 ```mermaid
 sequenceDiagram
@@ -200,7 +200,7 @@ sequenceDiagram
     R->>W: audio buffer
     W->>P: raw transcript (~0.5s)
     P->>Cur: polished text pasted (~1s)
-    Note over R,Cur: end-to-end ≈ 1–2s · nothing leaves your machine
+    Note over R,Cur: end-to-end ≈ 1-2s · nothing leaves your machine
 ```
 
 ---
@@ -208,32 +208,32 @@ sequenceDiagram
 ## Screenshots
 
 > [!NOTE]
-> Captured against a **seeded demo database** — no real dictation data.
+> Captured against a seeded demo database, so none of this is real dictation data.
 
-**Home** — your dictation inbox, quality-scored, with live time-saved / acceptance / latency stats.
+**Home.** Your dictation inbox, quality-scored, with live time-saved, acceptance and latency stats.
 
-![Echo Flow dashboard — Home](docs/img/dashboard-home.png)
+![Echo Flow dashboard, Home page](docs/img/dashboard-home.png)
 
-**Outcomes** — how Echo shows up in your work: words-per-minute, the fixes it made, your app mix, a streak heatmap, and a quality trajectory.
+**Outcomes.** How Echo shows up in your work: words per minute, the fixes it made, your app mix, a streak heatmap, and a quality trajectory.
 
-![Echo Flow dashboard — Outcomes](docs/img/dashboard-insights.png)
+![Echo Flow dashboard, Outcomes page](docs/img/dashboard-insights.png)
 
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/img/dashboard-graph.png" alt="Echo Flow — knowledge graph"><br>
-      <sub><b>Knowledge graph</b> — dictations, notes &amp; concepts, force-directed.</sub>
+      <img src="docs/img/dashboard-graph.png" alt="Echo Flow knowledge graph"><br>
+      <sub><b>Knowledge graph.</b> Dictations, notes &amp; concepts, force-directed.</sub>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/img/dashboard-dictionary.png" alt="Echo Flow — dictionary"><br>
-      <sub><b>Dictionary</b> — learned casings (<code>github → GitHub</code>) &amp; custom vocabulary.</sub>
+      <img src="docs/img/dashboard-dictionary.png" alt="Echo Flow dictionary"><br>
+      <sub><b>Dictionary.</b> Learned casings (<code>github → GitHub</code>) &amp; custom vocabulary.</sub>
     </td>
   </tr>
 </table>
 
-**Privacy** — a local-only audit ledger: exactly what touches the network. By default, nothing.
+**Privacy.** A local-only audit ledger of exactly what touches the network. By default, nothing.
 
-![Echo Flow dashboard — Privacy](docs/img/dashboard-privacy.png)
+![Echo Flow dashboard, Privacy page](docs/img/dashboard-privacy.png)
 
 ---
 
@@ -249,7 +249,7 @@ below is what CI tests and is the way to go if you want to hack on it.
 - **Windows 10/11**
 - **Python 3.11+** on your PATH
 - *(Recommended)* **[Ollama](https://ollama.com)** for local LLM cleanup
-- *(Optional)* an NVIDIA GPU — Whisper uses it automatically if present
+- *(Optional)* an NVIDIA GPU, which Whisper uses automatically if present
 
 ### 1. Get the code
 ```bat
@@ -273,7 +273,7 @@ gitignored, so a clone can never inherit anyone else's settings: you start
 local-first, exactly as described below. First launch also downloads the Whisper
 model (a minute or two). When the green microphone appears in your system tray,
 you're ready. Transcription runs
-**locally** — nothing is uploaded.
+locally and nothing is uploaded.
 
 ### 4. Local LLM cleanup (recommended)
 Raw Whisper output gets a light polish from a local LLM via Ollama. Install
@@ -316,7 +316,7 @@ local Ollama. The same key powers the optional teacher-distillation loop.
 |---|---|
 | `run.bat` | Launch the daemon manually |
 | `INSTALL.bat` | First-time setup **with Windows autostart** |
-| `RESTART.bat` | Kill and relaunch — **run this after editing `config.yaml` or upgrading** |
+| `RESTART.bat` | Kill and relaunch. **Run this after editing `config.yaml` or upgrading** |
 | `run_dashboard.bat` | Open the dashboard window |
 | `UNINSTALL.bat` | Remove the autostart shortcut and optionally wipe data |
 | `scripts\run_tests.bat` | Run the pytest suite |
@@ -333,18 +333,18 @@ local Ollama. The same key powers the optional teacher-distillation loop.
 |---|---|
 | **Ctrl+Shift** (hold) | Record; release to transcribe + paste at the cursor |
 | **Ctrl+Shift+Win** (hold, release) | Re-paste the last dictation into the current window |
-| **Ctrl+Shift+Alt** | Prompt-Engineering mode — speak an idea, get a full engineered prompt |
+| **Ctrl+Shift+Alt** | Prompt-Engineering mode: speak an idea, get a full engineered prompt |
 | **Tray icon** | Pause, edit the last dictation, open the review queue, history, knowledge graph, dashboard |
 
 **It learns as you go.** Every correction you make via the tray "edit last
 dictation" dialog feeds back into cleanup. Fix `tiktok` → `TikTok` once and it
 sticks forever; teach jargon, names, and your writing style over time.
 
-**Casing.** Whisper sometimes hears a sentence as "Every Word Capitalized" —
+**Casing.** Whisper sometimes hears a sentence as "Every Word Capitalized".
 Echo lowercases mid-sentence words that aren't known proper nouns, so you get
 normal sentence case. "Known" = casings you've taught, your Dictionary terms, a
-bundled list of common brands/places/names, and `I`. Prefer fewer surprises over
-fewer stray capitals? Set `cleanup.casing.flatten_titlecase: false`.
+bundled list of common brands/places/names, and `I`. If you would rather keep the stray
+capitals than risk a surprise, set `cleanup.casing.flatten_titlecase: false`.
 
 ---
 
@@ -358,10 +358,10 @@ dashboard **Settings** pages. **Run `RESTART.bat` after editing the file directl
 | `hotkey.combo` | Push-to-talk combo (default `ctrl+shift`). |
 | `whisper.model` | `tiny` · `base` · `small` · `medium` · `large-v3-turbo` · `auto`. Bigger = more accurate, slower. |
 | `cleanup.provider` | `ollama` (local LLM, default) · `learned` (LLM-free, uses your corrections) · `none` (raw Whisper) · `groq` / `anthropic` (cloud, requires `allow_cloud_cleanup`). |
-| `cleanup.allow_cloud_cleanup` | Opt in to cloud cleanup (Groq/Anthropic) for **every** dictation — your text leaves the machine. Off by default; falls back to local Ollama if the cloud call fails or the key is missing. Needs `GROQ_API_KEY`. |
+| `cleanup.allow_cloud_cleanup` | Opt in to cloud cleanup (Groq/Anthropic) for **every** dictation, which means your text leaves the machine. Off by default; falls back to local Ollama if the cloud call fails or the key is missing. Needs `GROQ_API_KEY`. |
 | `cleanup.profiles` | App-aware cleanup styles (Slack vs VS Code vs Gmail). |
-| `cleanup.casing` | `flatten_titlecase`, `learn_from_edits`, `protect_common_nouns` — all default on. |
-| `cleanup.snippets` | Your short-code → phrase expansions. |
+| `cleanup.casing` | `flatten_titlecase`, `learn_from_edits`, `protect_common_nouns`, all on by default. |
+| `cleanup.snippets` | Your short-code to phrase expansions. |
 | `dashboard.theme` | `dark` or `light` (also togglable in the UI). |
 
 ---
@@ -372,11 +372,11 @@ Off by default under the `experimental:` block in `config.yaml`. Both layers act
 on a spoken **prefix word** (`command_prefix`, default `"computer"`). Command
 Mode runs first and falls through to Action Mode on a miss.
 
-### Command Mode — keystrokes
+### Command Mode: keystrokes
 Say `"computer, select all"`, `"computer, save"`, `"computer, scroll down"` and
 Echo fires the keystroke from an **allowlist** instead of typing the words.
 
-### Action Mode — semantic actions
+### Action Mode: semantic actions
 | Say… | It does |
 |---|---|
 | "computer, open spotify" | Launches an app from your `action_apps` allowlist (no shell-from-voice, ever) |
@@ -384,20 +384,20 @@ Echo fires the keystroke from an **allowlist** instead of typing the words.
 | "computer, search the web for …" | Opens a web search |
 | "computer, open email" | Opens your configured mail URL |
 | "computer, open downloads folder" | Opens a folder from the `action_folders` allowlist (manage it on the dashboard **Actions** page) |
-| "computer, summarize this pdf" | Summarizes the focused document with your **local** model — never a cloud call |
-| "computer, create an event lunch with Sam tomorrow" | Writes a local `.ics` **draft** — never touches a calendar API |
+| "computer, summarize this pdf" | Summarizes the focused document with your **local** model, never a cloud call |
+| "computer, create an event lunch with Sam tomorrow" | Writes a local `.ics` **draft** and never touches a calendar API |
 | "computer, take a note that the build is green" | Saves a note |
 | Media / volume | "play", "pause", "next", "previous", "mute", "volume up/down" via OS media keys |
 
 **Prefix-free** (`action_require_prefix: false`): say the verb with no wake word
-("open spotify"). It fires *only* when it resolves to a real shortcut/URL/search
-— anything else just types normally, so plain dictation is never swallowed. A
+("open spotify"). It fires *only* when it resolves to a real shortcut/URL/search.
+Anything else just types normally, so plain dictation is never swallowed. A
 mis-heard wake word (`jarvis` → "Zalvis") is tolerated via fuzzy matching.
 
 **Phrasing fallback** (`action_intent_model`, off by default): the tables above
 are matched by strict patterns, so *"launch spotify"* or *"play some music"* miss
 by a word. Turn this on and a missed command is retried by a small **local**
-intent model that recovers common synonym/filler phrasings — but every guess is
+intent model that recovers common synonym/filler phrasings, but every guess is
 re-validated through the *same* allowlist/URL guards, so it can never fire
 anything the strict path wouldn't. Set it to `shadow` to log what it *would*
 have done without acting, and use `scripts/eval_intent.py` to tune
@@ -405,14 +405,14 @@ have done without acting, and use `scripts/eval_intent.py` to tune
 Shadow) on the dashboard **Settings → Experimental** page.
 
 Two backends power that fallback (`action_intent_backend`): `keyword`
-(default — dependency-free verb-synonym rules) or `model` — a tiny local
+(the default, dependency-free verb-synonym rules) or `model`, a tiny local
 embedding + logistic-regression head that *generalizes* to phrasings no rule
 anticipated ("hush" → mute, "make a memo that…" → note). It reuses the same
 on-device sentence-transformers embedder as the RAG layer (nothing leaves the
 machine) and trains out-of-the-box from a shipped seed corpus; build or sharpen
 it with `python scripts/train_intent.py --train` (see `--eval` / `--probe`).
 
-**Safety model (non-negotiable):** the allowlist and URL-scheme checks are the
+**Safety model:** the allowlist and URL-scheme checks are the
 *sole* authority on what executes. Nothing in Action Mode deletes, sends, or
 pays. Every attempt is logged to the `voice_actions` table.
 
@@ -423,14 +423,14 @@ pays. Every attempt is logged to the `voice_actions` table.
 After each dictation, Echo Flow can re-clean the raw text via a stronger cloud
 LLM in the background and store it as a `source='teacher'` row. The pattern miner
 learns from both your edits and the teacher's, so the system improves toward a
-reference model — not just toward you. Zero added latency on the live path (the
+reference model, not just toward you. No added latency on the live path (the
 teacher runs in a daemon thread); a quality gate only persists the pair when the
 teacher grades at least as well as your version.
 
 ```bat
 setx GROQ_API_KEY "gsk_..."        :: one-time
 ```
-Then **Dashboard → Settings → Vibe → Teacher model** → enable. Bootstrap from
+Then enable it under **Dashboard → Settings → Vibe → Teacher model**. Bootstrap from
 existing history without waiting for new dictations:
 ```bat
 python scripts\backfill_teacher.py --apply --limit 500
@@ -471,7 +471,7 @@ Review the pairs at <http://127.0.0.1:8766/teacher> before trusting the loop.
 ```bat
 curl http://127.0.0.1:8766/api/healthz
 ```
-Returns daemon liveness, current phase, and which optional features are wired —
+Returns daemon liveness, current phase, and which optional features are wired,
 without exposing keys.
 
 ---
@@ -481,7 +481,7 @@ without exposing keys.
 ```
 app.py            entry point
 config.yaml       the only thing you normally edit (created on first run; gitignored)
-src/              the app — daemon, dashboard, voice pipeline
+src/              the app: daemon, dashboard, voice pipeline
   ├── main.py         daemon: hotkey, recording, transcription, dispatch
   ├── cleanup.py      LLM/learned cleanup + casing/punctuation polish
   ├── transcribe.py   Whisper wrapper
@@ -511,10 +511,10 @@ for deeper specs (start at [`docs/README.md`](docs/README.md)).
 |---|---|
 | **My fix/setting didn't take effect** | Run `RESTART.bat`. The daemon loads code & config at startup; a running process won't reflect changes until relaunched. |
 | **Whisper invents "thank you for watching" on silence** | Already guarded (length + RMS); very short/quiet clips are dropped. |
-| **Recording starts when I only wanted to re-paste** | The Ctrl+Shift+Win combo has a veto — add Win within a frame and recording aborts, paste fires instead. |
+| **Recording starts when I only wanted to re-paste** | The Ctrl+Shift+Win combo has a veto: add Win within a frame and recording aborts, paste fires instead. |
 | **Ollama "connection refused"** | Start the Ollama app or run `ollama serve`. |
 | **"Couldn't reach the local model" after every reboot** | Fixed in 0.3.2. Echo Flow autostarts at login but Ollama does not, so the daemon used to come up with its model backend down. It now starts Ollama itself when the binary is installed (`cleanup.autostart_ollama`, on by default). If it still cannot, you get rules-only cleanup and a toast saying so rather than silence. |
-| **Hotkey dead after a Windows update** | pynput's global listener sometimes needs a restart — `RESTART.bat`. |
+| **Hotkey dead after a Windows update** | pynput's global listener sometimes needs a restart. Run `RESTART.bat`. |
 | **Pasting lags in some Electron apps** | Clipboard restore runs in a background thread; usually fine, occasionally a ~100ms hiccup. |
 | **Every word comes out Capitalized** | Fixed in current code; if you still see it, `RESTART.bat` so the running daemon picks up the casing pass. |
 
@@ -522,15 +522,15 @@ for deeper specs (start at [`docs/README.md`](docs/README.md)).
 
 ## iOS
 
-A custom keyboard you install via Settings — hold to dictate, release to insert.
+A custom keyboard you install via Settings. Hold to dictate, release to insert.
 It talks to your desktop's local bridge over Wi-Fi, or falls back to on-device
-Whisper. Build needs a Mac with Xcode — see [`ios/README.md`](ios/README.md).
+Whisper. Building it needs a Mac with Xcode; see [`ios/README.md`](ios/README.md).
 
 ---
 
 ## License & cost
 
-MIT — see [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).
 
 Nothing if you run fully local. Groq is free at single-human speaking volumes.
 Anthropic/OpenAI cost real money per API call, so only use them if you want their
