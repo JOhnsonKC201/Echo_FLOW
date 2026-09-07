@@ -1,19 +1,19 @@
-# Echo Flow — Phase 14: Voice Action Layer (Spec)
+# Echo Flow Phase 14: Voice Action Layer (Spec)
 
 > **Hand this file to Claude Code in VS Code.** It is grounded in the real
 > Echo Flow architecture as of 2026-05-29. Read the referenced files before
-> writing code. Do NOT redesign the pipeline — extend it at the documented
+> writing code. Do NOT redesign the pipeline: extend it at the documented
 > seam.
 >
 > **Decisions already made (do not re-litigate):**
 > 1. **Shared `"computer"` prefix with fallthrough.** Command Mode runs first;
 >    on no-match, fall through to Action Mode. See §3.4. This requires the small
->    refactor of the Phase 13 block described there — do it carefully and keep
+>    refactor of the Phase 13 block described there: do it carefully and keep
 >    flag-off behavior byte-identical.
 > 2. **First PR ships the safe trio only:** `open_app`, `open_url`,
 >    `web_search`. `summarize_focused`, `draft_event`, and `quick_note` are
 >    deferred to a second PR. `focused_document_path()` (§3.5) is therefore NOT
->    needed in PR 1 — defer it with the summarizer.
+>    needed in PR 1: defer it with the summarizer.
 
 ---
 
@@ -22,7 +22,7 @@
 Echo Flow already turns speech into cleaned text and (optionally) into
 **keystrokes** via Phase 13 Command Mode (`src/commands.py`). This phase adds a
 new, higher-level class of voice command: **semantic actions that reach outside
-the keyboard** — "open my email", "summarize the PDF on screen", "create a
+the keyboard**: "open my email", "summarize the PDF on screen", "create a
 calendar event for 3pm tomorrow", "open Spotify", "search Google for X". These
 route to Python handlers (launch app, open URL, run a local summarizer, etc.),
 not to `pyautogui` keystrokes.
@@ -34,18 +34,18 @@ it. Command Mode stays exactly as-is.
 
 ## 1. Required reading (in this order)
 
-1. `src/commands.py` — the Phase 13 regex-first classifier + safety model. Copy
+1. `src/commands.py`: the Phase 13 regex-first classifier + safety model. Copy
    its **structure and discipline** (allowlist, regex table, `classify()`
    returning a typed tuple, `list_supported()` for the dashboard).
-2. `src/main.py` lines **543–745** (`_do_dictation`) — the live pipeline. The
-   Command Mode block is at **707–744**. Action Mode hooks in **right here**,
+2. `src/main.py` lines **543 to 745** (`_do_dictation`): the live pipeline. The
+   Command Mode block is at **707 to 744**. Action Mode hooks in **right here**,
    immediately after the Command Mode block and before scratchpad/inject.
-3. `src/actions.py` — note this file is **passive TODO extraction**, unrelated
+3. `src/actions.py`: note this file is **passive TODO extraction**, unrelated
    to "actions" in this spec. Do **not** overload it. New code goes in a new
    module `src/voice_actions.py` (named to avoid the collision).
-4. `config.yaml` lines **186–189** — the `experimental:` block where the feature
+4. `config.yaml` lines **186 to 189**: the `experimental:` block where the feature
    flag goes.
-5. `src/inject.py`, `src/notify.py`, `src/history.py` — for the injector,
+5. `src/inject.py`, `src/notify.py`, `src/history.py`: for the injector,
    `wnotify.notify(...)`, and how `log_command` is implemented (mirror it for
    `log_action`).
 
@@ -56,7 +56,7 @@ it. Command Mode stays exactly as-is.
 - **Local-first.** Echo Flow's identity is local-only. App launch, URL open,
   file ops, and local summarization need **no cloud**. Any handler that *would*
   need a cloud call (e.g. LLM summarization beyond the local Ollama model) must
-  be opt-in and use the existing provider routing in `src/cleanup.py` — never a
+  be opt-in and use the existing provider routing in `src/cleanup.py`, never a
   new direct API call.
 - **Off by default.** New flag `experimental.action_mode: false`.
 - **Prefix-gated, like Command Mode.** Reuse the same prefix word
@@ -133,7 +133,7 @@ Implement these handlers. Keep the regex anchored (`^`) like `commands.py`:
 | "search (google\|the web) for <query>"   | `web_search`   | Opens `https://www.google.com/search?q=<query>` (urlencoded)             |
 | "summarize (this\|the) (pdf\|document\|page)" | `summarize_focused` | Resolve focused doc → extract text → local Ollama summary → show in editor/notify |
 | "create a (calendar )?event <details>"   | `draft_event`  | Build an `.ics` draft in `data/drafts/` and `os.startfile` it (opens default calendar). **Draft only.** |
-| "take a note <body>"                     | `quick_note`   | Append to the Notes store (reuse `src/notes.py` if present) — no network  |
+| "take a note <body>"                     | `quick_note`   | Append to the Notes store (reuse `src/notes.py` if present), no network  |
 
 > Start with `open_app`, `open_url`, `web_search` (pure stdlib, zero risk).
 > Then `summarize_focused` (reuses `self.cleaner`). Then `draft_event` /
@@ -149,7 +149,7 @@ Implement these handlers. Keep the regex anchored (`^`) like `commands.py`:
 - `web_search`: `urllib.parse.quote_plus` the query. Always `https`.
 - `summarize_focused`: if `focused_path` is None or not a readable
   `.pdf/.txt/.md/.docx` → notify "No document I can read is focused." For PDF,
-  lazy-import `pymupdf` (already used elsewhere in your work — confirm it's in
+  lazy-import `pymupdf` (already used elsewhere in your work, so confirm it's in
   `requirements.txt`; if not, degrade gracefully).
 - `draft_event`: parse date/time best-effort (lazy-import `dateparser` if
   available; otherwise default to "tomorrow 9am" and say so). Write `.ics`,
@@ -185,7 +185,7 @@ if exp_cfg.get("action_mode"):
                 self.tray.set_state("ok" if not self._paused else "paused")
             return   # actions never leave a paste behind
         # else: fall through. Do NOT notify "unknown" here if command_mode
-        # might still want it — but since action_mode is its own prefix space,
+        # might still want it, but since action_mode is its own prefix space,
         # an unknown action SHOULD notify, matching Command Mode's UX.
 ```
 
@@ -202,7 +202,7 @@ keep Command Mode's existing behavior identical when `action_mode` is off.
 Add to `src/inject.py` a best-effort `focused_document_path() -> str | None`
 that, on Windows, tries to resolve the file path of the foreground window's
 document (e.g. via the window title + known app heuristics, or UI Automation if
-already available). Return `None` when it can't — handlers must tolerate None.
+already available). Return `None` when it can't: handlers must tolerate None.
 **Do not block the hot path**; this only runs when an action actually fires.
 
 ### 3.6 Config additions (`config.yaml`, in the `experimental:` block)
@@ -212,7 +212,7 @@ experimental:
   press_enter_command: false
   command_mode: false
   command_prefix: "computer"
-  action_mode: false              # Phase 14 — semantic voice actions
+  action_mode: false              # Phase 14: semantic voice actions
   action_apps:                    # name (as spoken) -> launch target
     spotify: "spotify"            # resolved via shutil.which / Start Menu
     notepad: "notepad.exe"
@@ -234,7 +234,7 @@ experimental:
 - [ ] Every action attempt is logged to `voice_actions` (ok and fail).
 - [ ] Every handler catches its own exceptions and returns `(False, msg)`.
 - [ ] Unknown action under the prefix notifies the user (no silent paste).
-- [ ] Plain dictation (no prefix) can never trigger an action — test it.
+- [ ] Plain dictation (no prefix) can never trigger an action: test it.
 
 ---
 
@@ -259,7 +259,7 @@ Follow the existing test style in `tests/`. At minimum:
    - `summarize_focused` with `focused_path=None` → `(False, ...)`, no crash
 3. `test_main_action_mode_off.py`
    - with `action_mode: false`, a "computer open spotify" dictation still pastes
-     text (or is handled by Command Mode) exactly as before — Action Mode is inert
+     text (or is handled by Command Mode) exactly as before: Action Mode is inert
 
 Run: `scripts/run_tests.bat` (or `python -m pytest tests/ -q`).
 
@@ -269,14 +269,14 @@ Run: `scripts/run_tests.bat` (or `python -m pytest tests/ -q`).
 
 The dashboard has an "experimental panel" that calls `commands.list_supported()`.
 Add an Action Mode section that calls `voice_actions.list_supported(cfg)` and an
-editor for the `action_apps` map. Out of scope for the first PR — land the engine
+editor for the `action_apps` map. Out of scope for the first PR: land the engine
 + tests first.
 
 ---
 
 ## 7. Stretch: LoRA intent classifier (do NOT build in v1)
 
-Regex is the right v1 — it's debuggable and zero-latency. Once you have ~100+
+Regex is the right v1: it's debuggable and zero-latency. Once you have ~100+
 logged `voice_actions` rows, you can train a tiny intent classifier (you already
 have `scripts/train_lora.py`) to handle phrasings the regex misses, with regex
 as the high-precision fast path and the model as fallback. Keep this behind a
@@ -293,7 +293,7 @@ separate flag and out of the first PR. Note it in CHANGELOG as "future".
    `src/main.py` (§3.4).
 4. Config additions in `config.yaml` (`action_mode`, `action_apps`,
    `action_email_url`; `action_summary_max_chars` can wait for PR 2).
-5. Tests in `tests/` (sections 5.1–5.3, minus the `summarize_focused` cases).
+5. Tests in `tests/` (sections 5.1 to 5.3, minus the `summarize_focused` cases).
 6. CHANGELOG.md entry + a short note in README.md "Experimental" section.
 
 **Deferred to PR 2:** `focused_document_path()` (§3.5), `summarize_focused`,

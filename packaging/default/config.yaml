@@ -1,4 +1,4 @@
-# Echo Flow — local config
+# Echo Flow local config
 
 hotkey:
   # Push-to-talk: hold this combo to record. Release to transcribe.
@@ -45,7 +45,7 @@ cleanup:
   enabled: true
   provider: ollama          # ollama | learned | none | groq | anthropic.
   # Cloud cleanup opt-in. When true, a cloud provider (groq/anthropic) named
-  # above is used for EVERY dictation's cleanup — your dictation text leaves the
+  # above is used for EVERY dictation's cleanup: your dictation text leaves the
   # machine. Off keeps regular cleanup local (cloud only in PE mode). If the
   # cloud call fails or its API key is missing, cleanup falls back to local
   # Ollama so dictation never breaks. Requires GROQ_API_KEY for groq.
@@ -67,14 +67,14 @@ cleanup:
   # the common case. Set false to force LLM polish on every dictation.
   skip_when_clean: true
   # Verify-and-improve: after a "polished" cleanup, grade the result locally
-  # (src/grade.py — no network). If it scores below min_score, run a second
+  # (src/grade.py, no network). If it scores below min_score, run a second
   # improvement pass and keep whichever pass grades higher (a worse retry can
   # never replace a better first pass). Only runs for the polished style.
   verify:
     enabled: true          # grade polished output and re-clean if weak
-    min_score: 55          # 0–100; below this, trigger the improvement pass
+    min_score: 55          # 0 to 100; below this, trigger the improvement pass
     # Use the stronger CLOUD model (Groq, via the teacher path) for pass 2.
-    # OFF by default — regular dictation stays 100% local. Needs GROQ_API_KEY
+    # OFF by default: regular dictation stays 100% local. Needs GROQ_API_KEY
     # and is the same opt-in trust decision as learning.teacher_enabled.
     escalate_cloud: false
   # Casing control. Echo learns canonical word casings from your in-app
@@ -101,11 +101,11 @@ cleanup:
     teacher_enabled: false   # opt-in; flip in dashboard once you trust the loop
     teacher_model: ""        # blank = use cleanup.groq.model; or pin e.g. "llama-3.3-70b-versatile"
     teacher_min_chars: 30    # skip trivially-short dictations to save quota
-    teacher_sample_rate: 1.0 # 0.0–1.0; fraction of dictations to send to teacher
+    teacher_sample_rate: 1.0 # 0.0 to 1.0; fraction of dictations to send to teacher
     teacher_quality_gate: true   # only persist teacher pair if it grades >= user pair
     teacher_as_fallback: true    # use teacher as last-resort cleanup if local providers fail
     trust_teacher: true      # include teacher pairs as few-shot examples + vocab source
-    trust_mobile: false      # include mobile-bridge pairs (default OFF — untrusted LAN)
+    trust_mobile: false      # include mobile-bridge pairs (default OFF, untrusted LAN)
     # RAG retrieval: pick SEMANTICALLY similar past dictations (smarter than recency)
     retrieval:
       enabled: true
@@ -113,7 +113,7 @@ cleanup:
       backfill_on_startup: true
   ollama:
     base_url: "http://localhost:11434"
-    model: "qwen2.5:3b-instruct-q4_K_M"   # 3B Q4 (~2 GB VRAM) — leaves headroom for Whisper on an 8 GB RTX 5060. Previously qwen3.5:latest (6.5 GB).
+    model: "qwen2.5:3b-instruct-q4_K_M"   # 3B Q4 (~2 GB VRAM), leaves headroom for Whisper on an 8 GB RTX 5060. Previously qwen3.5:latest (6.5 GB).
     timeout_sec: 8.0        # tight cleanup timeout; fallback chain catches stalls
     keep_alive: "8h"        # how long Ollama keeps the model resident after a call.
     # Was "10m", which meant any gap longer than a coffee break paid a ~2.0s
@@ -122,13 +122,13 @@ cleanup:
     # clean latency gradient: 1144ms median warm vs 1860ms after a >10m gap.
     # The cost of holding it is ~2.4 GB of VRAM; see the budget in
     # src/transcribe.py. Lower it if you need that VRAM back for something else.
-  # Cloud — used ONLY by Prompt-Engineering mode (Ctrl+Shift+Alt). Regular
+  # Cloud: used ONLY by Prompt-Engineering mode (Ctrl+Shift+Alt). Regular
   # dictation never calls Groq. Reads GROQ_API_KEY from the environment.
   groq:
     base_url: "https://api.groq.com/openai/v1/chat/completions"
     model: "llama-3.3-70b-versatile"   # fast + capable for PE rewrites
     timeout_sec: 12.0
-  # Cloud — Anthropic, used ONLY by Prompt-Engineering mode when
+  # Cloud (Anthropic): used ONLY by Prompt-Engineering mode when
   # prompt_engineering.provider = "anthropic". Reads ANTHROPIC_API_KEY.
   anthropic:
     base_url: "https://api.anthropic.com/v1/messages"
@@ -142,15 +142,15 @@ cleanup:
     min_ngram_confidence: 0.75     # multi-word phrase fixes ("note to vec"->"node2vec"): stricter bar than single words
     min_ngram_total: 2             # and require the phrase mishearing to have been seen at least this often
     fallback_to_ollama: true       # if no high-confidence fix found, fall back to ollama for this dictation
-  # A/B provider shadow testing — runs an alternate provider in the background
+  # A/B provider shadow testing: runs an alternate provider in the background
   # on each dictation, grades both, and logs the comparison to provider_ab_log.
-  # The primary (current `provider`) is what gets pasted — A/B is observational.
+  # The primary (current `provider`) is what gets pasted: A/B is observational.
   # Useful for deciding whether `learned` is ready to replace `ollama`.
   ab_test:
     enabled: false                  # opt-in
     alternate: "learned"            # provider to compare against the primary
 
-  # Snippet expansion — short codes → full phrases. Applied AFTER LLM cleanup
+  # Snippet expansion: short codes → full phrases. Applied AFTER LLM cleanup
   # so the model doesn't try to "correct" them back. Case-aware: dictating
   # "Btw" yields "By the way", "BTW" yields "BY THE WAY", "btw" → "by the way".
   # Word-boundary matched: "btw" inside "btwise" is left alone.
@@ -168,14 +168,14 @@ cleanup:
 
   # Profile picked based on focused window title (substring match, first hit wins)
   # Styles: polished | medium | default | code | casual | email
-  #   polished — heaviest: fixes grammar + restructures rambling speech into
+  #   polished: heaviest, fixes grammar + restructures rambling speech into
   #              clean sentences, preserving meaning.
-  #   medium   — fixes grammar properly (tense, agreement, articles) plus
+  #   medium:   fixes grammar properly (tense, agreement, articles) plus
   #              punctuation and fillers, but keeps your wording, hedges, and
   #              sentence flow. Never compresses or restructures.
-  #   default  — light-touch proofread: punctuation, casing, small obvious
+  #   default:  light-touch proofread: punctuation, casing, small obvious
   #              grammar slips, fillers only.
-  # 2026-07-26: all profiles use "medium" per user preference — polished
+  # 2026-07-26: all profiles use "medium" per user preference: polished
   # rewrote too hard ("feels like AI"), default was too light. Re-differentiate
   # per-app styles in Dashboard → Style.
   profiles:
@@ -188,7 +188,7 @@ cleanup:
     - match: []
       style: "medium"
 
-# Prompt Engineering mode — when enabled via tray toggle or one-shot hotkey,
+# Prompt Engineering mode: when enabled via tray toggle or one-shot hotkey,
 # the next dictation is rewritten into a full engineered prompt (constraints,
 # requirements, output format) instead of just cleaned. Designed for sending
 # short spoken ideas to Claude Code / ChatGPT.
@@ -197,8 +197,8 @@ prompt_engineering:
   provider: groq               # PE mode allowed to use cloud (Groq). Regular dictation stays local.
   fallback_provider: "ollama"    # invoked only if Groq raises (no key, rate-limit, network)
   oneshot_combo: "ctrl+shift+alt"  # arm prompt mode for the NEXT dictation only; "" to disable
-  audience: claude-code        # claude-code | chatgpt | generic — picks system-prompt variant
-  style: simple                # simple | reflection | chain_of_thought — the technique PE applies. 'simple' cleans your dictation into a faithful, well-phrased request. 'reflection' wraps it in Draft→Reflect→Refine steps so the receiving agent self-critiques. 'chain_of_thought' wraps it in brainstorm→methodology→score→build steps. The two scaffolds EXPAND the request (that's the point) and keep your actual task faithful — no invented requirements.
+  audience: claude-code        # claude-code | chatgpt | generic. Picks the system-prompt variant
+  style: simple                # simple | reflection | chain_of_thought. The technique PE applies. 'simple' cleans your dictation into a faithful, well-phrased request. 'reflection' wraps it in Draft→Reflect→Refine steps so the receiving agent self-critiques. 'chain_of_thought' wraps it in brainstorm→methodology→score→build steps. The two scaffolds EXPAND the request (that's the point) and keep your actual task faithful, with no invented requirements.
   max_output_tokens: 700         # room for richer polish on complex multi-component dictations without inviting PRD-style padding
 
 inject:
@@ -224,13 +224,13 @@ mobile:
   default_style: "casual"     # used when the phone doesn't pass ?style=
   trust_for_rag: false        # if true, mobile dictations are eligible as RAG few-shot examples. OFF by default to prevent prompt poisoning from a compromised phone.
 
-# Desktop dashboard — local Flask app with PyWebView native window.
+# Desktop dashboard: local Flask app with PyWebView native window.
 # Runs as a daemon thread inside the main Echo Flow process. Bound to
 # 127.0.0.1 only; the loopback boundary is the auth model. Open via the
 # tray "Open Dashboard" item, or run `run_dashboard.bat`.
 dashboard:
   enabled: true
-  host: "127.0.0.1"           # NEVER bind to 0.0.0.0 — same-machine trust only.
+  host: "127.0.0.1"           # NEVER bind to 0.0.0.0: same-machine trust only.
   port: 8766                  # Auto-fallback to 8767..8770 if busy.
   theme: light               # dark | light
   accent_color: ""           # Dashboard accent (#rrggbb) from Settings → General.
@@ -242,7 +242,7 @@ dashboard:
   open_hotkey: "<ctrl>+<cmd>"  # Global hotkey to open the dashboard window (Ctrl+Win). Set "" to disable.
   onboarded: false            # Phase 11 first-run tour gate; flips true after /onboarding/finish.
 
-# Self-update check — the ONE network call Echo Flow can make about itself, and
+# Self-update check: the ONE network call Echo Flow can make about itself, and
 # it is OFF by default. When check_on_startup is true, the daemon performs a
 # single anonymous HTTPS GET to the GitHub releases API at launch to see whether
 # a newer version exists (no history, config, or identifiers are ever sent). The
@@ -255,10 +255,10 @@ update:
 # Settings → Experimental panel. These ship in later phases; toggling
 # them now persists the preference but has no runtime effect yet.
 experimental:
-  press_enter_command: false   # Phase 12 — "press enter" / "send it" trailing trigger
-  command_mode: false          # Phase 13 — full voice command mode
-  command_prefix: computer   # Phase 13 — dictations starting with this word are interpreted as commands
-  action_mode: false           # Phase 14 — semantic voice actions (open app/url, web search). Shares command_prefix.
+  press_enter_command: false   # Phase 12: "press enter" / "send it" trailing trigger
+  command_mode: false          # Phase 13: full voice command mode
+  command_prefix: computer   # Phase 13: dictations starting with this word are interpreted as commands
+  action_mode: false           # Phase 14: semantic voice actions (open app/url, web search). Shares command_prefix.
   action_require_prefix: true # false = say the verb alone ("open spotify"); fires only when it resolves (configured app/folder or valid URL/search), else types normally. true = require the prefix word.
   action_apps:                 # name (as spoken) -> launch target: a PATH exe, Start-menu alias, or a URL
     spotify: "spotify"
@@ -271,33 +271,33 @@ experimental:
     downloads: "%USERPROFILE%\\Downloads"
     documents: "%USERPROFILE%\\Documents"
     desktop: "%USERPROFILE%\\Desktop"
-  action_intent_model: false       # regex-miss fallback for mis-phrased actions ("launch spotify"). false | true | shadow. 'shadow' logs the model's guess WITHOUT executing, so you can measure precision before trusting it. Every guess is re-validated through the same allowlist/URL guards as the regex path — the model can never fire anything the regex wouldn't.
-  action_intent_min_conf: 0.75     # confidence floor for the 'keyword' backend (rule confidences are ~0.8–0.9). The 'model' backend uses action_intent_model_min_conf instead. Tune with scripts/eval_intent.py.
+  action_intent_model: false       # regex-miss fallback for mis-phrased actions ("launch spotify"). false | true | shadow. 'shadow' logs the model's guess WITHOUT executing, so you can measure precision before trusting it. Every guess is re-validated through the same allowlist/URL guards as the regex path: the model can never fire anything the regex wouldn't.
+  action_intent_min_conf: 0.75     # confidence floor for the 'keyword' backend (rule confidences are ~0.8 to 0.9). The 'model' backend uses action_intent_model_min_conf instead. Tune with scripts/eval_intent.py.
   action_intent_backend: keyword   # which predictor: 'keyword' (dependency-free verb-synonym rules) or 'model' (learned embedding + logistic-regression head; generalizes to unseen phrasings, uses the local sentence-transformers embedder). Build the model with: python scripts/train_intent.py --train
   action_intent_model_path: "data/intent_model.npz"  # where the trained 'model' backend artifact is cached.
   action_intent_model_min_conf: 0.4  # confidence floor for the 'model' backend (a 13-class softmax; correct predictions cluster ~0.5, so this is lower than the keyword floor). Tune with: python scripts/train_intent.py --eval
-  humanize: false              # "My Voice" — after cleanup, rewrite the text in YOUR writing voice. false | true | shadow. 'shadow' logs what it WOULD produce (dashboard → My Voice) without changing the pasted text, so you can review precision before trusting 'true'. Seed your voice by pasting writing samples on the My Voice page. Light-touch: preserves meaning exactly, and is dropped if it drifts. Off by default.
+  humanize: false              # "My Voice": after cleanup, rewrite the text in YOUR writing voice. false | true | shadow. 'shadow' logs what it WOULD produce (dashboard → My Voice) without changing the pasted text, so you can review precision before trusting 'true'. Seed your voice by pasting writing samples on the My Voice page. Light-touch: preserves meaning exactly, and is dropped if it drifts. Off by default.
   humanize_use_cloud: false    # use a cloud model (Groq/Anthropic) for stronger voice mimicry. ALSO requires cleanup.allow_cloud_cleanup; otherwise the rewrite stays on the local Ollama model and nothing leaves the machine.
-  humanize_log_verbose: false  # log the humanize pass's full text to the rotating log files; default redacts prose to a length placeholder. The dashboard review always shows the real text — this only governs log files.
+  humanize_log_verbose: false  # log the humanize pass's full text to the rotating log files; default redacts prose to a length placeholder. The dashboard review always shows the real text: this only governs log files.
   humanize_min_sim: 0.85       # meaning-preservation floor: keep the rewrite only if it stays at least this cosine-similar to the cleaned text. Higher = stricter (safer meaning, less voice).
   # The PASTE-IN humanizer (dashboard → My Voice → Humanize). Separate knobs from
   # the four above on purpose: those govern the light-touch pass over your own
   # dictation, this governs rewriting AI-written text you paste in. That is real
   # rewriting, so it needs looser guards and far more time than a one-sentence
-  # cleanup. Always on — it only ever runs when you click the button.
-  humanize_text_model: ""  # Ollama model for the paste-in rewrite; blank uses cleanup.ollama.model. The dictation model is kept at 3B to leave VRAM for Whisper, but this pass runs off the hot path (you press a button), so a stronger local model is usually worth it — e.g. "qwen3.5:latest". Run `ollama list` to see what you have.
+  # cleanup. Always on: it only ever runs when you click the button.
+  humanize_text_model: ""  # Ollama model for the paste-in rewrite; blank uses cleanup.ollama.model. The dictation model is kept at 3B to leave VRAM for Whisper, but this pass runs off the hot path (you press a button), so a stronger local model is usually worth it, e.g. "qwen3.5:latest". Run `ollama list` to see what you have.
   humanize_text_timeout_sec: 45.0   # total budget for the whole paste. Text is rewritten one paragraph at a time; when the budget runs out the remaining paragraphs come back unchanged rather than half-written. Bigger models need more.
   humanize_text_min_sim: 0.65       # meaning floor for the paste-in rewrite. Lower than humanize_min_sim because de-AI-ing text legitimately changes far more wording. Raise it if rewrites drift.
   humanize_text_max_chars: 6000     # largest single paste accepted. Bigger pastes are refused up front rather than silently truncated.
   humanize_text_escalate_model: "auto"  # when the main model mangles a paragraph, retry it ONCE on a stronger installed model before keeping your original. "auto" picks the next-step-up model by size (won't jump to one too big for your GPU); a name like "qwen3.5:latest" pins one; "" disables.
-  humanize_text_delete_first: true      # before rewriting, deterministically CUT the sentences that do no work — topic-announcement openers, empty-optimism closers, pure throat-clearing. Most of the de-AI win is this subtraction; the result lists what was removed. Sentences with numbers or proper nouns are protected. Set false to disable.
-  humanize_text_protect_spans: true     # hard-exclude zones: any SENTENCE carrying a number, hyperparameter, split, citation, quote, or code is held byte-for-byte and never sent to the model — only the free-prose sentences around it are rewritten. Structural, not a prompt: no local model reliably preserves an inline placeholder, so keeping the whole sentence is the honest guarantee. Essential for methods sections. Set false to let the model touch everything.
+  humanize_text_delete_first: true      # before rewriting, deterministically CUT the sentences that do no work: topic-announcement openers, empty-optimism closers, pure throat-clearing. Most of the de-AI win is this subtraction; the result lists what was removed. Sentences with numbers or proper nouns are protected. Set false to disable.
+  humanize_text_protect_spans: true     # hard-exclude zones: any SENTENCE carrying a number, hyperparameter, split, citation, quote, or code is held byte-for-byte and never sent to the model. Only the free-prose sentences around it are rewritten. Structural, not a prompt: no local model reliably preserves an inline placeholder, so keeping the whole sentence is the honest guarantee. Essential for methods sections. Set false to let the model touch everything.
 
 logging:
   level: "INFO"
 
 # Auto-phasing (local-only):
-#   Phase 1 Independent      (0 – self_sufficient_after): Local Whisper + Ollama cleanup
+#   Phase 1 Independent      (0 to self_sufficient_after): Local Whisper + Ollama cleanup
 #   Phase 2 Self-Sufficient  (>= self_sufficient_after, with enough learned patterns + quality):
 #                                                          Local Whisper + LLM-free cleanup
 # If Ollama is unreachable, falls back to raw Whisper output.

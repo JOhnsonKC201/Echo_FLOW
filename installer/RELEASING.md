@@ -14,7 +14,7 @@ job fails fast if the pushed tag doesn't match it, so bump it first:
 __version__ = "0.2.1"
 ```
 
-The Inno scripts no longer hardcode the version for releases — CI passes it via
+The Inno scripts no longer hardcode the version for releases: CI passes it via
 `iscc /DMyAppVersion=<ver>` (the `#define` in the `.iss` is only a fallback for
 manual local builds). Update the README badge if you want it exact (cosmetic).
 
@@ -61,7 +61,7 @@ The tag push triggers the `release` workflow on a `windows-latest` runner. It:
 2. builds the daemon bundle (`EchoFlow-Daemon.spec`) with PyInstaller,
 3. signs it **if** the `CODESIGN_PFX_BASE64` secret is set (see below),
 4. zips the bundle into the web-installer **payload** (`EchoFlow-Daemon-Payload-<ver>.zip`) and hashes it,
-5. builds **two** installers with Inno Setup — the full offline
+5. builds **two** installers with Inno Setup: the full offline
    `EchoFlow-Daemon-Setup` and the tiny `EchoFlow-Web-Setup` bootstrapper
    (the latter pinned to the payload's URL + SHA256),
 6. signs both installers (same secret condition),
@@ -74,9 +74,9 @@ The tag push triggers the `release` workflow on a `windows-latest` runner. It:
 > so they're interchangeable for the user.
 
 > The daemon bundles the full ML/audio stack (faster-whisper, ctranslate2,
-> sentence-transformers, etc.), so the runner build takes ~15–25 min and the
+> sentence-transformers, etc.), so the runner build takes ~15 to 25 min and the
 > installer is large (hundreds of MB). Whisper model weights are **not**
-> bundled — they download on first launch.
+> bundled: they download on first launch.
 
 ## 3. Review and publish
 
@@ -96,15 +96,15 @@ anyway") until the publisher builds reputation. To sign automatically:
 
 1. Obtain an OV/EV code-signing cert and export a `.pfx` (see `SIGNING.md`).
 2. Base64-encode it and add repo secrets:
-   - `CODESIGN_PFX_BASE64` — `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx"))`
-   - `CODESIGN_PFX_PASSWORD` — the .pfx password
-3. That's it — the two signing steps detect the secret and run `installer/sign.ps1`
+   - `CODESIGN_PFX_BASE64`: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx"))`
+   - `CODESIGN_PFX_PASSWORD`: the .pfx password
+3. That's it: the two signing steps detect the secret and run `installer/sign.ps1`
    automatically; no workflow edits needed.
 
 ## 5. winget
 
 After publishing the release, update and submit the manifest under
-`packaging/winget/` — see [`packaging/winget/README.md`](../packaging/winget/README.md).
+`packaging/winget/`: see [`packaging/winget/README.md`](../packaging/winget/README.md).
 `wingetcreate update JOhnsonKC201.EchoFlow --version <ver> --urls <asset-url> --submit`
 is the one-liner.
 

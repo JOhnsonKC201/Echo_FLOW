@@ -1,13 +1,13 @@
 # Echo Flow Desktop Dashboard
 
-A native desktop window for managing Echo Flow — history, insights, custom
+A native desktop window for managing Echo Flow: history, insights, custom
 vocabulary, snippets, style profiles, transforms, scratchpads, settings, and
 notifications. Inspired by Wispr Flow's IA, built entirely local-first.
 
 ## Design principles
 
 - **Computer-first.** Desktop user is the trusted primary. The dashboard
-  binds to `127.0.0.1` only — no auth, because the loopback boundary is
+  binds to `127.0.0.1` only: no auth, because the loopback boundary is
   the auth model. Anyone on this machine can already read `config.yaml`
   and inject keystrokes; no extra protection helps.
 - **Never blocks dictation.** The Flask server runs in a daemon thread.
@@ -33,8 +33,8 @@ always find the right one.
 Three ways:
 
 1. **Tray → Open Dashboard** (recommended). Spawns the window subprocess.
-2. **`run_dashboard.bat`** — same effect; useful for a Start Menu shortcut.
-3. **Browser fallback** — if PyWebView or WebView2 are missing,
+2. **`run_dashboard.bat`**: same effect; useful for a Start Menu shortcut.
+3. **Browser fallback**: if PyWebView or WebView2 are missing,
    `webbrowser.open("http://127.0.0.1:<port>/")`.
 
 ## Configuration
@@ -51,8 +51,8 @@ dashboard:
 ## Requirements
 
 - `flask>=3.0` (already a dep for the mobile bridge)
-- `jinja2>=3` (Flask's template engine — usually pulled in transitively)
-- `pywebview>=5.0` (Windows and macOS) — needs WebView2 runtime, which ships
+- `jinja2>=3` (Flask's template engine, usually pulled in transitively)
+- `pywebview>=5.0` (Windows and macOS): needs WebView2 runtime, which ships
   with Windows 11. On Windows 10 install from
   <https://developer.microsoft.com/microsoft-edge/webview2/>.
 
@@ -68,7 +68,7 @@ the Echo Flow icon.
 
 ## Security
 
-- Bound to `127.0.0.1` — local-machine attackers only.
+- Bound to `127.0.0.1`: local-machine attackers only.
 - `Host:` header is checked on every request; anything not in
   `{127.0.0.1, localhost}:{port..port+4}` returns HTTP 400. Cheap defense
   against DNS-rebinding from a malicious webpage.
@@ -78,5 +78,5 @@ the Echo Flow icon.
 
 ## Phased rollout
 
-Phase 0 (this commit): shell only — sidebar nav + 9 placeholder sections.
+Phase 0 (this commit): shell only: sidebar nav + 9 placeholder sections.
 Subsequent phases fill them in one at a time.

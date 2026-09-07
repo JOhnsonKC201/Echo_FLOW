@@ -1,7 +1,7 @@
-# Echo Flow — Windows Distribution
+# Echo Flow Windows Distribution
 
 Echo Flow ships as **two** installable artifacts. End users should grab the
-**daemon installer** — it's the full product. The dashboard-only installer
+**daemon installer**: it's the full product. The dashboard-only installer
 exists for users who already run the daemon some other way (dev checkout,
 `run_silent.vbs`, etc.) and just want the visual shell.
 
@@ -12,7 +12,7 @@ exists for users who already run the daemon some other way (dev checkout,
 | `EchoFlow-Setup-<ver>.exe`                 | Dashboard shell only (`app.py` PyInstaller bundle) | Devs / users running the daemon raw   |
 
 > The full and web installers share the same `AppId` and install location, so
-> they resolve to one entry in Apps & Features — installing one upgrades/replaces
+> they resolve to one entry in Apps & Features: installing one upgrades/replaces
 > the other rather than producing a duplicate. The web installer fetches
 > `EchoFlow-Daemon-Payload-<ver>.zip` (also published on the release) and extracts
 > it into the install dir; total bytes are similar to the full installer, but the
@@ -48,9 +48,9 @@ This runs PyInstaller twice in sequence and reports per-stage timing:
 
 Flags:
 
-- `-Clean`           — pass `--clean` through to PyInstaller.
-- `-SkipDashboard`   — only rebuild the daemon.
-- `-SkipDaemon`      — only rebuild the dashboard shell.
+- `-Clean`:           pass `--clean` through to PyInstaller.
+- `-SkipDashboard`:   only rebuild the daemon.
+- `-SkipDaemon`:      only rebuild the dashboard shell.
 
 ## Building the installers
 
@@ -77,18 +77,18 @@ Compress-Archive -Path dist\EchoFlow-Daemon\* `
 iscc /DMyAppVersion=<ver> installer\EchoFlow-Web-Setup.iss
 ```
 
-In a tagged release the whole thing is automated — see
+In a tagged release the whole thing is automated: see
 [`RELEASING.md`](./RELEASING.md). Requires Inno Setup **6.1+** for the native
 download API.
 
 ## What the daemon installer wires up
 
 - Per-user install at `%LOCALAPPDATA%\Programs\EchoFlow`.
-- Optional **Auto-start on login** task — writes
+- Optional **Auto-start on login** task: writes
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\EchoFlow` pointing
   at `EchoFlow-Daemon.exe` (this replaces the dev-grade `run_silent.vbs`
   flow once the user is on the bundled exe).
-- Optional **Launch now** task — starts the daemon when setup finishes.
+- Optional **Launch now** task: starts the daemon when setup finishes.
 - Optional Start Menu and Desktop shortcuts.
 - Uninstall handler that stops a running daemon via PowerShell
   `Stop-Process` before deleting files (so files aren't locked).
