@@ -49,7 +49,7 @@ struct ContentView: View {
                 } header: {
                     Text("Groq API key")
                 } footer: {
-                    Text("Free at console.groq.com — no credit card. The key is stored in a shared app group so the keyboard can read it.")
+                    Text("Free at console.groq.com, no credit card. The key is stored in a shared app group so the keyboard can read it.")
                 }
 
                 Section("Transcription backend") {
@@ -126,7 +126,7 @@ struct ContentView: View {
     private var micStatusLabel: String {
         switch micStatus {
         case .granted: return "Granted"
-        case .denied: return "Denied — enable in Settings"
+        case .denied: return "Denied. Enable in Settings"
         case .undetermined: return "Not requested yet"
         @unknown default: return "Unknown"
         }
