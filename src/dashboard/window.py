@@ -18,6 +18,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from .. import hostos
+
 
 _STATE_FILE = Path(__file__).resolve().parent.parent.parent / "data" / "dashboard_window.json"
 
@@ -63,14 +65,8 @@ _SPLASH_HTML = """<!doctype html>
 
 
 def _primary_screen_size() -> tuple[int, int]:
-    """Best-effort primary monitor size (Windows-only). Falls back to 1920x1080."""
-    try:
-        import ctypes
-        user32 = ctypes.windll.user32
-        user32.SetProcessDPIAware()
-        return int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
-    except Exception:
-        return 1920, 1080
+    """Best-effort primary monitor size. Falls back to 1920x1080."""
+    return hostos.screen_size() or (1920, 1080)
 
 
 def _load_window_state() -> dict:

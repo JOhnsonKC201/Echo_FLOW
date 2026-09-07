@@ -87,14 +87,15 @@ def test_volume_presses_multiple_times():
 # --- dispatch: open_folder ---------------------------------------------------
 
 def test_open_folder_allowlisted(tmp_path, monkeypatch):
-    started = []
-    monkeypatch.setattr("os.startfile", lambda p: started.append(p), raising=False)
+    from src import hostos
+    opened = []
+    # The OS opener (startfile / open / xdg-open) sits behind one seam.
+    monkeypatch.setattr(hostos, "open_path", lambda p, platform=None: opened.append(p))
     ctx = _ctx(folders={"docs": str(tmp_path)})
     ok, msg = va.dispatch(va.ActionMatch("open_folder", "Open docs", {"folder": "docs"}), ctx)
-    # On win32 startfile is mocked; on other platforms it returns the
-    # not-supported message. Either way it must not crash and must resolve the
-    # allowlisted dir.
-    assert ("docs" in msg) or ok
+    assert ok is True
+    assert opened == [str(tmp_path)]
+    assert "docs" in msg
 
 
 def test_open_folder_unconfigured_fails():

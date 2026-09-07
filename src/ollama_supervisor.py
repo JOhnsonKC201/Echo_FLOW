@@ -36,6 +36,8 @@ from typing import Callable, Iterable
 
 import requests
 
+from . import hostos
+
 _log = logging.getLogger(__name__)
 
 # Ollama's Windows installer is per-user and lands in LOCALAPPDATA. "ollama
@@ -50,6 +52,17 @@ _SERVER_RELATIVE = Path("Programs") / "Ollama" / "ollama.exe"
 _EXTRA_DIRS = (
     Path(r"C:\Program Files\Ollama"),
     Path(r"C:\Program Files (x86)\Ollama"),
+)
+
+# macOS: the menu bar app (preferred, it starts the server and shows the
+# icon the user expects), then the Homebrew and pkg-installed command-line
+# binaries. A GUI-launched process sees a minimal PATH, so these are checked
+# explicitly before `which`.
+_MAC_CANDIDATES = (
+    Path("/Applications/Ollama.app"),
+    Path.home() / "Applications" / "Ollama.app",
+    Path("/opt/homebrew/bin/ollama"),
+    Path("/usr/local/bin/ollama"),
 )
 
 
@@ -84,6 +97,18 @@ def _candidate_paths() -> Iterable[Path]:
     for d in _EXTRA_DIRS:
         yield d / "ollama app.exe"
         yield d / "ollama.exe"
+    if hostos.is_mac():
+        yield from _MAC_CANDIDATES
+
+
+def _is_installed(p: Path) -> bool:
+    """A binary, or on macOS an .app bundle (a directory `open -a` launches).
+
+    Only the filesystem probe may raise (OSError, which the caller skips); a
+    path-like without `suffix` must not turn into an AttributeError."""
+    if getattr(p, "suffix", "") == ".app":
+        return p.is_dir()
+    return p.is_file()
 
 
 def find_ollama() -> Path | None:
@@ -94,7 +119,7 @@ def find_ollama() -> Path | None:
     """
     for p in _candidate_paths():
         try:
-            if p.is_file():
+            if _is_installed(p):
                 return p
         except OSError:
             # A malformed LOCALAPPDATA or a disconnected drive letter should
@@ -111,8 +136,14 @@ def _spawn(exe: Path) -> bool:
     would if the user had launched it: killing Echo Flow must not kill the
     model backend other things may now be using.
     """
-    # The tray app starts the server itself; the bare binary needs `serve`.
-    args = [str(exe)] if exe.name.lower() == "ollama app.exe" else [str(exe), "serve"]
+    # The Windows tray app and the macOS menu bar app start the server
+    # themselves; a bare binary needs `serve`.
+    if exe.suffix == ".app":
+        args = ["open", "-a", str(exe)]
+    elif exe.name.lower() == "ollama app.exe":
+        args = [str(exe)]
+    else:
+        args = [str(exe), "serve"]
     kwargs: dict = {
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,

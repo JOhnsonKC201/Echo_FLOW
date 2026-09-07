@@ -35,6 +35,8 @@ import sys
 import time
 from pathlib import Path
 
+from . import hostos
+
 
 WATCHDOG_PORT = 47824
 POLL_SECONDS = 30
@@ -122,18 +124,34 @@ def _read_pid() -> int | None:
         return None
 
 
+def _relaunch_command(cwd: Path, platform: str | None = None) -> list[str] | None:
+    """argv that starts a fresh daemon, or None when nothing here can.
+
+    Windows goes through run_silent.vbs so the relaunched daemon has no
+    console window. Elsewhere the venv interpreter runs the module directly.
+    """
+    if hostos.is_windows(platform):
+        vbs = cwd / "run_silent.vbs"
+        return ["wscript.exe", str(vbs)] if vbs.exists() else None
+    py = hostos.venv_python(cwd, platform)
+    return [str(py or sys.executable), "-m", "src.main"]
+
+
 def _relaunch():
-    """Launch run_silent.vbs to start a fresh daemon (no console window)."""
+    """Start a fresh daemon, detached so it outlives this watchdog tick."""
     cwd = Path(__file__).resolve().parent.parent
-    vbs = cwd / "run_silent.vbs"
-    if not vbs.exists():
+    cmd = _relaunch_command(cwd)
+    if cmd is None:
         return
+    if hostos.IS_WINDOWS:
+        kwargs: dict = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+    else:
+        kwargs = {
+            "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL, **hostos.detached_popen_kwargs(),
+        }
     try:
-        subprocess.Popen(
-            ["wscript.exe", str(vbs)],
-            cwd=str(cwd),
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
+        subprocess.Popen(cmd, cwd=str(cwd), **kwargs)
     except Exception as e:
         # If relaunch fails the daemon is dead. Log loudly to wispr.log
         # so the user sees something happened.

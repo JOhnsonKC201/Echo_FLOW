@@ -80,6 +80,7 @@ def _build_pynput():
     _VALID = {
         "ctrl", "alt", "shift", "cmd", "space", "enter", "tab", "esc",
         "ctrl_l", "ctrl_r", "alt_l", "alt_r", "alt_gr", "shift_l", "shift_r",
+        "cmd_l", "cmd_r",
     }
 
     class _Key:

@@ -9,16 +9,18 @@ from pathlib import Path
 
 import pyperclip
 
+from . import hostos
+
 
 def _focused_window_title() -> str:
-    if sys.platform != "win32":
-        return ""
-    try:
-        import win32gui
-        hwnd = win32gui.GetForegroundWindow()
-        return win32gui.GetWindowText(hwnd) or ""
-    except Exception:
-        return ""
+    """Title of the focused window, or "" when the OS will not say.
+
+    Windows reads the Win32 foreground window. macOS asks AppKit: the window
+    title once Screen Recording is granted, the application name otherwise.
+    main.py caches this at hotkey-press time so the dictation hot path never
+    pays for it.
+    """
+    return hostos.frontmost_title()
 
 
 # A document filename embedded in a window title, e.g. "report.pdf - Adobe".
@@ -86,9 +88,9 @@ class Injector:
             except Exception:
                 prev = None
         pyperclip.copy(text)
-        time.sleep(0.008)  # min wait for clipboard to settle on Windows
+        time.sleep(0.008)  # min wait for the clipboard to settle
         import pyautogui
-        pyautogui.hotkey("ctrl", "v")
+        pyautogui.hotkey(*hostos.paste_keys())  # Ctrl+V, or Command+V on macOS
         if self.restore_clipboard and prev is not None:
             # Restore in background so it doesn't block return
             import threading

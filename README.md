@@ -3,7 +3,7 @@
 <img src="assets/banner.svg" alt="Echo Flow - local-first voice dictation for Windows" width="100%">
 
 <p>
-  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20iOS-1f6fd0">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20iOS-1f6fd0">
   <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-3776ab">
   <img alt="audio" src="https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a">
   <img alt="cloud" src="https://img.shields.io/badge/cloud-opt--in%20only-6c6a62">
@@ -246,7 +246,7 @@ sits next to every asset so you can verify the download. The from-source path
 below is what CI tests and is the way to go if you want to hack on it.
 
 ### Prerequisites
-- **Windows 10/11**
+- **Windows 10/11**, or **macOS 13+** from source (the installer is Windows-only; see [macOS](#macos))
 - **Python 3.11+** on your PATH
 - *(Recommended)* **[Ollama](https://ollama.com)** for local LLM cleanup
 - *(Optional)* an NVIDIA GPU, which Whisper uses automatically if present
@@ -261,11 +261,19 @@ cd Echo_FLOW
 ```bat
 scripts\setup.bat
 ```
+On macOS:
+```sh
+scripts/setup.sh
+```
 Creates a Python venv and installs dependencies from `requirements.txt`.
 
 ### 3. Launch
 ```bat
 run.bat
+```
+On macOS:
+```sh
+./run.sh
 ```
 First launch writes a `config.yaml` in the repo root, copied from the factory
 default in `packaging/default/config.yaml`. That copy is yours to edit and is
@@ -324,6 +332,28 @@ local Ollama. The same key powers the optional teacher-distillation loop.
 > [!IMPORTANT]
 > **After pulling new code, run `RESTART.bat`.** The daemon loads code once at
 > startup, so fixes don't take effect until the running tray process is relaunched.
+
+### macOS
+
+Echo Flow runs from source on macOS 13 or later. What differs from Windows:
+
+- **Two permissions.** The first hotkey press and the first paste each need
+  one: **Input Monitoring** (to see the push-to-talk keys) and
+  **Accessibility** (to paste at your cursor), both under System Settings,
+  Privacy & Security. Grant them to whatever runs Echo Flow: Terminal, iTerm,
+  or python. Until both are granted the hotkey looks dead and the text only
+  reaches the clipboard.
+- **Hotkeys.** The default `ctrl+shift` works as-is. `cmd`, `command` and
+  `option` are accepted in `hotkey.combo` if you would rather hold Command.
+- **App-aware profiles** see the application name (Slack, Code, Safari) and,
+  once Screen Recording is granted, the window title too. macOS gates window
+  titles behind that permission; the app name alone is enough for the profiles.
+- **Whisper runs on the CPU.** faster-whisper has no Metal backend, so `auto`
+  picks a CPU-sized model. There is no GPU path on Apple silicon yet.
+- **No installer, no autostart yet.** `./run.sh` in a terminal starts the
+  daemon and the icon appears in the menu bar; quit from that menu.
+- **Launchers:** `scripts/setup.sh`, `./run.sh`, `./run_dashboard.sh` and
+  `scripts/run_tests.sh` are the shell twins of the `.bat` files above.
 
 ---
 
@@ -496,6 +526,7 @@ assets/           app icons
 installer/        Windows installer + code-signing
 ios/              iOS keyboard-extension port (see ios/README.md)
 *.bat / *.vbs     Windows launchers (run / install / restart / uninstall)
+*.sh              macOS and Linux launchers (setup / run / dashboard / tests)
 *.spec            PyInstaller build specs
 ```
 
@@ -515,6 +546,7 @@ for deeper specs (start at [`docs/README.md`](docs/README.md)).
 | **Ollama "connection refused"** | Start the Ollama app or run `ollama serve`. |
 | **"Couldn't reach the local model" after every reboot** | Fixed in 0.3.2. Echo Flow autostarts at login but Ollama does not, so the daemon used to come up with its model backend down. It now starts Ollama itself when the binary is installed (`cleanup.autostart_ollama`, on by default). If it still cannot, you get rules-only cleanup and a toast saying so rather than silence. |
 | **Hotkey dead after a Windows update** | pynput's global listener sometimes needs a restart. Run `RESTART.bat`. |
+| **macOS: hotkey does nothing, or text only reaches the clipboard** | Grant Input Monitoring and Accessibility to the app running Echo Flow (System Settings, Privacy & Security), then start it again. |
 | **Pasting lags in some Electron apps** | Clipboard restore runs in a background thread; usually fine, occasionally a ~100ms hiccup. |
 | **Every word comes out Capitalized** | Fixed in current code; if you still see it, `RESTART.bat` so the running daemon picks up the casing pass. |
 
