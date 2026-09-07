@@ -44,6 +44,29 @@ jobs:
           OPENAI_API_KEY: ""
         shell: pwsh
 
+  # The same logic suite on macOS, so a change that only works on Windows (a
+  # Win32 import at module level, a hardcoded backslash path) fails here before
+  # anyone with a Mac hits it. No hardware or permissions are involved: the
+  # conftest stubs the input and tray shims exactly as it does on Windows.
+  pytest-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install minimal test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install flask pyyaml numpy requests rich Pillow pytest pytest-mock pytest-timeout
+      - name: Run pytest (logic suite)
+        run: python -m pytest tests/ -q --tb=short
+        env:
+          GROQ_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+          OPENAI_API_KEY: ""
+
   pytest:
     runs-on: windows-latest
     strategy:

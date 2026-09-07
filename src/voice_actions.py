@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from . import commands as _commands
+from . import hostos
 
 
 # A handler takes validated args + a context and performs the side effect.
@@ -422,6 +423,10 @@ def _launch_executable(app: str, target: str) -> tuple[bool, str]:
                 return (True, f"Opened {app}.")
             except Exception as e:  # noqa: BLE001
                 return (False, f"Couldn't find {app}: {e}")
+        # macOS: `open -a Spotify` resolves the bundle the way Spotlight does.
+        # Same SEC-5 shape rule: an application name, never a command string.
+        if hostos.IS_MAC and alias_ok and hostos.open_app(target):
+            return (True, f"Opened {app}.")
         return (False, f"Couldn't find {app} on this system.")
     except Exception as e:  # noqa: BLE001
         return (False, f"Couldn't launch {app}: {e}")
@@ -556,11 +561,10 @@ def _h_draft_event(args: dict, ctx: ActionContext) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return (False, f"Couldn't write the event draft: {e}")
 
-    if sys.platform == "win32":
-        try:
-            os.startfile(os.path.abspath(fname))  # type: ignore[attr-defined]
-        except Exception:  # noqa: BLE001
-            pass
+    try:
+        hostos.open_path(os.path.abspath(fname))
+    except Exception:  # noqa: BLE001
+        pass
     note = " (defaulted to tomorrow 9am, could not parse a time)" if used_default else ""
     return (True,
             f"Drafted “{details[:40]}” for "
@@ -642,13 +646,11 @@ def _h_open_folder(args: dict, ctx: ActionContext) -> tuple[bool, str]:
         return (False, "That folder location isn't allowed.")
     if not os.path.isdir(target):
         return (False, f"That folder doesn't exist: {target}")
-    if sys.platform == "win32":
-        try:
-            os.startfile(target)  # type: ignore[attr-defined]
-            return (True, f"Opened the {name} folder.")
-        except Exception as e:  # noqa: BLE001
-            return (False, f"Couldn't open the folder: {e}")
-    return (False, "Opening folders is only supported on Windows.")
+    try:
+        hostos.open_path(target)
+        return (True, f"Opened the {name} folder.")
+    except Exception as e:  # noqa: BLE001
+        return (False, f"Couldn't open the folder: {e}")
 
 
 def _h_open_clipboard_link(args: dict, ctx: ActionContext) -> tuple[bool, str]:

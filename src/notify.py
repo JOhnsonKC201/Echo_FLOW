@@ -3,7 +3,8 @@
 Order of preference:
 1. The active pystray icon (best — appears anchored to our tray icon)
 2. plyer (cross-platform fallback if available)
-3. winsdk Windows.UI.Notifications (Windows 10/11)
+3. The OS: Notification Center via osascript on macOS, a winsdk toast on
+   Windows 10/11
 4. Silent no-op (so we never crash on a notification)
 
 Rate-limited: same message within 5s is suppressed to avoid spam.
@@ -13,6 +14,7 @@ from __future__ import annotations
 import time
 import threading
 
+from . import hostos
 from . import log as wlog
 _log = wlog.get("notify")
 
@@ -98,7 +100,9 @@ def notify(title: str, message: str, level: str = "info") -> None:
                 return
             except Exception as e:
                 _log.debug("pystray notify failed: %s", e)
-        # Then winsdk
+        # Then the OS: Notification Center on macOS, a winsdk toast on Windows
+        if hostos.notify_native(title, message):
+            return
         if _winsdk_toast(title, message):
             return
         # Last resort: log only

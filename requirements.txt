@@ -10,13 +10,18 @@ requests>=2.31
 rich>=13.7
 pywin32>=306 ; sys_platform == "win32"
 winsdk>=1.0.0b10 ; sys_platform == "win32"
+# macOS: AppKit for the frontmost app and window (app-aware cleanup profiles)
+# and Quartz for window titles. pynput and pystray pull these in as well;
+# listed so the dependency is explicit.
+pyobjc-framework-Cocoa>=10.0 ; sys_platform == "darwin"
+pyobjc-framework-Quartz>=10.0 ; sys_platform == "darwin"
 sentence-transformers>=3.0.0
 pystray>=0.19.5
 Pillow>=10.0
 flask>=3.0
 jinja2>=3.0
 zeroconf>=0.130
-pywebview>=5.0 ; sys_platform == "win32"
+pywebview>=5.0 ; sys_platform == "win32" or sys_platform == "darwin"
 # Phase 14 Action Mode — optional handlers (summarize / draft event). The
 # handlers lazy-import these and degrade gracefully if absent.
 pymupdf>=1.24

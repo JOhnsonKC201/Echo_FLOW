@@ -52,7 +52,7 @@ dashboard:
 
 - `flask>=3.0` (already a dep for the mobile bridge)
 - `jinja2>=3` (Flask's template engine — usually pulled in transitively)
-- `pywebview>=5.0` (Windows only) — needs WebView2 runtime, which ships
+- `pywebview>=5.0` (Windows and macOS) — needs WebView2 runtime, which ships
   with Windows 11. On Windows 10 install from
   <https://developer.microsoft.com/microsoft-edge/webview2/>.
 

@@ -16,6 +16,8 @@ def _parse_combo(combo: str):
         "shift": keyboard.Key.shift,
         "cmd": keyboard.Key.cmd,
         "win": keyboard.Key.cmd,
+        "command": keyboard.Key.cmd,   # macOS spelling of the same key
+        "option": keyboard.Key.alt,
         "space": keyboard.Key.space,
         "enter": keyboard.Key.enter,
         "tab": keyboard.Key.tab,
@@ -70,6 +72,10 @@ class HotkeyListener:
             return keyboard.Key.alt
         if key in (keyboard.Key.shift_l, keyboard.Key.shift_r):
             return keyboard.Key.shift
+        # Command on macOS (and the Windows key) report as cmd_l / cmd_r.
+        cmd_lr = (getattr(keyboard.Key, "cmd_l", None), getattr(keyboard.Key, "cmd_r", None))
+        if key is not None and key in cmd_lr:
+            return keyboard.Key.cmd
         return key
 
     @staticmethod

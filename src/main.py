@@ -11,6 +11,7 @@ from pathlib import Path
 from . import log as wlog
 from . import notify as wnotify
 from . import sound as wsound
+from . import hostos
 wlog.setup()
 _log = wlog.get("main")
 
@@ -120,9 +121,8 @@ def _transform_combo_to_pynput(combo: str) -> str | None:
 # or %LOCALAPPDATA%\EchoFlow installed by Inno Setup), and user-writable state
 # — config.yaml, data/, logs — must live in %LOCALAPPDATA%\EchoFlow.
 if getattr(sys, "frozen", False):
-    USER_ROOT = Path(os.environ.get(
-        "LOCALAPPDATA", str(Path.home() / "AppData" / "Local")
-    )) / "EchoFlow"
+    # %LOCALAPPDATA%\EchoFlow on Windows, ~/Library/Application Support on macOS.
+    USER_ROOT = hostos.user_data_root("EchoFlow")
     USER_ROOT.mkdir(parents=True, exist_ok=True)
     # Read-only bundled resources sit in _MEIPASS.
     BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
@@ -1778,8 +1778,8 @@ class App:
         except Exception:
             port = 8766
 
-        venv_python = Path(__file__).resolve().parent.parent / ".venv" / "Scripts" / "python.exe"
-        py = str(venv_python) if venv_python.exists() else sys.executable
+        venv_python = hostos.venv_python(Path(__file__).resolve().parent.parent)
+        py = str(venv_python) if venv_python else sys.executable
 
         def _spawn():
             try:
@@ -1904,7 +1904,13 @@ class App:
                 if self._pe_cfg.get("enabled") else None,
             on_quit=self.tray_quit,
         )
-        threading.Thread(target=self.tray.run, daemon=True).start()
+        if hostos.IS_MAC:
+            # AppKit only delivers tray events on the main thread, so on macOS
+            # the tray starts last, from _serve_ui, and the hotkey listener
+            # takes the thread instead. Everything below runs before either.
+            pass
+        else:
+            threading.Thread(target=self.tray.run, daemon=True).start()
         # Give pystray a moment to create its icon, then wire it into notify
         # Phase 9: persist every notify() call to the inbox so the dashboard's
         # bell badge has a durable log. Sink is best-effort — toasts must work
@@ -2057,7 +2063,24 @@ class App:
                 combo, "toggle", self.on_toggle,
                 veto_keys=veto, on_veto=self.on_cancel_hold,
             )
-        listener.run()
+        _serve_ui(listener.run, self.tray.run)
+
+
+def _serve_ui(listener_run, tray_run, *, platform: str | None = None,
+              thread_factory=threading.Thread) -> None:
+    """Block on whichever UI loop this OS insists on owning the main thread.
+
+    Windows: the tray already runs on its own thread (started early in
+    App.run), so the pynput listener blocks here. macOS: AppKit delivers
+    menu bar events only on the main thread, so the listener moves to a
+    thread and the tray loop blocks here instead. Either way the process
+    lives until the user quits.
+    """
+    if hostos.is_mac(platform):
+        thread_factory(target=listener_run, daemon=True).start()
+        tray_run()
+    else:
+        listener_run()
 
 
 def main():

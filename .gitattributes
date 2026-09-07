@@ -1,0 +1,5 @@
+# Shell launchers must stay LF even when checked out on Windows, or bash on a
+# Mac rejects the shebang line. Windows launchers keep CRLF for cmd.exe.
+*.sh  text eol=lf
+*.bat text eol=crlf
+*.vbs text eol=crlf

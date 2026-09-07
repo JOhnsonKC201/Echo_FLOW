@@ -7,6 +7,9 @@ is silent on most modern machines). Two backends, tried in order:
    always audible because it uses the OS event sounds you can hear.
 2. winsound.Beep (legacy, often inaudible) — only as last resort.
 
+On macOS the same event names map to the system sounds in
+/System/Library/Sounds and play through afplay.
+
 Non-blocking — runs in a background thread.
 """
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 import sys
 import threading
 
+from . import hostos
 from . import log as wlog
 _log = wlog.get("sound")
 
@@ -28,24 +32,50 @@ _ALIAS_MAP = {
     "ready": "SystemNotification", # gentle chime for "daemon ready"
 }
 
+# The same aliases on macOS, as names in /System/Library/Sounds.
+_MAC_ALIAS_MAP = {
+    "SystemAsterisk":     "Tink",
+    "SystemDefault":      "Pop",
+    "SystemHand":         "Basso",
+    "SystemNotification": "Glass",
+    "SystemExclamation":  "Sosumi",
+    "SystemQuestion":     "Purr",
+}
+
 
 def _resolve_wav(spec: str) -> str | None:
-    """Try to resolve a .wav name to a real path.
-    Accepts: full path, relative path, or bare filename (looks in C:\\Windows\\Media)."""
+    """Try to resolve a sound file name to a real path.
+
+    Accepts a full path, a relative path, or a bare filename, which is looked
+    up in the OS sound folder (C:\\Windows\\Media, /System/Library/Sounds)."""
     import os
-    path = spec.replace("/", "\\")
+    path = spec.replace("/", "\\") if hostos.IS_WINDOWS else spec
     if os.path.exists(path):
         return path
-    # Try Windows Media folder for bare names like "ding.wav"
-    candidate = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Media", path)
-    if os.path.exists(candidate):
-        return candidate
+    for folder in _system_sound_dirs():
+        candidate = os.path.join(folder, path)
+        if os.path.exists(candidate):
+            return candidate
     return None
 
 
+def _system_sound_dirs() -> list[str]:
+    """Where bare sound names like "ding.wav" or "Glass" live on this OS."""
+    import os
+    if hostos.IS_WINDOWS:
+        return [os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Media")]
+    if hostos.IS_MAC:
+        return ["/System/Library/Sounds", os.path.expanduser("~/Library/Sounds")]
+    return []
+
+
 def _play_alias_or_file(spec: str) -> bool:
-    """Play a Windows system alias OR a .wav file (path or bare name)."""
-    if sys.platform != "win32" or not spec:
+    """Play a system sound alias OR a sound file (path or bare name)."""
+    if not spec:
+        return False
+    if hostos.IS_MAC:
+        return _play_mac(spec)
+    if sys.platform != "win32":
         return False
     try:
         import winsound
@@ -65,6 +95,21 @@ def _play_alias_or_file(spec: str) -> bool:
     except Exception as e:
         _log.debug("PlaySound(%s) failed: %s", spec, e)
         return False
+
+
+def _play_mac(spec: str) -> bool:
+    """macOS: a Windows alias maps to a system sound; anything else is a file.
+
+    Bare names resolve against /System/Library/Sounds with or without the
+    .aiff suffix, so "Glass" and "Glass.aiff" both work."""
+    name = _MAC_ALIAS_MAP.get(spec, spec)
+    path = _resolve_wav(name)
+    if path is None and not name.lower().endswith((".aiff", ".aif", ".wav", ".mp3", ".m4a")):
+        path = _resolve_wav(name + ".aiff")
+    if path is None:
+        _log.warning("sound not found: %s", spec)
+        return False
+    return hostos.play_sound_file(path)
 
 
 def _play_beep(freq: int, duration_ms: int) -> bool:
@@ -138,6 +183,24 @@ SOUND_CHOICES: list[tuple[str, str]] = [
     ("SystemQuestion",      "System Question (alias)"),
 ]
 
+# macOS system sounds (/System/Library/Sounds). Listed first on a Mac.
+MAC_SOUND_CHOICES: list[tuple[str, str]] = [
+    ("Tink",      "Tink: crisp tick"),
+    ("Pop",       "Pop: soft"),
+    ("Glass",     "Glass: gentle chime"),
+    ("Ping",      "Ping"),
+    ("Purr",      "Purr"),
+    ("Blow",      "Blow"),
+    ("Bottle",    "Bottle"),
+    ("Frog",      "Frog"),
+    ("Funk",      "Funk"),
+    ("Hero",      "Hero"),
+    ("Morse",     "Morse"),
+    ("Submarine", "Submarine"),
+    ("Sosumi",    "Sosumi"),
+    ("Basso",     "Basso: error"),
+]
+
 
 def list_choices() -> list[dict]:
     """Curated sound options for the Settings picker.
@@ -148,7 +211,8 @@ def list_choices() -> list[dict]:
     available (the picker still lists everything; users type freely).
     """
     out: list[dict] = []
-    for value, label in SOUND_CHOICES:
+    catalog = MAC_SOUND_CHOICES + SOUND_CHOICES if hostos.IS_MAC else SOUND_CHOICES
+    for value, label in catalog:
         is_alias = not value.lower().endswith(".wav")
         available = is_alias or (_resolve_wav(value) is not None)
         out.append({"value": value, "label": label, "available": available})

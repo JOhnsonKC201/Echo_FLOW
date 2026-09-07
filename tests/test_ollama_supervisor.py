@@ -102,6 +102,7 @@ def test_prefers_the_tray_app_over_the_bare_server(monkeypatch, tmp_path):
 
 def test_falls_back_to_path(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))   # nothing installed there
+    monkeypatch.setattr(sup, "_MAC_CANDIDATES", ())
     monkeypatch.setattr(sup.shutil, "which", lambda n: r"C:\tools\ollama.exe")
     assert sup.find_ollama() == Path(r"C:\tools\ollama.exe")
 
@@ -110,6 +111,7 @@ def test_returns_none_when_nothing_is_installed(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr(sup.shutil, "which", lambda n: None)
     monkeypatch.setattr(sup, "_EXTRA_DIRS", ())
+    monkeypatch.setattr(sup, "_MAC_CANDIDATES", ())
     assert sup.find_ollama() is None
 
 

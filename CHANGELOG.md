@@ -7,6 +7,16 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Runs on macOS from source.** Everything that only existed on Windows now
+  has a Mac path behind one seam, `src/hostos.py`: Command+V paste, the tray
+  on the main thread (AppKit insists on it), the frontmost app and window for
+  app-aware cleanup, Ollama discovery in /Applications and Homebrew, system
+  sounds through afplay, Notification Center toasts, folder and calendar-draft
+  opening, and crash relaunch. `scripts/setup.sh`, `run.sh`,
+  `run_dashboard.sh` and `scripts/run_tests.sh` are the shell twins of the
+  `.bat` launchers, and CI now runs the logic suite on macOS as well as
+  Windows. No installer or autostart yet, and Whisper is CPU-only there
+  because CTranslate2 has no Metal backend.
 - **Echo Flow starts Ollama when it is installed but not running.** Ollama does
   not register itself for Windows autostart and Echo Flow does, so every login
   brought the daemon up with its model backend down; the user was told to start
