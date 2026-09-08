@@ -7,6 +7,16 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **macOS says which permissions are missing instead of failing silently.**
+  Without Input Monitoring the hotkey looks dead, without Microphone the
+  recorder hears silence, and without Accessibility the text only reaches the
+  clipboard, none of which raises an error. The daemon now preflights all
+  three (plus the optional Screen Recording grant) through `hostos` at startup
+  and prints the missing ones with the Settings pane to open. The same report
+  is available without starting the daemon from
+  `scripts/mac_permissions.py`, whose `--open` flag jumps to the right pane
+  and whose exit status is the number of required grants missing. The setup
+  and README text now list Microphone, which they had left out.
 - **Runs on macOS from source.** Everything that only existed on Windows now
   has a Mac path behind one seam, `src/hostos.py`: Command+V paste, the tray
   on the main thread (AppKit insists on it), the frontmost app and window for

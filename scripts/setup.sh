@@ -19,9 +19,13 @@ cat <<'EOF'
 
 Setup complete. Start Echo Flow with:  ./run.sh
 
-macOS asks for two permissions the first time the hotkey and paste fire.
-Grant them to the app that runs Echo Flow (Terminal, iTerm, or python) in
-System Settings > Privacy & Security:
+macOS asks for three permissions the first time the hotkey, the recorder and
+the paste each fire. Grant them to the app that runs Echo Flow (Terminal,
+iTerm, or python) in System Settings > Privacy & Security:
   - Input Monitoring   (so the push-to-talk hotkey is seen)
+  - Microphone         (so the recorder hears you instead of silence)
   - Accessibility      (so the finished text can be pasted at your cursor)
+
+Check what is granted at any time with:
+  .venv/bin/python scripts/mac_permissions.py
 EOF

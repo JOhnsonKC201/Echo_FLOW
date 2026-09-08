@@ -1639,6 +1639,25 @@ class App:
         verb = "Hold" if getattr(self, "_mode", "hold") == "hold" else "Press"
         return f"Ready. {verb} {combo} to dictate."
 
+    @staticmethod
+    def _report_mac_permissions(perms: dict | None = None) -> list[str]:
+        """Say at startup which macOS grants are missing, so a dead hotkey has a reason.
+
+        Until Input Monitoring, Microphone and Accessibility are granted the
+        hotkey looks dead, the recorder hears silence, and the text only
+        reaches the clipboard, all without an error anywhere. Name them up
+        front. Returns the lines it printed (empty when nothing is missing).
+        """
+        perms = hostos.mac_permissions() if perms is None else perms
+        missing = hostos.missing_permissions(perms)
+        if not missing:
+            return []
+        _announce("[yellow]macOS permissions still needed:[/yellow]", "warning")
+        for line in missing:
+            _announce(f"  [yellow]{line}[/yellow]", "warning")
+        _announce(f"[dim]{hostos.PERMISSION_HINT}[/dim]")
+        return missing
+
     def _start_pattern_decay_thread(self) -> None:
         """Daemon thread that decays learned_patterns once every 24h.
 
@@ -1885,6 +1904,8 @@ class App:
             # logs the same info to wispr.log via the _log.info call below.
             pass
         _log.info("Echo Flow ready (hotkey=%s mode=%s)", combo, self._mode)
+        if hostos.IS_MAC:
+            self._report_mac_permissions()
 
         # Tray icon in its own thread
         self.tray = TrayApp(

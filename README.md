@@ -337,12 +337,16 @@ local Ollama. The same key powers the optional teacher-distillation loop.
 
 Echo Flow runs from source on macOS 13 or later. What differs from Windows:
 
-- **Two permissions.** The first hotkey press and the first paste each need
-  one: **Input Monitoring** (to see the push-to-talk keys) and
-  **Accessibility** (to paste at your cursor), both under System Settings,
-  Privacy & Security. Grant them to whatever runs Echo Flow: Terminal, iTerm,
-  or python. Until both are granted the hotkey looks dead and the text only
-  reaches the clipboard.
+- **Three permissions.** The first hotkey press, the first recording and the
+  first paste each need one: **Input Monitoring** (to see the push-to-talk
+  keys), **Microphone** (to hear you) and **Accessibility** (to paste at your
+  cursor), all under System Settings, Privacy & Security. Grant them to
+  whatever runs Echo Flow: Terminal, iTerm, or python. Until all three are
+  granted the hotkey looks dead, the recorder hears silence and the text only
+  reaches the clipboard, with no error anywhere. The daemon lists whatever is
+  still missing when it starts, and `.venv/bin/python
+  scripts/mac_permissions.py` answers the same question without starting it
+  (`--open` jumps to the right Settings pane).
 - **Hotkeys.** The default `ctrl+shift` works as-is. `cmd`, `command` and
   `option` are accepted in `hotkey.combo` if you would rather hold Command.
 - **Voice commands use Mac chords.** "Computer, undo that" presses Command+Z,
@@ -549,7 +553,7 @@ for deeper specs (start at [`docs/README.md`](docs/README.md)).
 | **Ollama "connection refused"** | Start the Ollama app or run `ollama serve`. |
 | **"Couldn't reach the local model" after every reboot** | Fixed in 0.3.2. Echo Flow autostarts at login but Ollama does not, so the daemon used to come up with its model backend down. It now starts Ollama itself when the binary is installed (`cleanup.autostart_ollama`, on by default). If it still cannot, you get rules-only cleanup and a toast saying so rather than silence. |
 | **Hotkey dead after a Windows update** | pynput's global listener sometimes needs a restart. Run `RESTART.bat`. |
-| **macOS: hotkey does nothing, or text only reaches the clipboard** | Grant Input Monitoring and Accessibility to the app running Echo Flow (System Settings, Privacy & Security), then start it again. |
+| **macOS: hotkey does nothing, recordings are silent, or text only reaches the clipboard** | A permission is missing. Run `.venv/bin/python scripts/mac_permissions.py` from the terminal you start Echo Flow in; it names the missing grant (Input Monitoring, Microphone or Accessibility) and `--open` takes you to the pane. Grant it to the app running Echo Flow, then start it again. |
 | **Pasting lags in some Electron apps** | Clipboard restore runs in a background thread; usually fine, occasionally a ~100ms hiccup. |
 | **Every word comes out Capitalized** | Fixed in current code; if you still see it, `RESTART.bat` so the running daemon picks up the casing pass. |
 

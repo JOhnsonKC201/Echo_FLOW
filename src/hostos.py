@@ -279,3 +279,120 @@ def play_sound_file(path: str, platform: str | None = None) -> bool:
         return True
     except Exception:
         return False
+
+
+# --- macOS permissions -----------------------------------------------------------
+
+# The privacy grants a first run trips over, in the order it meets them: the
+# hotkey listener, then the recorder, then the paste. Each row is
+# (key, the name System Settings uses, what it unlocks, required, pane anchor).
+# Screen Recording only adds window titles to the app name that app-aware
+# profiles already get, so it is reported but never nagged about.
+MAC_PERMISSIONS = (
+    ("input_monitoring", "Input Monitoring", "see the push-to-talk hotkey", True,
+     "Privacy_ListenEvent"),
+    ("microphone", "Microphone", "record your voice", True, "Privacy_Microphone"),
+    ("accessibility", "Accessibility", "paste the finished text at your cursor", True,
+     "Privacy_Accessibility"),
+    ("screen_recording", "Screen Recording",
+     "read window titles for app-aware profiles (optional)", False,
+     "Privacy_ScreenCapture"),
+)
+
+PERMISSION_HINT = (
+    "Grant them in System Settings > Privacy & Security to the app that runs "
+    "Echo Flow (Terminal, iTerm, or python), then start it again."
+)
+
+_PRIVACY_PANE_URL = "x-apple.systempreferences:com.apple.preference.security?{anchor}"
+_AV_AUTHORIZED = 3   # AVAuthorizationStatusAuthorized
+
+
+def mac_permissions(platform: str | None = None) -> dict[str, bool | None]:
+    """Which macOS privacy grants this process holds.
+
+    Keys are the first column of MAC_PERMISSIONS. True is granted, False is
+    denied or not asked yet, None means the question could not be put (not a
+    Mac, or the PyObjC framework is missing). These are the preflight calls,
+    so asking never pops a prompt; macOS does that itself the first time the
+    hotkey, the microphone and the paste are actually used.
+    """
+    if not is_mac(platform):
+        return {}
+    return {
+        "input_monitoring": _preflight_input_monitoring(),
+        "microphone": _preflight_microphone(),
+        "accessibility": _preflight_accessibility(),
+        "screen_recording": _preflight_screen_recording(),
+    }
+
+
+def _preflight_accessibility() -> bool | None:
+    try:
+        from ApplicationServices import AXIsProcessTrusted
+        return bool(AXIsProcessTrusted())
+    except Exception:
+        return None
+
+
+def _preflight_input_monitoring() -> bool | None:
+    return _quartz_preflight("CGPreflightListenEventAccess")
+
+
+def _preflight_screen_recording() -> bool | None:
+    return _quartz_preflight("CGPreflightScreenCaptureAccess")
+
+
+def _quartz_preflight(name: str) -> bool | None:
+    try:
+        import Quartz
+        fn = getattr(Quartz, name, None)
+        if fn is None:   # SDK older than the call (10.15 / 11.0)
+            return None
+        return bool(fn())
+    except Exception:
+        return None
+
+
+def _preflight_microphone() -> bool | None:
+    try:
+        import AVFoundation
+        status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+            AVFoundation.AVMediaTypeAudio)
+        return int(status) == _AV_AUTHORIZED
+    except Exception:
+        return None
+
+
+def missing_permissions(perms: dict[str, bool | None],
+                        include_optional: bool = False) -> list[str]:
+    """One printable line per grant that is known to be missing.
+
+    Unknown (None) is not missing: without PyObjC there is nothing to report,
+    and the first real use will prompt as usual.
+    """
+    lines = []
+    for key, name, why, required, _anchor in MAC_PERMISSIONS:
+        if not required and not include_optional:
+            continue
+        if perms.get(key) is False:
+            lines.append(f"{name}: needed to {why}")
+    return lines
+
+
+def open_privacy_pane(key: str, platform: str | None = None) -> bool:
+    """Open System Settings on the pane for one MAC_PERMISSIONS key."""
+    if not is_mac(platform):
+        return False
+    anchors = {row[0]: row[4] for row in MAC_PERMISSIONS}
+    anchor = anchors.get(key)
+    if not anchor:
+        return False
+    try:
+        done = subprocess.run(
+            ["open", _PRIVACY_PANE_URL.format(anchor=anchor)],
+            capture_output=True, timeout=10,
+        )
+        return done.returncode == 0
+    except Exception:
+        return False

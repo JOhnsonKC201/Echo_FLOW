@@ -78,6 +78,92 @@ def test_modifier_label_follows_the_os(name, win, mac):
     assert hostos.modifier_label(name, "darwin") == mac
 
 
+# --- macOS permissions -------------------------------------------------------------
+
+def _fake_frameworks(monkeypatch, *, trusted=True, listen=False, screen=None, mic=3):
+    """Stand in for the PyObjC frameworks with the answers a Mac would give."""
+    app_services = types.SimpleNamespace(AXIsProcessTrusted=lambda: trusted)
+    quartz = types.SimpleNamespace(CGPreflightListenEventAccess=lambda: listen)
+    if screen is not None:
+        quartz.CGPreflightScreenCaptureAccess = lambda: screen
+    device = types.SimpleNamespace(authorizationStatusForMediaType_=lambda media: mic)
+    av = types.SimpleNamespace(AVCaptureDevice=device, AVMediaTypeAudio="soun")
+    monkeypatch.setitem(sys.modules, "ApplicationServices", app_services)
+    monkeypatch.setitem(sys.modules, "Quartz", quartz)
+    monkeypatch.setitem(sys.modules, "AVFoundation", av)
+
+
+def test_mac_permissions_is_empty_off_mac():
+    assert hostos.mac_permissions("win32") == {}
+    assert hostos.mac_permissions("linux") == {}
+
+
+def test_mac_permissions_reads_each_framework(monkeypatch):
+    _fake_frameworks(monkeypatch, trusted=True, listen=False, screen=True, mic=3)
+    assert hostos.mac_permissions("darwin") == {
+        "input_monitoring": False,
+        "microphone": True,
+        "accessibility": True,
+        "screen_recording": True,
+    }
+
+
+def test_mac_permissions_microphone_is_only_true_when_authorized(monkeypatch):
+    for status in (0, 1, 2):   # not determined, restricted, denied
+        _fake_frameworks(monkeypatch, mic=status)
+        assert hostos.mac_permissions("darwin")["microphone"] is False
+
+
+def test_mac_permissions_unknown_when_the_call_is_missing(monkeypatch):
+    # An SDK older than macOS 11 has no CGPreflightScreenCaptureAccess.
+    _fake_frameworks(monkeypatch, screen=None)
+    assert hostos.mac_permissions("darwin")["screen_recording"] is None
+
+
+def test_mac_permissions_unknown_without_pyobjc(monkeypatch):
+    for name in ("ApplicationServices", "Quartz", "AVFoundation"):
+        monkeypatch.setitem(sys.modules, name, None)   # import raises
+    assert hostos.mac_permissions("darwin") == {
+        "input_monitoring": None,
+        "microphone": None,
+        "accessibility": None,
+        "screen_recording": None,
+    }
+
+
+def test_missing_permissions_lists_required_ones_in_settings_words():
+    perms = {"input_monitoring": False, "microphone": True,
+             "accessibility": False, "screen_recording": False}
+    lines = hostos.missing_permissions(perms)
+    assert [l.split(":")[0] for l in lines] == ["Input Monitoring", "Accessibility"]
+    assert all("needed to" in l for l in lines)
+
+
+def test_missing_permissions_ignores_unknown_and_can_include_optional():
+    perms = {"input_monitoring": None, "microphone": None,
+             "accessibility": None, "screen_recording": False}
+    assert hostos.missing_permissions(perms) == []
+    assert [l.split(":")[0] for l in hostos.missing_permissions(perms, include_optional=True)] \
+        == ["Screen Recording"]
+
+
+def test_open_privacy_pane_opens_the_anchor_for_the_key(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        hostos.subprocess, "run",
+        lambda argv, **kw: calls.append(argv) or subprocess.CompletedProcess(argv, 0),
+    )
+    assert hostos.open_privacy_pane("accessibility", "darwin") is True
+    assert calls == [["open",
+                      "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]]
+
+
+def test_open_privacy_pane_refuses_unknown_keys_and_other_platforms(monkeypatch):
+    monkeypatch.setattr(hostos.subprocess, "run", lambda *a, **k: pytest.fail("must not run"))
+    assert hostos.open_privacy_pane("wifi", "darwin") is False
+    assert hostos.open_privacy_pane("accessibility", "win32") is False
+
+
 # --- open_path ---------------------------------------------------------------
 
 def test_open_path_uses_startfile_on_windows(monkeypatch):

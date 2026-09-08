@@ -396,3 +396,74 @@ def test_ready_toast_speaks_mac_on_a_mac(monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
     assert App._ready_message(_ready_app("command+shift", "hold")) == "Ready. Hold Command + Shift to dictate."
     assert App._ready_message(_ready_app("", "hold")) == "Ready."
+
+
+# --- main: the startup permission report -------------------------------------------
+
+def test_permission_report_names_what_is_missing(monkeypatch):
+    from src import main as M
+    said = []
+    monkeypatch.setattr(M, "_announce", lambda msg, level="info": said.append((msg, level)))
+    perms = {"input_monitoring": False, "microphone": True,
+             "accessibility": False, "screen_recording": None}
+    missing = M.App._report_mac_permissions(perms)
+    assert [m.split(":")[0].strip() for m in missing] == ["Input Monitoring", "Accessibility"]
+    warnings = [msg for msg, level in said if level == "warning"]
+    assert any("Input Monitoring" in w for w in warnings)
+    assert any("Accessibility" in w for w in warnings)
+    assert not any("Microphone" in w for w in warnings)
+    assert any(hostos.PERMISSION_HINT in msg for msg, _ in said)
+
+
+def test_permission_report_is_silent_when_all_granted(monkeypatch):
+    from src import main as M
+    monkeypatch.setattr(M, "_announce", lambda *a, **k: pytest.fail("nothing to say"))
+    perms = {k: True for k in ("input_monitoring", "microphone", "accessibility", "screen_recording")}
+    assert M.App._report_mac_permissions(perms) == []
+
+
+def test_permission_report_asks_hostos_when_not_given_answers(monkeypatch):
+    from src import main as M
+    monkeypatch.setattr(M, "_announce", lambda *a, **k: None)
+    monkeypatch.setattr(M.hostos, "mac_permissions", lambda platform=None: {"microphone": False})
+    assert M.App._report_mac_permissions() == ["Microphone: needed to record your voice"]
+
+
+# --- scripts/mac_permissions.py --------------------------------------------------
+
+def _load_permissions_script():
+    import importlib.util
+    path = Path(__file__).resolve().parent.parent / "scripts" / "mac_permissions.py"
+    spec = importlib.util.spec_from_file_location("mac_permissions_script", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_permissions_script_is_a_no_op_off_mac(capsys):
+    mod = _load_permissions_script()
+    assert mod.main([], platform="win32") == 0
+    assert "only exist on macOS" in capsys.readouterr().out
+
+
+def test_permissions_script_exit_status_counts_missing_grants(monkeypatch, capsys):
+    mod = _load_permissions_script()
+    perms = {"input_monitoring": False, "microphone": False,
+             "accessibility": True, "screen_recording": False}
+    monkeypatch.setattr(mod.hostos, "mac_permissions", lambda platform=None: perms)
+    opened = []
+    monkeypatch.setattr(mod.hostos, "open_privacy_pane",
+                        lambda key, platform=None: opened.append(key) or True)
+    assert mod.main(["--open"], platform="darwin") == 2
+    out = capsys.readouterr().out
+    assert "Input Monitoring" in out and "MISSING" in out
+    assert "not granted (optional)" in out          # Screen Recording never nags
+    assert opened == ["input_monitoring"]           # the first required one
+
+
+def test_permissions_script_reports_success(monkeypatch, capsys):
+    mod = _load_permissions_script()
+    perms = {k: True for k in ("input_monitoring", "microphone", "accessibility", "screen_recording")}
+    monkeypatch.setattr(mod.hostos, "mac_permissions", lambda platform=None: perms)
+    assert mod.main([], platform="darwin") == 0
+    assert "Everything Echo Flow needs is granted" in capsys.readouterr().out
