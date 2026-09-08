@@ -329,9 +329,14 @@ local Ollama. The same key powers the optional teacher-distillation loop.
 | `UNINSTALL.bat` | Remove the autostart shortcut and optionally wipe data |
 | `scripts\run_tests.bat` | Run the pytest suite |
 
+On macOS the same jobs are `./run.sh`, `scripts/install_autostart.sh`,
+`./restart.sh`, `./run_dashboard.sh`, `scripts/uninstall_autostart.sh` and
+`scripts/run_tests.sh`.
+
 > [!IMPORTANT]
-> **After pulling new code, run `RESTART.bat`.** The daemon loads code once at
-> startup, so fixes don't take effect until the running tray process is relaunched.
+> **After pulling new code, run `RESTART.bat`** (`./restart.sh` on macOS). The
+> daemon loads code once at startup, so fixes don't take effect until the
+> running tray process is relaunched.
 
 ### macOS
 
@@ -357,10 +362,22 @@ Echo Flow runs from source on macOS 13 or later. What differs from Windows:
   titles behind that permission; the app name alone is enough for the profiles.
 - **Whisper runs on the CPU.** faster-whisper has no Metal backend, so `auto`
   picks a CPU-sized model. There is no GPU path on Apple silicon yet.
-- **No installer, no autostart yet.** `./run.sh` in a terminal starts the
-  daemon and the icon appears in the menu bar; quit from that menu.
-- **Launchers:** `scripts/setup.sh`, `./run.sh`, `./run_dashboard.sh` and
-  `scripts/run_tests.sh` are the shell twins of the `.bat` files above.
+- **Start at login.** `scripts/install_autostart.sh` installs a per-user
+  LaunchAgent (`~/Library/LaunchAgents/com.echoflow.daemon.plist`) that runs
+  the daemon from this checkout at login and relaunches it if it crashes; a
+  quit from the menu bar stays quit. `scripts/uninstall_autostart.sh` removes
+  it. launchd runs the daemon as the Python interpreter rather than Terminal,
+  so macOS asks for the three permissions again the first time and the grants
+  go to python; the daemon's console, including the permission report, is
+  `logs/launchd.out.log`.
+- **Restart after changes.** `./restart.sh` is the `RESTART.bat` twin: through
+  launchd when autostart is installed, otherwise it stops the daemon by its
+  PID file and runs `./run.sh` again.
+- **No installer yet.** Without autostart, `./run.sh` in a terminal starts
+  the daemon and the icon appears in the menu bar; quit from that menu.
+- **Launchers:** `scripts/setup.sh`, `./run.sh`, `./restart.sh`,
+  `./run_dashboard.sh`, `scripts/run_tests.sh` and the two autostart scripts
+  are the shell twins of the `.bat` files above.
 
 ---
 
@@ -533,7 +550,7 @@ assets/           app icons
 installer/        Windows installer + code-signing
 ios/              iOS keyboard-extension port (see ios/README.md)
 *.bat / *.vbs     Windows launchers (run / install / restart / uninstall)
-*.sh              macOS and Linux launchers (setup / run / dashboard / tests)
+*.sh              macOS and Linux launchers (setup / run / restart / dashboard / autostart / tests)
 *.spec            PyInstaller build specs
 ```
 
@@ -547,7 +564,7 @@ for deeper specs (start at [`docs/README.md`](docs/README.md)).
 
 | Symptom | Fix |
 |---|---|
-| **My fix/setting didn't take effect** | Run `RESTART.bat`. The daemon loads code & config at startup; a running process won't reflect changes until relaunched. |
+| **My fix/setting didn't take effect** | Run `RESTART.bat` (`./restart.sh` on macOS). The daemon loads code & config at startup; a running process won't reflect changes until relaunched. |
 | **Whisper invents "thank you for watching" on silence** | Already guarded (length + RMS); very short/quiet clips are dropped. |
 | **Recording starts when I only wanted to re-paste** | The Ctrl+Shift+Win combo has a veto: add Win within a frame and recording aborts, paste fires instead. |
 | **Ollama "connection refused"** | Start the Ollama app or run `ollama serve`. |

@@ -7,6 +7,18 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Start at login on macOS.** `scripts/install_autostart.sh` writes a
+  per-user LaunchAgent (`com.echoflow.daemon`) that runs the daemon from the
+  checkout at login, with `KeepAlive.SuccessfulExit = false` so launchd
+  relaunches a crash but leaves a menu-bar quit alone, which is the job the
+  watchdog does on Windows. `scripts/uninstall_autostart.sh` removes it and
+  `./restart.sh` is the `RESTART.bat` twin: a `launchctl kickstart -k` when
+  autostart is installed, otherwise a stop by PID file and a fresh `./run.sh`.
+  The plist is rendered and installed by `src/launchagent.py`, which takes the
+  platform, home and `launchctl` runner as arguments so the whole flow is
+  tested on every OS. The daemon's console under launchd is
+  `logs/launchd.out.log`, and the README explains that the permission grants
+  then belong to the Python interpreter rather than to Terminal.
 - **macOS says which permissions are missing instead of failing silently.**
   Without Input Monitoring the hotkey looks dead, without Microphone the
   recorder hears silence, and without Accessibility the text only reaches the
@@ -25,8 +37,8 @@ All notable changes are documented here. Format roughly follows
   opening, and crash relaunch. `scripts/setup.sh`, `run.sh`,
   `run_dashboard.sh` and `scripts/run_tests.sh` are the shell twins of the
   `.bat` launchers, and CI now runs the logic suite on macOS as well as
-  Windows. No installer or autostart yet, and Whisper is CPU-only there
-  because CTranslate2 has no Metal backend.
+  Windows. No installer yet, and Whisper is CPU-only there because
+  CTranslate2 has no Metal backend.
 - **Echo Flow starts Ollama when it is installed but not running.** Ollama does
   not register itself for Windows autostart and Echo Flow does, so every login
   brought the daemon up with its model backend down; the user was told to start
