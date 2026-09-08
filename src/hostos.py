@@ -44,6 +44,50 @@ def paste_keys(platform: str | None = None) -> tuple[str, str]:
     return ("command", "v") if is_mac(platform) else ("ctrl", "v")
 
 
+# Windows chords whose Mac equivalent is a different key, not just Command in
+# place of Ctrl. Everything else translates by swapping that one modifier.
+_MAC_CHORDS = {
+    "ctrl+y": "command+shift+z",    # redo
+    "ctrl+home": "command+up",      # start of document
+    "ctrl+end": "command+down",     # end of document
+    "alt+left": "command+left",     # browser back
+    "alt+right": "command+right",   # browser forward
+}
+
+
+def shortcut(combo: str, platform: str | None = None) -> str:
+    """The chord that performs a Windows shortcut on this OS.
+
+    The voice command table is written the Windows way ("ctrl+z"). On a Mac
+    those actions live on Command, and a few are different keys altogether:
+    redo is Command+Shift+Z, the start of a document is Command+Up. Other
+    platforms get the combo back unchanged. Returns lower-case parts joined
+    with "+", which is the form pyautogui.hotkey() wants.
+    """
+    if not combo or not is_mac(platform):
+        return combo
+    parts = [p.strip().lower() for p in combo.split("+") if p.strip()]
+    key = "+".join(parts)
+    if key in _MAC_CHORDS:
+        return _MAC_CHORDS[key]
+    return "+".join("command" if p == "ctrl" else p for p in parts)
+
+
+def modifier_label(name: str, platform: str | None = None) -> str:
+    """How this OS writes a modifier key in a menu: "Win" here, "Command" there."""
+    low = name.lower()
+    mac = is_mac(platform)
+    if low in ("cmd", "win", "command"):
+        return "Command" if mac else "Win"
+    if low in ("alt", "option"):
+        return "Option" if mac else "Alt"
+    if low in ("ctrl", "control"):
+        return "Control" if mac else "Ctrl"
+    if low == "shift":
+        return "Shift"
+    return name.upper() if len(name) == 1 else name.title()
+
+
 # --- opening things ----------------------------------------------------------
 
 def open_path(path: str, platform: str | None = None) -> None:

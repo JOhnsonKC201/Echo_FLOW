@@ -117,6 +117,7 @@ def test_find_by_hotkey_ignores_disabled(tmp_path):
 
 @pytest.mark.parametrize("combo", [
     "ctrl+alt+p", "ctrl+shift+alt+1", "win+shift+f5",
+    "command+alt+p", "option+shift+p",   # Mac spellings of cmd and alt
 ])
 def test_validate_hotkey_accepts(combo):
     tf._validate_hotkey(combo)  # no raise

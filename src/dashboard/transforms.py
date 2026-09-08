@@ -241,8 +241,9 @@ def find_by_hotkey(conn: sqlite3.Connection, combo: str) -> dict | None:
 # --- Hotkey validation -------------------------------------------------------
 
 # Conservative grammar: 1+ modifiers + 1 key, separated by '+'.
-# Modifiers: ctrl alt shift win cmd. Keys: a-z, 0-9, f1-f24.
-_ALLOWED_MODS = {"ctrl", "alt", "shift", "win", "cmd"}
+# Modifiers: ctrl alt shift win cmd, plus the Mac spellings command and option
+# (the same keys; hotkey._parse_combo already reads them). Keys: a-z, 0-9, f1-f24.
+_ALLOWED_MODS = {"ctrl", "alt", "shift", "win", "cmd", "command", "option"}
 _ALLOWED_KEY_PATTERN = None  # lazy compile
 
 

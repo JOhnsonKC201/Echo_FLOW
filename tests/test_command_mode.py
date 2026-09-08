@@ -60,10 +60,55 @@ def test_strip_prefix_custom_word():
     ("backspace",       "key",    "backspace"),
 ])
 def test_classify_known_commands(body, exp_type, exp_value):
-    r = cm.classify(body)
+    r = cm.classify(body, platform="win32")
     assert r is not None, f"expected match: {body}"
     action_type, action_value, _label = r
     assert (action_type, action_value) == (exp_type, exp_value)
+
+
+# --- Classifier on a Mac: same words, the Mac's keys -----------------------------
+
+@pytest.mark.parametrize("body,exp_value", [
+    ("select all",   "command+a"),
+    ("copy that",    "command+c"),
+    ("cut",          "command+x"),
+    ("paste it",     "command+v"),
+    ("undo",         "command+z"),
+    ("redo",         "command+shift+z"),
+    ("save",         "command+s"),
+    ("find",         "command+f"),
+    ("new tab",      "command+t"),
+    ("close tab",    "command+w"),
+    ("reopen tab",   "command+shift+t"),
+    ("go to top",    "command+up"),
+    ("go to bottom", "command+down"),
+    ("go back",      "command+left"),
+    ("go forward",   "command+right"),
+])
+def test_classify_returns_mac_chords_on_darwin(body, exp_value):
+    r = cm.classify(body, platform="darwin")
+    assert r is not None, f"expected match: {body}"
+    assert (r[0], r[1]) == ("hotkey", exp_value)
+
+
+@pytest.mark.parametrize("body", ["press enter", "escape", "scroll down", "backspace"])
+def test_classify_single_keys_are_the_same_on_darwin(body):
+    assert cm.classify(body, platform="darwin") == cm.classify(body, platform="win32")
+
+
+def test_every_table_chord_is_still_allowed_on_darwin():
+    # A chord the allowlist refused after translation would make the command
+    # vanish silently on a Mac, which is exactly the failure this guards.
+    from src import hostos
+    for _pat, action_type, value, label in cm._COMMANDS:
+        if action_type != "hotkey":
+            continue
+        assert cm.is_safe_hotkey(hostos.shortcut(value, "darwin")), label
+
+
+def test_classify_defaults_to_the_running_platform():
+    import sys
+    assert cm.classify("undo") == cm.classify("undo", platform=sys.platform)
 
 
 @pytest.mark.parametrize("body", [
@@ -86,6 +131,9 @@ def test_classify_unknown_commands_return_none(body):
     ("ctrl+shift+t", True),
     ("alt+left", True),
     ("ctrl+home", True),
+    ("command+shift+z", True),  # the Mac chords must pass the same gate
+    ("command+up", True),
+    ("option+left", True),
     ("ctrl", False),            # modifier alone
     ("", False),
     ("ctrl+rm", False),         # unknown key

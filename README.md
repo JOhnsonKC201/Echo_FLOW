@@ -345,6 +345,9 @@ Echo Flow runs from source on macOS 13 or later. What differs from Windows:
   reaches the clipboard.
 - **Hotkeys.** The default `ctrl+shift` works as-is. `cmd`, `command` and
   `option` are accepted in `hotkey.combo` if you would rather hold Command.
+- **Voice commands use Mac chords.** "Computer, undo that" presses Command+Z,
+  "redo" presses Command+Shift+Z, "go to top" presses Command+Up. The command
+  list is the same as on Windows; only the keys differ.
 - **App-aware profiles** see the application name (Slack, Code, Safari) and,
   once Screen Recording is granted, the window title too. macOS gates window
   titles behind that permission; the app name alone is enough for the profiles.

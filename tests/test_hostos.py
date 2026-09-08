@@ -28,6 +28,56 @@ def test_paste_defaults_to_the_running_platform():
     assert hostos.paste_keys() == hostos.paste_keys(sys.platform)
 
 
+# --- shortcuts: the command table is written in Windows chords -------------------
+
+@pytest.mark.parametrize("combo", ["ctrl+z", "ctrl+shift+t", "alt+left", "ctrl+home"])
+def test_shortcut_is_unchanged_on_windows(combo):
+    assert hostos.shortcut(combo, "win32") == combo
+
+
+@pytest.mark.parametrize("combo", ["ctrl+z", "alt+left"])
+def test_shortcut_is_unchanged_on_linux(combo):
+    assert hostos.shortcut(combo, "linux") == combo
+
+
+@pytest.mark.parametrize("combo,expected", [
+    ("ctrl+a", "command+a"),
+    ("ctrl+shift+t", "command+shift+t"),
+    ("ctrl+y", "command+shift+z"),      # redo is a different key on a Mac
+    ("ctrl+home", "command+up"),
+    ("ctrl+end", "command+down"),
+    ("alt+left", "command+left"),
+    ("alt+right", "command+right"),
+    ("Ctrl + S", "command+s"),          # spacing and case are tolerated
+])
+def test_shortcut_translates_to_mac_chords(combo, expected):
+    assert hostos.shortcut(combo, "darwin") == expected
+
+
+def test_shortcut_passes_empty_through():
+    assert hostos.shortcut("", "darwin") == ""
+
+
+def test_shortcut_defaults_to_the_running_platform():
+    assert hostos.shortcut("ctrl+z") == hostos.shortcut("ctrl+z", sys.platform)
+
+
+@pytest.mark.parametrize("name,win,mac", [
+    ("cmd", "Win", "Command"),
+    ("win", "Win", "Command"),
+    ("command", "Win", "Command"),
+    ("alt", "Alt", "Option"),
+    ("option", "Alt", "Option"),
+    ("ctrl", "Ctrl", "Control"),
+    ("shift", "Shift", "Shift"),
+    ("p", "P", "P"),
+    ("space", "Space", "Space"),
+])
+def test_modifier_label_follows_the_os(name, win, mac):
+    assert hostos.modifier_label(name, "win32") == win
+    assert hostos.modifier_label(name, "darwin") == mac
+
+
 # --- open_path ---------------------------------------------------------------
 
 def test_open_path_uses_startfile_on_windows(monkeypatch):

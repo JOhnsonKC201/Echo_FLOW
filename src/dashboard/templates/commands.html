@@ -21,9 +21,9 @@
     <span class="num muted">prefix: {{ data.prefix }}</span>
   </div>
   <div class="sub">Speak the prefix word, then a command. Examples:</div>
-  <pre class="transform-prompt"><span class="diff-add">{{ data.prefix }}, save</span>            → fires Ctrl+S
+  <pre class="transform-prompt"><span class="diff-add">{{ data.prefix }}, save</span>            → fires {{ data.mod }}+S
 <span class="diff-add">{{ data.prefix }} scroll down</span>     → Page Down
-<span class="diff-add">{{ data.prefix }}, copy that</span>      → Ctrl+C</pre>
+<span class="diff-add">{{ data.prefix }}, copy that</span>      → {{ data.mod }}+C</pre>
 </div>
 
 <div class="card">

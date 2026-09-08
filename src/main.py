@@ -1619,25 +1619,25 @@ class App:
         threading.Thread(target=render_graph, args=(db,), daemon=True).start()
 
     @staticmethod
-    def _format_hotkey_label(combo: str) -> str:
-        """'<ctrl>+<cmd>' → 'Ctrl + Win' for tray display. Empty if unset."""
+    def _format_hotkey_label(combo: str, platform: str | None = None) -> str:
+        """'<ctrl>+<cmd>' → 'Ctrl + Win' for tray display. Empty if unset.
+
+        Modifier names follow the OS: the same combo reads 'Control + Command'
+        on a Mac, where nobody has a Win key.
+        """
         if not combo:
             return ""
         parts = combo.replace("<", "").replace(">", "").split("+")
-        pretty = []
-        for p in parts:
-            low = p.lower()
-            if low == "cmd":
-                pretty.append("Win")
-            elif low == "ctrl":
-                pretty.append("Ctrl")
-            elif low == "alt":
-                pretty.append("Alt")
-            elif low == "shift":
-                pretty.append("Shift")
-            else:
-                pretty.append(p.upper() if len(p) == 1 else p.title())
-        return " + ".join(pretty)
+        return " + ".join(hostos.modifier_label(p, platform) for p in parts if p)
+
+    def _ready_message(self) -> str:
+        """The first toast: which keys start a dictation, in this OS's words."""
+        combo = self._format_hotkey_label(
+            (self.cfg.get("hotkey", {}) or {}).get("combo", "") or "")
+        if not combo:
+            return "Ready."
+        verb = "Hold" if getattr(self, "_mode", "hold") == "hold" else "Press"
+        return f"Ready. {verb} {combo} to dictate."
 
     def _start_pattern_decay_thread(self) -> None:
         """Daemon thread that decays learned_patterns once every 24h.
@@ -1927,7 +1927,7 @@ class App:
         def _wire_notify():
             time.sleep(1.0)
             wnotify.set_tray(getattr(self.tray, "_icon", None))
-            wnotify.notify("Echo Flow", "Ready. Hold Ctrl+Shift to dictate.", "info")
+            wnotify.notify("Echo Flow", self._ready_message(), "info")
             # Opt-in (default OFF) self-update check. Returns instantly and
             # spawns its own daemon thread; with the feature disabled it makes
             # zero network calls. Reflected honestly in the /privacy ledger.

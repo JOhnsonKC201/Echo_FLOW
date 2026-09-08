@@ -362,3 +362,37 @@ def test_window_size_falls_back_when_the_screen_is_unknown(monkeypatch):
     assert W._primary_screen_size() == (1920, 1080)
     monkeypatch.setattr(W.hostos, "screen_size", lambda platform=None: (2560, 1440))
     assert W._primary_screen_size() == (2560, 1440)
+
+
+# --- main: hotkey labels and the ready toast name the keys this OS has ----------
+
+def test_hotkey_label_says_win_on_windows_and_command_on_mac():
+    from src.main import App
+    assert App._format_hotkey_label("<ctrl>+<cmd>+<space>", "win32") == "Ctrl + Win + Space"
+    assert App._format_hotkey_label("<ctrl>+<cmd>+<space>", "darwin") == "Control + Command + Space"
+    assert App._format_hotkey_label("<alt>+p", "darwin") == "Option + P"
+    assert App._format_hotkey_label("", "darwin") == ""
+
+
+def _ready_app(combo: str, mode: str):
+    import types
+    from src.main import App
+    return types.SimpleNamespace(
+        cfg={"hotkey": {"combo": combo}},
+        _mode=mode,
+        _format_hotkey_label=App._format_hotkey_label,
+    )
+
+
+def test_ready_toast_names_the_configured_combo(monkeypatch):
+    from src.main import App
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert App._ready_message(_ready_app("ctrl+shift", "hold")) == "Ready. Hold Ctrl + Shift to dictate."
+    assert App._ready_message(_ready_app("ctrl+shift", "toggle")) == "Ready. Press Ctrl + Shift to dictate."
+
+
+def test_ready_toast_speaks_mac_on_a_mac(monkeypatch):
+    from src.main import App
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert App._ready_message(_ready_app("command+shift", "hold")) == "Ready. Hold Command + Shift to dictate."
+    assert App._ready_message(_ready_app("", "hold")) == "Ready."

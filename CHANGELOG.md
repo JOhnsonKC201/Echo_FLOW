@@ -112,6 +112,19 @@ All notable changes are documented here. Format roughly follows
 
 ### Fixed
 
+- **Voice commands press the Mac's keys on a Mac.** Command Mode's table is
+  written in Windows chords, so "computer, undo that" sent Ctrl+Z to macOS,
+  which ignores it. `classify()` now returns the chord for the running OS
+  through `hostos.shortcut`: Ctrl becomes Command, and the three that are
+  different keys entirely are mapped by hand (redo is Command+Shift+Z, top and
+  bottom of document are Command+Up and Command+Down, back and forward are
+  Command+Left and Command+Right). The safe-hotkey gate learned `command` and
+  `option` so the translated chords pass the same allowlist, and the history
+  log records what was really pressed. The dashboard's transform-hotkey
+  validator accepts `command` and `option` too, matching what the listener
+  already parsed. The ready toast and tray labels now name the configured
+  combo in the OS's words ("Hold Command + Shift") instead of a hardcoded
+  "Ctrl+Shift" and a "Win" key no Mac has.
 - **Whisper runs on the GPU. The device check was asking the wrong library.**
   `Transcriber` chose its device with `torch.cuda.is_available()`, but
   faster-whisper does not use torch at all: it runs on CTranslate2. The stock

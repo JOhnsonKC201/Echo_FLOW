@@ -69,6 +69,12 @@ def test_page_data_no_history_safe(tmp_path):
     assert data["recent"] == []
 
 
+def test_page_data_names_the_modifier_this_os_has():
+    cfg = {"experimental": {"command_mode": True}}
+    assert commands_view.page_data(cfg, None, platform="win32")["mod"] == "Ctrl"
+    assert commands_view.page_data(cfg, None, platform="darwin")["mod"] == "Command"
+
+
 # --- Route ------------------------------------------------------------------
 
 def test_commands_page_renders(tmp_path):

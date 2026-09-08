@@ -9,18 +9,20 @@ import time
 from typing import Any
 
 
-def page_data(cfg: dict, history) -> dict:
+def page_data(cfg: dict, history, platform: str | None = None) -> dict:
     """Build the payload for templates/commands.html.
 
     Returns:
         {
           "enabled": bool,
           "prefix": str,
+          "mod": str,             # "Ctrl", or "Command" on a Mac, for the examples
           "supported": list[str],
           "recent": list[dict],   # most recent command_log entries
         }
     """
     from .. import commands as _cmds
+    from .. import hostos
     exp = (cfg or {}).get("experimental", {}) or {}
     enabled = bool(exp.get("command_mode", False))
     prefix = exp.get("command_prefix", "computer")
@@ -39,6 +41,7 @@ def page_data(cfg: dict, history) -> dict:
     return {
         "enabled": enabled,
         "prefix": prefix,
+        "mod": "Command" if hostos.is_mac(platform) else "Ctrl",
         "supported": _cmds.list_supported(),
         "recent": recent,
     }

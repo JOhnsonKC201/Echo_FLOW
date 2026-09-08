@@ -10,6 +10,10 @@ COMMAND_TABLE. Each entry is either:
   ("key", <pyautogui-key>) — single key, e.g. "enter", "escape", "tab"
   ("hotkey", <combo>)      — combo, e.g. "ctrl+c", "ctrl+shift+t"
 
+The table is written in Windows chords. classify() hands back the chord for
+the OS it is running on, so "undo that" presses Command+Z on a Mac and
+"redo" presses Command+Shift+Z there (see hostos.shortcut).
+
 No "text" / "type" / "shell" actions. Voice cannot ever produce arbitrary
 keystrokes. If a command isn't on the allowlist, the dictation is dropped
 with a notify-style warning — never silently typed.
@@ -18,6 +22,8 @@ from __future__ import annotations
 
 import re
 from typing import Iterable
+
+from . import hostos
 
 
 # (regex, action_type, action_value, human_label)
@@ -64,7 +70,9 @@ SAFE_KEYS = {
     "home", "end", "up", "down", "left", "right",
 }
 
-SAFE_MODIFIERS = {"ctrl", "shift", "alt", "win"}
+# "command" and "option" are what the Mac chords use once translated; the gate
+# has to know them or every translated command would be refused.
+SAFE_MODIFIERS = {"ctrl", "shift", "alt", "win", "command", "cmd", "option"}
 SAFE_HOTKEY_LETTERS = set("abcdefghijklmnopqrstuvwxyz0123456789") | {
     "home", "end", "left", "right", "up", "down",
 }
@@ -177,19 +185,24 @@ def strip_prefix_fuzzy(text: str, prefix_word: str, max_dist: int = 2) -> str | 
     return None
 
 
-def classify(command_text: str) -> tuple[str, str, str] | None:
+def classify(command_text: str, platform: str | None = None) -> tuple[str, str, str] | None:
     """Match the prefix-stripped command body against the allowlist.
 
     Returns (action_type, action_value, human_label) on a hit, else None.
+    ``action_value`` is the chord for ``platform`` (default: this OS), so the
+    caller can fire it as-is and the history records what was really pressed.
     """
     if not command_text:
         return None
     body = command_text.strip()
     for pat, action_type, action_value, label in _COMMANDS:
         if pat.search(body):
-            # Defense in depth — confirm allowlist for the hotkey class.
-            if action_type == "hotkey" and not is_safe_hotkey(action_value):
-                continue
+            if action_type == "hotkey":
+                action_value = hostos.shortcut(action_value, platform)
+                # Defense in depth: the translated chord must pass the same
+                # gate as the table entry it came from.
+                if not is_safe_hotkey(action_value):
+                    continue
             if action_type == "key" and action_value not in SAFE_KEYS:
                 continue
             return (action_type, action_value, label)
