@@ -147,12 +147,14 @@ def test_plain_dictation_never_triggers_action(monkeypatch):
 def test_command_mode_runs_before_action(monkeypatch):
     # Both modes on; a real Command Mode hit ("go to the top" → Ctrl+Home) must
     # fire the keystroke and NOT fall through to Action Mode.
+    from src import hostos
     monkeypatch.setattr("src.notify.notify", lambda *a, **k: None)
     cfg = _base_cfg(command_mode=True, action_mode=True, command_prefix="computer")
     app = _make_app(cfg, "computer go to the top")
     app.injector.send_hotkey.return_value = True
     app._do_dictation(_audio())
-    app.injector.send_hotkey.assert_called_once_with("ctrl+home")
+    # The chord is the running OS's: Ctrl+Home here, Command+Up on the macOS runner.
+    app.injector.send_hotkey.assert_called_once_with(hostos.shortcut("ctrl+home"))
     app.injector.inject.assert_not_called()
 
 
