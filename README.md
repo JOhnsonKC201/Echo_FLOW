@@ -365,9 +365,11 @@ Echo Flow runs from source on macOS 13 or later. What differs from Windows:
   `device: auto` picks it, with the same `large-v3-turbo` model the CUDA path
   uses (an mlx-community conversion, downloaded on first start). If it cannot
   run, startup says so and falls back to faster-whisper on the CPU with the
-  `base` model. Intel Macs take that CPU path directly. Beam search and the
-  built-in VAD are faster-whisper features; the mlx path decodes greedily and
-  relies on the recorder's own silence guard.
+  `base` model. Intel Macs take that CPU path directly. MLX itself needs
+  macOS 13.5 or later. Beam search and the built-in VAD are faster-whisper
+  features; the mlx path decodes greedily and relies on the recorder's own
+  silence guard. The startup line `Whisper ready: large-v3-turbo on mlx`
+  confirms the GPU path is live.
 - **Start at login.** `scripts/install_autostart.sh` installs a per-user
   LaunchAgent (`~/Library/LaunchAgents/com.echoflow.daemon.plist`) that runs
   the daemon from this checkout at login and relaunches it if it crashes; a
