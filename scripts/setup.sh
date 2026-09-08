@@ -15,6 +15,12 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 
+if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+    echo
+    echo "Apple silicon detected: Whisper will run on the GPU through mlx-whisper."
+    echo "The first start downloads the large-v3-turbo model (about 1.6 GB)."
+fi
+
 cat <<'EOF'
 
 Setup complete. Start Echo Flow with:  ./run.sh
