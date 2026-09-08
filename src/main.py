@@ -346,6 +346,12 @@ class App:
             beam_size=wc.get("beam_size", 5),
             vad_filter=wc.get("vad_filter", True),
         ))
+        # Say which engine won, so a Mac user can see whether the GPU path
+        # (mlx) is live or the CPU fallback took over.
+        _announce("[dim]Whisper ready: {} on {}[/dim]".format(
+            getattr(self.transcriber, "resolved_model", wc["model"]),
+            getattr(self.transcriber, "resolved_device", wc.get("device", "auto")),
+        ))
         self.cleaner = Cleaner(cfg["cleanup"])
         # Safe to start now: the watcher flips self.cleaner.provider.
         if self._pending_ollama_watch:

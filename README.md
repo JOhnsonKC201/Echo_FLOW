@@ -249,7 +249,7 @@ below is what CI tests and is the way to go if you want to hack on it.
 - **Windows 10/11**, or **macOS 13+** from source (the installer is Windows-only; see [macOS](#macos))
 - **Python 3.11+** on your PATH
 - *(Recommended)* **[Ollama](https://ollama.com)** for local LLM cleanup
-- *(Optional)* an NVIDIA GPU, which Whisper uses automatically if present
+- *(Optional)* an NVIDIA GPU or an Apple silicon Mac, which Whisper uses automatically if present
 
 ### 1. Get the code
 ```bat
@@ -360,8 +360,14 @@ Echo Flow runs from source on macOS 13 or later. What differs from Windows:
 - **App-aware profiles** see the application name (Slack, Code, Safari) and,
   once Screen Recording is granted, the window title too. macOS gates window
   titles behind that permission; the app name alone is enough for the profiles.
-- **Whisper runs on the CPU.** faster-whisper has no Metal backend, so `auto`
-  picks a CPU-sized model. There is no GPU path on Apple silicon yet.
+- **Whisper runs on the GPU on Apple silicon.** `scripts/setup.sh` installs
+  [mlx-whisper](https://pypi.org/project/mlx-whisper/) on M-series Macs and
+  `device: auto` picks it, with the same `large-v3-turbo` model the CUDA path
+  uses (an mlx-community conversion, downloaded on first start). If it cannot
+  run, startup says so and falls back to faster-whisper on the CPU with the
+  `base` model. Intel Macs take that CPU path directly. Beam search and the
+  built-in VAD are faster-whisper features; the mlx path decodes greedily and
+  relies on the recorder's own silence guard.
 - **Start at login.** `scripts/install_autostart.sh` installs a per-user
   LaunchAgent (`~/Library/LaunchAgents/com.echoflow.daemon.plist`) that runs
   the daemon from this checkout at login and relaunches it if it crashes; a

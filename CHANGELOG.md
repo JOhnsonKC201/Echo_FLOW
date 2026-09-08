@@ -7,6 +7,19 @@ All notable changes are documented here. Format roughly follows
 ## Unreleased
 
 ### Added
+- **Whisper runs on the Apple GPU.** faster-whisper has no Metal backend, so
+  every Mac transcribed on the CPU with the `base` model. `Transcriber` now
+  has a second engine, mlx-whisper, behind the same interface: on an Apple
+  silicon Mac with the package installed (`scripts/setup.sh` installs it
+  there; Intel Macs and Rosetta skip it) `device: auto` picks `mlx` and the
+  same `large-v3-turbo` model the CUDA path uses. The engine is probed with
+  one real encode at startup, exactly like CUDA, and falls back to the CPU
+  with a logged reason if the model cannot load or run, so a broken install
+  costs speed and never a dictation. `device: mlx` pins it, and a model name
+  containing `/` is taken as a Hugging Face repo so any mlx-community
+  conversion can be used. Two faster-whisper knobs do not apply there:
+  mlx-whisper has no beam search (it raises on `beam_size`) and no built-in
+  VAD, and the recorder's own silence guard already covers the latter.
 - **Start at login on macOS.** `scripts/install_autostart.sh` writes a
   per-user LaunchAgent (`com.echoflow.daemon`) that runs the daemon from the
   checkout at login, with `KeepAlive.SuccessfulExit = false` so launchd
@@ -37,8 +50,7 @@ All notable changes are documented here. Format roughly follows
   opening, and crash relaunch. `scripts/setup.sh`, `run.sh`,
   `run_dashboard.sh` and `scripts/run_tests.sh` are the shell twins of the
   `.bat` launchers, and CI now runs the logic suite on macOS as well as
-  Windows. No installer yet, and Whisper is CPU-only there because
-  CTranslate2 has no Metal backend.
+  Windows. No installer yet.
 - **Echo Flow starts Ollama when it is installed but not running.** Ollama does
   not register itself for Windows autostart and Echo Flow does, so every login
   brought the daemon up with its model backend down; the user was told to start

@@ -1,10 +1,19 @@
-"""faster-whisper wrapper."""
+"""Whisper behind one interface: faster-whisper (CPU or CUDA) or mlx-whisper (Apple GPU).
+
+``Transcriber`` picks the engine at startup. ``device: auto`` means mlx on an
+Apple silicon Mac that has mlx-whisper installed, CUDA when CTranslate2 sees a
+usable card, and the CPU otherwise. Both engines are probed with one real
+encode before they are trusted, and a failed probe falls back to the CPU with
+a warning rather than losing the first dictation.
+"""
 from __future__ import annotations
 
+import platform as _platform_mod
 from dataclasses import dataclass
+from types import SimpleNamespace
 import numpy as np
 
-from . import cuda_dlls
+from . import cuda_dlls, hostos
 from .log import get as _get_log
 
 _log = _get_log("transcribe")
@@ -43,7 +52,129 @@ class WhisperConfig:
 # That totals ~5.7 GB and leaves real headroom. large-v3 fp16 would add another
 # ~1.5 GB and put the total over 7 GB, which OOMs the moment anything else wants
 # VRAM — so turbo is the ceiling on this class of card, not a compromise.
-_CUDA_MODEL = "large-v3-turbo"
+# The same pick holds for mlx on Apple silicon: unified memory is shared with
+# the Ollama model in exactly the same way.
+_GPU_MODEL = "large-v3-turbo"
+_GPU_DEVICES = ("cuda", "mlx")
+
+# The Whisper checkpoints converted for MLX, by the short names the config
+# uses. A model with a "/" in it is taken as a Hugging Face repo as-is, so any
+# mlx-community conversion (quantized ones included) can be pinned directly.
+_MLX_REPOS = {
+    "tiny": "mlx-community/whisper-tiny-mlx",
+    "base": "mlx-community/whisper-base-mlx",
+    "small": "mlx-community/whisper-small-mlx",
+    "medium": "mlx-community/whisper-medium-mlx",
+    "large-v3": "mlx-community/whisper-large-v3-mlx",
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+}
+
+
+def mlx_repo(model: str) -> str:
+    """The Hugging Face repo mlx-whisper loads for a config model name."""
+    if "/" in model:
+        return model
+    return _MLX_REPOS.get(model, f"mlx-community/whisper-{model}-mlx")
+
+
+def _mlx_is_usable(platform: str | None = None, machine: str | None = None) -> bool:
+    """Apple silicon with mlx-whisper installed.
+
+    MLX only runs on Apple's own chips, so an Intel Mac (or a Python running
+    under Rosetta, which reports x86_64) never takes this path even when the
+    package is present.
+    """
+    if not hostos.is_mac(platform):
+        return False
+    if (machine or _platform_mod.machine()) != "arm64":
+        return False
+    try:
+        import mlx_whisper  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+class MlxWhisperModel:
+    """mlx-whisper behind faster-whisper's ``transcribe()`` shape.
+
+    ``Transcriber.transcribe`` iterates segments with ``.text``,
+    ``.avg_logprob``, ``.no_speech_prob``, ``.compression_ratio`` and
+    ``.words[].probability`` and reads ``info.language``; this hands it the
+    same objects built from mlx-whisper's dicts. Two arguments are dropped on
+    purpose: mlx-whisper has no beam search (passing ``beam_size`` raises
+    NotImplementedError) and no built-in VAD, and the recorder's own
+    length-and-level guard already drops silent clips before they get here.
+    The model itself is loaded on the first call and cached inside
+    mlx-whisper, so the startup probe is what pays for the download.
+    """
+
+    def __init__(self, model: str, transcribe_fn=None):
+        self.name = model
+        self.repo = mlx_repo(model)
+        self.device = "mlx"
+        self.compute_type = "float16"
+        if transcribe_fn is None:
+            import mlx_whisper
+            transcribe_fn = mlx_whisper.transcribe
+        self._transcribe = transcribe_fn
+
+    def transcribe(self, audio, *, language=None, beam_size=None, vad_filter=None,
+                   condition_on_previous_text=False, initial_prompt=None,
+                   word_timestamps=False, **_unused):
+        options = {
+            "path_or_hf_repo": self.repo,
+            "verbose": None,
+            "condition_on_previous_text": bool(condition_on_previous_text),
+            "initial_prompt": initial_prompt,
+            "word_timestamps": bool(word_timestamps),
+        }
+        if language:
+            options["language"] = language
+        result = self._transcribe(audio, **options) or {}
+        segments = [_mlx_segment(s) for s in (result.get("segments") or [])]
+        info = SimpleNamespace(language=result.get("language") or language or "en")
+        return iter(segments), info
+
+
+def _mlx_segment(seg: dict) -> SimpleNamespace:
+    words = [
+        SimpleNamespace(word=w.get("word", ""), probability=w.get("probability"))
+        for w in (seg.get("words") or [])
+    ]
+    return SimpleNamespace(
+        text=seg.get("text", "") or "",
+        avg_logprob=seg.get("avg_logprob"),
+        no_speech_prob=seg.get("no_speech_prob"),
+        compression_ratio=seg.get("compression_ratio"),
+        words=words,
+    )
+
+
+def _probe_mlx(model) -> bool:
+    """One real transcribe, so a broken or missing model fails here and not mid-dictation."""
+    try:
+        rng = np.random.default_rng(0)
+        audio = (rng.standard_normal(16000) * 0.05).astype(np.float32)
+        segments, _ = model.transcribe(audio, language="en")
+        list(segments)
+        return True
+    except Exception as e:
+        _log.warning("mlx-whisper probe failed (%s: %s), using faster-whisper on the CPU",
+                     type(e).__name__, str(e)[:200])
+        return False
+
+
+def _build_mlx(model: str):
+    """An MlxWhisperModel that has proven it can run, or None."""
+    try:
+        built = MlxWhisperModel(model)
+    except Exception as e:
+        _log.warning("mlx-whisper unavailable (%s: %s), using faster-whisper on the CPU; "
+                     "pip install mlx-whisper for the Apple GPU path",
+                     type(e).__name__, str(e)[:200])
+        return None
+    return built if _probe_mlx(built) else None
 
 
 def _cuda_is_usable() -> bool:
@@ -98,32 +229,41 @@ def _resolve(cfg: WhisperConfig, device: str) -> tuple[str, str]:
     """Resolve ``auto`` model/compute against a concrete device."""
     compute = cfg.compute_type
     if compute == "auto":
-        compute = "float16" if device == "cuda" else "int8"
+        compute = "float16" if device in _GPU_DEVICES else "int8"
     model = cfg.model
     if model == "auto":
         # CPU: base balances accuracy against a ~400-600 ms transcribe.
-        # GPU: turbo is both faster than CPU base and far more accurate.
-        model = _CUDA_MODEL if device == "cuda" else "base"
+        # GPU (CUDA or Apple silicon): turbo is both faster than CPU base and
+        # far more accurate.
+        model = _GPU_MODEL if device in _GPU_DEVICES else "base"
     return model, compute
 
 
 class Transcriber:
     def __init__(self, cfg: WhisperConfig):
-        # Must precede the faster-whisper import: it pulls in CTranslate2, whose
-        # DLL search path is fixed at import time. See src/cuda_dlls.py.
-        cuda_dlls.ensure()
-        from faster_whisper import WhisperModel
         device = cfg.device
-        if device == "auto":
-            device = "cuda" if _cuda_is_usable() else "cpu"
-        model, compute = _resolve(cfg, device)
-        built = WhisperModel(model, device=device, compute_type=compute)
-        if device == "cuda" and not _probe_cuda(built):
-            # Explicit device="cuda" falls back too. Surprising the user with a
-            # slower device beats breaking every dictation on the machine.
-            device = "cpu"
+        built = None
+        if device == "mlx" or (device == "auto" and _mlx_is_usable()):
+            model, compute = _resolve(cfg, "mlx")
+            built = _build_mlx(model)
+            # An explicit device="mlx" that cannot run falls back too, for the
+            # same reason CUDA does below: a slower engine beats no dictation.
+            device = "mlx" if built is not None else ("auto" if cfg.device == "auto" else "cpu")
+        if built is None:
+            # Must precede the faster-whisper import: it pulls in CTranslate2,
+            # whose DLL search path is fixed at import time. See src/cuda_dlls.py.
+            cuda_dlls.ensure()
+            from faster_whisper import WhisperModel
+            if device == "auto":
+                device = "cuda" if _cuda_is_usable() else "cpu"
             model, compute = _resolve(cfg, device)
             built = WhisperModel(model, device=device, compute_type=compute)
+            if device == "cuda" and not _probe_cuda(built):
+                # Explicit device="cuda" falls back too. Surprising the user with a
+                # slower device beats breaking every dictation on the machine.
+                device = "cpu"
+                model, compute = _resolve(cfg, device)
+                built = WhisperModel(model, device=device, compute_type=compute)
         self.cfg = cfg
         self.resolved_model = model
         self.resolved_device = device
