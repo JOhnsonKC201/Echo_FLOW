@@ -377,9 +377,36 @@ button.primary:hover, .btn.primary:hover {
   box-shadow: 0 4px 14px -8px color-mix(in oklab, var(--accent) 30%, transparent);
   animation: ef-flash-in .25s cubic-bezier(.2,.7,.2,1);
 }
+/* Until this existed every flash was accent-green, so "unsupported key" read
+   as cheerfully as "Hotkey updated." Failures now carry the danger colour. */
+.flash.error {
+  background: linear-gradient(180deg,
+    color-mix(in oklab, var(--panel-2) 92%, var(--danger) 6%),
+    var(--panel-2));
+  border: 1px solid color-mix(in oklab, var(--danger) 26%, var(--border));
+  border-left: 3px solid var(--danger);
+  box-shadow: 0 4px 14px -8px color-mix(in oklab, var(--danger) 30%, transparent);
+}
 @keyframes ef-flash-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Hotkey recorder (Transforms) ----------------------------------------- */
+.hk-status { font-size: 12px; color: var(--muted); min-height: 1em; }
+.hk-status.hk-bad { color: var(--danger); }
+.hk-status.hk-warn { color: var(--warn); }
+.hk-status.hk-ok { color: var(--accent); }
+/* While capturing, the field is the target of every keypress. Make that
+   obvious so nobody wonders why their typing is not appearing. */
+.hk-recording {
+  border-color: color-mix(in oklab, var(--accent) 70%, var(--border)) !important;
+  box-shadow: var(--focus-ring);
+}
+.transform-hotkey .hk-keys { display: inline-flex; gap: 4px; align-items: center; }
+.transform-hotkey input[type="text"].hk-input { flex: 0 0 220px; }
+@media (max-width: 560px) {
+  .transform-hotkey input[type="text"].hk-input { flex: 1 1 100%; }
 }
 /* wrap + min-width:0: a flex item's automatic minimum size is its intrinsic
    width, so a size=20 input could not shrink below ~168px. On a 375px screen

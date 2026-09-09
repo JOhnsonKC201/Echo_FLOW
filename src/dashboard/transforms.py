@@ -122,9 +122,9 @@ def add_transform(
     if len(system_prompt) > 8000:
         raise ValueError("system_prompt too long (max 8000 chars)")
     if hotkey is not None:
-        hotkey = (hotkey or "").strip().lower() or None
+        hotkey = (hotkey or "").strip() or None
         if hotkey:
-            _validate_hotkey(hotkey)
+            hotkey = _validate_hotkey(hotkey)
             _check_hotkey_unique(conn, hotkey, exclude_id=None)
     try:
         cur = conn.execute(
@@ -170,8 +170,7 @@ def update_transform(
         params.append(system_prompt)
     if hotkey is not ...:
         if hotkey:
-            hotkey = hotkey.strip().lower()
-            _validate_hotkey(hotkey)
+            hotkey = _validate_hotkey(hotkey.strip())
             _check_hotkey_unique(conn, hotkey, exclude_id=transform_id)
             fields.append("hotkey = ?")
             params.append(hotkey)
@@ -240,31 +239,21 @@ def find_by_hotkey(conn: sqlite3.Connection, combo: str) -> dict | None:
 
 # --- Hotkey validation -------------------------------------------------------
 
-# Conservative grammar: 1+ modifiers + 1 key, separated by '+'.
-# Modifiers: ctrl alt shift win cmd, plus the Mac spellings command and option
-# (the same keys; hotkey._parse_combo already reads them). Keys: a-z, 0-9, f1-f24.
-_ALLOWED_MODS = {"ctrl", "alt", "shift", "win", "cmd", "command", "option"}
-_ALLOWED_KEY_PATTERN = None  # lazy compile
+# The grammar lives in src/hotkey_spec.py, shared with the pynput conversion
+# in main._transform_combo_to_pynput. Keeping a second copy here is what let
+# 'ctrl+shift' be refused despite registering fine, and let 'command+option+p'
+# validate and then be silently dropped at registration.
 
 
-def _validate_hotkey(combo: str) -> None:
-    import re as _re
-    global _ALLOWED_KEY_PATTERN
-    if _ALLOWED_KEY_PATTERN is None:
-        _ALLOWED_KEY_PATTERN = _re.compile(r"^(?:[a-z0-9]|f[1-9]|f1[0-9]|f2[0-4])$")
-    parts = combo.split("+")
-    if len(parts) < 2:
-        raise ValueError(
-            f"hotkey {combo!r} must include at least one modifier (e.g. 'ctrl+alt+p')"
-        )
-    *mods, key = parts
-    for m in mods:
-        if m not in _ALLOWED_MODS:
-            raise ValueError(f"unknown modifier {m!r} in hotkey {combo!r}")
-    if len(set(mods)) != len(mods):
-        raise ValueError(f"duplicate modifier in hotkey {combo!r}")
-    if not _ALLOWED_KEY_PATTERN.match(key):
-        raise ValueError(f"unsupported key {key!r} in hotkey {combo!r}")
+def _validate_hotkey(combo: str) -> str:
+    """Raise ValueError if combo is unusable; return its canonical spelling.
+
+    Canonical form fixes modifier ordering, so 'shift+ctrl+p' and 'ctrl+shift+p'
+    are stored identically and the uniqueness check below sees them as one
+    chord rather than two.
+    """
+    from ..hotkey_spec import canonical
+    return canonical(combo)
 
 
 def _check_hotkey_unique(

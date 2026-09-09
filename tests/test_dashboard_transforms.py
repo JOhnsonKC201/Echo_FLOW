@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from urllib.parse import unquote_plus
 
 from src.history import History
 from src.dashboard import transforms as tf
@@ -115,27 +116,82 @@ def test_find_by_hotkey_ignores_disabled(tmp_path):
 
 # --- Hotkey validation -------------------------------------------------------
 
-@pytest.mark.parametrize("combo", [
+ACCEPTED_HOTKEYS = [
     "ctrl+alt+p", "ctrl+shift+alt+1", "win+shift+f5",
     "command+alt+p", "option+shift+p",   # Mac spellings of cmd and alt
-])
+    "ctrl+shift",                        # modifier-only, as config.yaml uses
+    "alt+win", "ctrl+alt",
+    "ctrl+space", "ctrl+enter",          # named keys the listener already took
+    "f9", "ctrl+f24",
+    "Ctrl + Shift + P",                  # case and spacing are forgiving
+]
+
+
+@pytest.mark.parametrize("combo", ACCEPTED_HOTKEYS)
 def test_validate_hotkey_accepts(combo):
     tf._validate_hotkey(combo)  # no raise
 
 
 @pytest.mark.parametrize("combo", [
     "p", "ctrl+nope", "ctrl+ctrl+a", "ctrl+",
+    "ctrl",        # one lone modifier would fire on every keystroke
+    "ctrl+f25",    # pynput stops at f24
+    "a+b", "ctrl+p+alt",
 ])
 def test_validate_hotkey_rejects(combo):
     with pytest.raises(ValueError):
         tf._validate_hotkey(combo)
 
 
+@pytest.mark.parametrize("combo", ACCEPTED_HOTKEYS)
+def test_anything_that_validates_can_actually_register(combo):
+    """The invariant that retires this whole class of bug.
+
+    Validation and pynput conversion were separate grammars that disagreed in
+    both directions: 'ctrl+shift' was refused despite registering fine, and
+    'command+option+p' validated, reported success, then got dropped at
+    registration because the converter did not know the macOS spellings. Tying
+    the two together here means neither can drift again without failing.
+    """
+    from pynput.keyboard import HotKey
+    canonical = tf._validate_hotkey(combo)
+    pynput_combo = _transform_combo_to_pynput(canonical)
+    assert pynput_combo is not None, f"{combo!r} validated but cannot register"
+    HotKey.parse(pynput_combo)  # raises if pynput would reject it
+
+
+def test_mac_spellings_survive_conversion():
+    """Regression: these validated, flashed success, and never fired."""
+    assert _transform_combo_to_pynput(tf._validate_hotkey("command+option+p")) \
+        == "<alt>+<cmd>+p"
+
+
+@pytest.mark.parametrize("a,b", [
+    ("shift+ctrl+p", "ctrl+shift+p"),
+    ("WIN+alt", "alt+win"),
+    ("  ctrl + alt + 1  ", "ctrl+alt+1"),
+])
+def test_same_chord_has_one_canonical_spelling(a, b):
+    assert tf._validate_hotkey(a) == tf._validate_hotkey(b)
+
+
+def test_reordered_chord_counts_as_a_duplicate(tmp_path):
+    """Storage is canonical, so 'shift+ctrl+p' collides with 'ctrl+shift+p'."""
+    h = _h(tmp_path)
+    tf.add_transform(h.conn, name="First", system_prompt="x", hotkey="ctrl+shift+p")
+    with pytest.raises(ValueError):
+        tf.add_transform(h.conn, name="Second", system_prompt="y",
+                         hotkey="shift+ctrl+p")
+
+
 # --- pynput combo conversion -------------------------------------------------
 
 def test_combo_to_pynput_basic():
     assert _transform_combo_to_pynput("ctrl+alt+p") == "<ctrl>+<alt>+p"
-    assert _transform_combo_to_pynput("win+shift+f5") == "<cmd>+<shift>+<f5>"
+    # Modifiers come out in hotkey_spec.MOD_ORDER (ctrl, alt, shift, cmd), not
+    # in the order they were typed, so that one chord has exactly one spelling.
+    # pynput matches on a set of keys, so ordering does not affect what fires.
+    assert _transform_combo_to_pynput("win+shift+f5") == "<shift>+<cmd>+<f5>"
     assert _transform_combo_to_pynput("") is None
     assert _transform_combo_to_pynput("nope+key") is None
 
@@ -158,18 +214,18 @@ def test_cleaner_uses_system_prompt_override(monkeypatch):
 # --- Route round-trip --------------------------------------------------------
 
 class _App:
-    def __init__(self, history):
-        self.cfg = {"dashboard": {"host": "127.0.0.1", "port": 8766}}
+    def __init__(self, history, cfg=None):
+        self.cfg = cfg or {"dashboard": {"host": "127.0.0.1", "port": 8766}}
         self.history = history
         self.refresh_calls = 0
     def refresh_transform_hotkeys(self):
         self.refresh_calls += 1
 
 
-def _client(tmp_path):
+def _client(tmp_path, cfg=None):
     from src.dashboard.app import make_app
     h = _h(tmp_path)
-    app_ref = _App(h)
+    app_ref = _App(h, cfg)
     return make_app(app_ref).test_client(), app_ref
 
 
@@ -188,3 +244,65 @@ def test_transforms_route_add_post(tmp_path):
     r = client.get("/transforms", headers={"Host": "127.0.0.1:8766"})
     assert b"Brief" in r.data
     assert app_ref.refresh_calls == 1
+
+
+HOST = {"Host": "127.0.0.1:8766"}
+
+# config.yaml ships these; the reserved-chord check reads them from cfg.
+CFG_WITH_HOTKEYS = {
+    "dashboard": {"host": "127.0.0.1", "port": 8766, "open_hotkey": "<ctrl>+<cmd>"},
+    "hotkey": {"combo": "ctrl+shift", "paste_last_combo": "ctrl+shift+win"},
+    "prompt_engineering": {"enabled": True, "oneshot_combo": "ctrl+shift+alt"},
+}
+
+
+def _first_transform_id(client):
+    client.get("/transforms", headers=HOST)  # seeds builtins
+    return 1
+
+
+def test_modifier_only_chord_binds(tmp_path):
+    """The original bug: 'ctrl+alt' was refused despite registering fine."""
+    client, app_ref = _client(tmp_path)
+    tid = _first_transform_id(client)
+    r = client.post("/transforms/bind-hotkey", headers=HOST,
+                    data={"id": str(tid), "hotkey": "ctrl+alt"}, follow_redirects=False)
+    assert "flash_kind=error" not in r.headers["Location"]
+    page = client.get("/transforms", headers=HOST).data
+    assert b"ctrl+alt" in page
+
+
+def test_rejected_hotkey_keeps_what_you_typed(tmp_path):
+    """A redirect used to drop the input, so a typo looked like a failed save."""
+    client, _ = _client(tmp_path)
+    tid = _first_transform_id(client)
+    r = client.post("/transforms/bind-hotkey", headers=HOST,
+                    data={"id": str(tid), "hotkey": "ctrl+nope"}, follow_redirects=False)
+    loc = r.headers["Location"]
+    assert "flash_kind=error" in loc
+    assert "hk_val=ctrl%2Bnope" in loc
+    # ...and the page echoes it back into that row's field.
+    page = client.get(loc, headers=HOST).data
+    assert b'value="ctrl+nope"' in page
+    assert b"flash error" in page
+
+
+def test_reserved_chord_is_refused_by_name(tmp_path):
+    """'ctrl+shift' is the push-to-talk chord, so say that, not 'unsupported key'."""
+    client, _ = _client(tmp_path, CFG_WITH_HOTKEYS)
+    tid = _first_transform_id(client)
+    r = client.post("/transforms/bind-hotkey", headers=HOST,
+                    data={"id": str(tid), "hotkey": "ctrl+shift"}, follow_redirects=False)
+    loc = r.headers["Location"]
+    assert "flash_kind=error" in loc, "reserved chord was accepted"
+    assert "push-to-talk" in unquote_plus(loc), f"message did not name the owner: {loc}"
+
+
+def test_reserved_chords_reach_the_recorder(tmp_path):
+    """The page ships the reserved map so the recorder can warn mid-press."""
+    client, _ = _client(tmp_path, CFG_WITH_HOTKEYS)
+    page = client.get("/transforms", headers=HOST).data.decode()
+    assert "hk-reserved" in page
+    assert "push-to-talk" in page
+    # PE one-shot is "ctrl+shift+alt" in config; canonical order is ctrl, alt, shift.
+    assert "ctrl+alt+shift" in page

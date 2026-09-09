@@ -1,12 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Transforms · Echo Flow{% endblock %}
 {% block content %}
+{# Chords already claimed by dictation, re-paste, the PE one-shot and the
+   dashboard opener. The recorder reads this so it can warn mid-press. #}
+<div id="hk-reserved" data-reserved="{{ reserved_json }}" hidden></div>
 <h1 class="welcome">Transforms</h1>
 <div class="muted small" style="margin-bottom: 14px;">
   Named system prompts for cleanup. Bind a hotkey to arm a transform for the next dictation.
+  Press <strong>Record</strong> and hold the keys, or type a chord like
+  <kbd>ctrl+alt+1</kbd>, <kbd>ctrl+alt</kbd> or <kbd>f9</kbd>.
 </div>
 
-{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+{% if flash %}<div class="flash {{ 'error' if flash_kind == 'error' else '' }}"
+     {% if flash_kind == 'error' %}role="alert"{% endif %}>{{ flash }}</div>{% endif %}
 
 <div class="card">
   <h2>All transforms <span class="muted small">{{ items|length }} total</span></h2>
@@ -36,9 +42,16 @@
         <div class="transform-prompt">{{ t.system_prompt }}</div>
         <form method="post" action="/transforms/bind-hotkey" class="row-form transform-hotkey">
           <input type="hidden" name="id" value="{{ t.id }}">
-          <input type="text" name="hotkey" placeholder="e.g. ctrl+alt+1 (empty to clear)"
-                 value="{{ t.hotkey or '' }}" style="flex: 0 0 220px;">
+          {# On a rejected save, keep what was typed rather than snapping back
+             to the stored value, which read as though nothing had happened. #}
+          <input type="text" name="hotkey" class="hk-input" data-hotkey-input
+                 placeholder="e.g. ctrl+alt+1 (empty to clear)"
+                 autocomplete="off" aria-describedby="hk-status-{{ t.id }}"
+                 value="{{ hk_val if hk_id == t.id|string else (t.hotkey or '') }}">
+          {# Unhidden by app.js, so the plain field still works without JS. #}
+          <button type="button" class="btn" data-hotkey-record hidden>Record</button>
           <button type="submit" class="btn">Save hotkey</button>
+          <span class="hk-status" id="hk-status-{{ t.id }}" aria-live="polite"></span>
         </form>
       </div>
     {% endfor %}
@@ -52,9 +65,13 @@
   <form method="post" action="/transforms/add">
     <input type="text" name="name" placeholder="Name (e.g. Polish formal)" maxlength="60" required style="width: 100%; padding: 9px 12px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); font-size: 14px; margin-bottom: 8px;">
     <textarea name="system_prompt" rows="6" placeholder="System prompt that the LLM will receive. Be specific about what to keep, change, or strip." required></textarea>
-    <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
-      <input type="text" name="hotkey" placeholder="optional hotkey, e.g. ctrl+alt+p" style="flex: 0 0 280px; padding: 8px 10px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); font-size: 13px;">
+    <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <input type="text" name="hotkey" data-hotkey-input aria-describedby="hk-status-new"
+             autocomplete="off" placeholder="optional hotkey, e.g. ctrl+alt+p"
+             style="flex: 0 0 280px; padding: 8px 10px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); font-size: 13px;">
+      <button type="button" class="btn" data-hotkey-record hidden>Record</button>
       <button type="submit" class="primary">Add transform</button>
+      <span class="hk-status" id="hk-status-new" aria-live="polite"></span>
     </div>
   </form>
 </div>

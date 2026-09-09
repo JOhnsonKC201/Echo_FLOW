@@ -178,6 +178,148 @@ function setupCommandPalette() {
   });
 }
 
+/* --- Hotkey recorder ---------------------------------------------------- *
+ * Press the chord instead of spelling it. The old field asked you to guess a
+ * serialization ("ctrl"? "control"? "CTRL"?) and told you nothing until after
+ * a round trip that also wiped what you typed.
+ *
+ * Grammar mirrors src/hotkey_spec.py. The server revalidates everything; this
+ * only exists so a reserved chord is flagged while your fingers are still on
+ * the keys.
+ * ----------------------------------------------------------------------- */
+const HK_MOD_ORDER = ["ctrl", "alt", "shift", "cmd"];
+const HK_MIN_BARE_MODIFIERS = 2;
+const HK_FUNCTION_KEY = /^f([1-9]|1[0-9]|2[0-4])$/;
+
+// Read e.code, not e.key: with Shift held the "1" key reports as "!", which
+// would bind a chord nobody can press again.
+function hkKeyFromEvent(e) {
+  const code = e.code || "";
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code.toLowerCase();
+  if (code === "Space") return "space";
+  if (code === "Enter") return "enter";
+  if (code === "Tab") return "tab";
+  return null; // a modifier, or something we do not bind
+}
+
+function hkModsFromEvent(e) {
+  const mods = [];
+  if (e.ctrlKey) mods.push("ctrl");
+  if (e.altKey) mods.push("alt");
+  if (e.shiftKey) mods.push("shift");
+  if (e.metaKey) mods.push("cmd");
+  return mods;
+}
+
+function hkFormat(mods, key) {
+  const parts = HK_MOD_ORDER.filter((m) => mods.indexOf(m) !== -1);
+  if (key) parts.push(key);
+  return parts.join("+");
+}
+
+// Same two rules hotkey_spec.parse enforces, worded for someone mid-press.
+function hkProblem(mods, key) {
+  if (!key && mods.length < HK_MIN_BARE_MODIFIERS) {
+    return "Hold a key, or a second modifier.";
+  }
+  if (key && !mods.length && !HK_FUNCTION_KEY.test(key)) {
+    return "Add a modifier, e.g. ctrl+alt+" + key + ".";
+  }
+  return null;
+}
+
+function setupHotkeyRecorders() {
+  const buttons = document.querySelectorAll("[data-hotkey-record]");
+  if (!buttons.length) return;
+  let reserved = {};
+  const holder = document.getElementById("hk-reserved");
+  if (holder) {
+    try { reserved = JSON.parse(holder.dataset.reserved || "{}"); } catch (e) { reserved = {}; }
+  }
+
+  buttons.forEach((btn) => {
+    const form = btn.closest("form");
+    if (!form) return;
+    const input = form.querySelector("[data-hotkey-input]");
+    if (!input) return;
+    const status = form.querySelector(".hk-status");
+    btn.hidden = false; // JS is alive, so offer the recorder
+
+    let active = false;
+    let heldMods = null;
+
+    function say(msg, kind) {
+      if (!status) return;
+      status.textContent = msg || "";
+      status.className = "hk-status" + (kind ? " hk-" + kind : "");
+    }
+
+    function stop() {
+      active = false;
+      heldMods = null;
+      btn.textContent = "Record";
+      input.readOnly = false;
+      input.classList.remove("hk-recording");
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keyup", onUp, true);
+    }
+
+    function commit(mods, key) {
+      const problem = hkProblem(mods, key);
+      if (problem) { say(problem, "bad"); return; } // keep listening
+      const combo = hkFormat(mods, key);
+      input.value = combo;
+      const owner = reserved[combo];
+      if (owner) say(combo + " is already " + owner + ". Pick another.", "bad");
+      else say(combo + " is free. Save hotkey to bind it.", "ok");
+      stop();
+    }
+
+    // Capture phase plus stopPropagation, or the global Ctrl+K palette
+    // swallows the chord before the recorder ever sees it.
+    function onKey(e) {
+      if (!active) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") { say("Cancelled.", ""); stop(); return; }
+      const mods = hkModsFromEvent(e);
+      const key = hkKeyFromEvent(e);
+      if (key) { commit(mods, key); return; }
+      heldMods = mods;
+      say(mods.length ? hkFormat(mods, null) + "…" : "Listening…", "");
+    }
+
+    function onUp(e) {
+      if (!active) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Letting go with two or more modifiers and no key is a modifier-only
+      // chord, the same shape push-to-talk and re-paste already use.
+      if (heldMods && heldMods.length >= HK_MIN_BARE_MODIFIERS) {
+        commit(heldMods, null);
+        return;
+      }
+      heldMods = null;
+      say("Listening. Esc cancels.", "");
+    }
+
+    btn.addEventListener("click", () => {
+      if (active) { stop(); say("", ""); return; }
+      active = true;
+      heldMods = null;
+      btn.textContent = "Press keys…";
+      input.readOnly = true;
+      input.classList.add("hk-recording");
+      input.focus();
+      say("Listening. Esc cancels.", "");
+      document.addEventListener("keydown", onKey, true);
+      document.addEventListener("keyup", onUp, true);
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   refreshBell();
   setInterval(refreshBell, 5000);
@@ -185,6 +327,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (tb) tb.addEventListener("click", toggleTheme);
   setupNavDrawer();
   setupCommandPalette();
+  setupHotkeyRecorders();
 });
 
 window.EF = { $, $$, escapeHtml, fetchJson };

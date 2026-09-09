@@ -26,6 +26,65 @@ def _refresh_transform_hotkeys(app_ref) -> None:
             _log.warning("refresh_transform_hotkeys failed: %s", e)
 
 
+def _reserved_hotkeys(cfg: dict) -> dict[str, str]:
+    """Canonical chord -> a plain-English name for whatever already owns it.
+
+    Transform hotkeys may be modifier-only now, which is the same shape the
+    dictation, re-paste and prompt-engineering chords use. Without this the
+    Transforms page would happily hand out a chord that is already spoken for
+    and the two would fire together.
+    """
+    from ..hotkey_spec import canonical_or_none
+    hk = cfg.get("hotkey") or {}
+    pe = cfg.get("prompt_engineering") or {}
+    dash = cfg.get("dashboard") or {}
+    candidates = [
+        (hk.get("combo"), "your push-to-talk hotkey"),
+        (hk.get("paste_last_combo"), "your re-paste hotkey"),
+        (pe.get("oneshot_combo") if pe.get("enabled") else None,
+         "the prompt-engineering one-shot"),
+        # Stored bracketed, e.g. "<ctrl>+<cmd>"; canonical_or_none strips those.
+        (dash.get("open_hotkey"), "the dashboard open hotkey"),
+    ]
+    reserved: dict[str, str] = {}
+    for raw, label in candidates:
+        chord = canonical_or_none(raw)
+        if chord and chord not in reserved:
+            reserved[chord] = label
+    return reserved
+
+
+def _hotkey_conflict(cfg: dict, combo: str) -> str | None:
+    """Return a refusal message when combo clashes with a reserved chord.
+
+    `combo` arrives canonicalized. `_reserved_hotkeys(cfg)` maps canonical
+    chords to labels like "your push-to-talk hotkey".
+
+    Two kinds of clash exist, and they are not equally bad:
+
+    * An exact match. Binding 'ctrl+shift' when that is already push-to-talk
+      means both fire on the same press.
+    * A superset. HotkeyListener._on_press (src/hotkey.py) activates on
+      `combo.issubset(pressed)`, so holding 'ctrl+shift+alt' also satisfies a
+      'ctrl+shift' dictation chord. Echo Flow does this deliberately for the
+      prompt-engineering one-shot, where arming and dictating together is the
+      point.
+
+    Only exact matches are refused. Given a 'ctrl+shift' dictation chord,
+    blocking every superset would rule out most usable modifier-only chords,
+    and Echo Flow already ships one on purpose in the one-shot above.
+
+    Returns None when the combo is free to use.
+    """
+    owner = _reserved_hotkeys(cfg).get(combo)
+    if owner:
+        return (
+            f"{combo} is already {owner}. Pick a different chord, "
+            f"or change the other one in Settings."
+        )
+    return None
+
+
 def _maybe_reload_config(app_ref) -> None:
     """Call App.reload_config() if it exists, swallowing errors.
 
@@ -1058,10 +1117,19 @@ def make_app(app_ref, bound_port: int | None = None):
                 items = _tf.list_transforms(history.conn)
             except Exception as e:
                 _log.warning("transforms list failed: %s", e)
+        import json as _json
         return render_template(
             "transforms.html", sections=SECTIONS, active="transforms",
             theme=dcfg.get("theme", "dark"),
             items=items, flash=_req.args.get("flash", ""),
+            flash_kind=_req.args.get("flash_kind", ""),
+            # Which row was rejected, and what the user had typed, so the field
+            # keeps its value instead of snapping back to the stored hotkey.
+            hk_id=_req.args.get("hk_id", ""),
+            hk_val=_req.args.get("hk_val", ""),
+            # The recorder checks these client-side so it can warn while you
+            # are still holding the keys, with no round trip.
+            reserved_json=_json.dumps(_reserved_hotkeys(app_ref.cfg)),
         )
 
     @flask_app.post("/transforms/add")
@@ -1074,12 +1142,21 @@ def make_app(app_ref, bound_port: int | None = None):
         name = _req.form.get("name", "").strip()
         prompt = _req.form.get("system_prompt", "").strip()
         hotkey = _req.form.get("hotkey", "").strip() or None
+        if hotkey:
+            from ..hotkey_spec import canonical
+            try:
+                hotkey = canonical(hotkey)
+            except ValueError as e:
+                return redirect("/transforms?flash=" + _qp(str(e)) + "&flash_kind=error")
+            clash = _hotkey_conflict(app_ref.cfg, hotkey)
+            if clash:
+                return redirect("/transforms?flash=" + _qp(clash) + "&flash_kind=error")
         try:
             _tf.add_transform(history.conn, name=name, system_prompt=prompt, hotkey=hotkey)
             _refresh_transform_hotkeys(app_ref)
             return redirect("/transforms?flash=" + _qp(f"Added {name!r}."))
         except ValueError as e:
-            return redirect("/transforms?flash=" + _qp(str(e)))
+            return redirect("/transforms?flash=" + _qp(str(e)) + "&flash_kind=error")
 
     @flask_app.post("/transforms/delete")
     def transforms_delete():
@@ -1106,12 +1183,33 @@ def make_app(app_ref, bound_port: int | None = None):
             return redirect("/transforms?flash=History disabled.")
         tid = _form_int(_req.form)
         combo = _req.form.get("hotkey", "").strip() or None
+
+        def _rejected(msg: str):
+            # Hand the rejected text back so the field keeps what was typed and
+            # the error lands on the row it belongs to. Redirecting bare made a
+            # typo look like a silent save failure.
+            return redirect(
+                "/transforms?flash=" + _qp(msg) + "&flash_kind=error"
+                + "&hk_id=" + _qp(str(tid)) + "&hk_val=" + _qp(combo or "")
+            )
+
+        if combo:
+            from ..hotkey_spec import canonical
+            try:
+                combo = canonical(combo)
+            except ValueError as e:
+                return _rejected(str(e))
+            clash = _hotkey_conflict(app_ref.cfg, combo)
+            if clash:
+                return _rejected(clash)
         try:
             _tf.update_transform(history.conn, tid, hotkey=combo)
             _refresh_transform_hotkeys(app_ref)
-            return redirect("/transforms?flash=Hotkey updated.")
         except ValueError as e:
-            return redirect("/transforms?flash=" + _qp(str(e)))
+            return _rejected(str(e))
+        if combo:
+            return redirect("/transforms?flash=" + _qp(f"Hotkey set to {combo}."))
+        return redirect("/transforms?flash=Hotkey cleared.")
 
     @flask_app.post("/transforms/toggle")
     def transforms_toggle():

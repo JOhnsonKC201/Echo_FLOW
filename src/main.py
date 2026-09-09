@@ -93,27 +93,21 @@ def _announce(msg: str, level: str = "info") -> None:
 
 
 def _transform_combo_to_pynput(combo: str) -> str | None:
-    """Convert 'ctrl+alt+p' to pynput GlobalHotKeys format '<ctrl>+<alt>+p'."""
+    """Convert 'ctrl+alt+p' to pynput GlobalHotKeys format '<ctrl>+<alt>+p'.
+
+    Returns None when the combo is unusable, so callers can skip it. The
+    grammar itself lives in hotkey_spec and is shared with the dashboard
+    validator; this used to be a separate table that omitted the macOS
+    spellings, so 'command+option+p' validated in the UI and then vanished
+    here without a word.
+    """
     if not combo:
         return None
-    mods = {"ctrl", "alt", "shift", "win", "cmd"}
-    parts = combo.lower().split("+")
-    out = []
-    for p in parts:
-        p = p.strip()
-        if not p:
-            return None
-        if p == "win":
-            out.append("<cmd>")
-        elif p in mods:
-            out.append(f"<{p}>")
-        elif p.startswith("f") and p[1:].isdigit():
-            out.append(f"<{p}>")
-        elif len(p) == 1:
-            out.append(p)
-        else:
-            return None
-    return "+".join(out)
+    try:
+        from .hotkey_spec import to_pynput
+        return to_pynput(combo)
+    except ValueError:
+        return None
 
 
 # User-data root. In dev (running from source) this is the repo. When frozen
@@ -593,6 +587,13 @@ class App:
                 continue
             combo = _transform_combo_to_pynput(t["hotkey"])
             if not combo:
+                # Should be unreachable: the dashboard validates against the
+                # same grammar before storing. Say so rather than dropping the
+                # binding in silence, which is how this went unnoticed before.
+                _log.warning(
+                    "transform %r: stored hotkey %r cannot be registered, skipping",
+                    t.get("name"), t["hotkey"],
+                )
                 continue
             tid = t["id"]
             def _arm(tid=tid):
