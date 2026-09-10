@@ -18,6 +18,17 @@ from typing import Any
 from .. import graph as _g
 
 
+def _xy(node: dict) -> dict[str, float]:
+    """Carry semantic coordinates across the node rebuild, when present.
+
+    _merge constructs fresh dicts, so anything not copied here is silently
+    dropped and the page quietly falls back to the force layout.
+    """
+    if "sx" in node and "sy" in node:
+        return {"sx": node["sx"], "sy": node["sy"]}
+    return {}
+
+
 def _merge(dict_g: dict, concept_g: dict, notes_g: dict) -> dict[str, Any]:
     """Unify the three graphs into one. Namespaces ids to avoid collisions:
        d:<int> for dictations, c:<name> for concepts, n:<id> for notes.
@@ -42,6 +53,7 @@ def _merge(dict_g: dict, concept_g: dict, notes_g: dict) -> dict[str, Any]:
             "cluster": n.get("cluster", 0),
             "count": cnt,
             "size": 7 + min(6, cnt - 1),  # bigger blob the more it repeats
+            **_xy(n),
         })
     for l in dict_g.get("links", []):
         links.append({
@@ -49,6 +61,7 @@ def _merge(dict_g: dict, concept_g: dict, notes_g: dict) -> dict[str, Any]:
             "target": f"d:{l['target']}",
             "kind": "sim",
             "value": float(l.get("value", 0.6)),
+            "weak": bool(l.get("weak", False)),
         })
 
     # --- concepts ---
@@ -62,6 +75,7 @@ def _merge(dict_g: dict, concept_g: dict, notes_g: dict) -> dict[str, Any]:
             "cluster": -1,
             "size": 6 + min(10, freq),
             "freq": freq,
+            **_xy(n),
         })
     for l in concept_g.get("links", []):
         links.append({
@@ -117,7 +131,12 @@ _HTML = r"""<!doctype html>
   svg { width:100vw; height:100vh; display:block; cursor:grab; }
   svg:active { cursor:grabbing; }
 
-  .link { stroke:#4b5260; stroke-opacity:.55; }
+  /* non-scaling-stroke is load-bearing: d3.zoom scales the whole root group,
+     so at fit-to-view (~0.5x on a 3000px map) a 1px edge rendered at half a
+     pixel and the graph looked like unconnected dots. This keeps edge weight
+     in screen pixels at any zoom. Colour lifted from #4b5260, which was only
+     ~1.6:1 against the canvas. */
+  .link { stroke:#79839a; stroke-opacity:.55; vector-effect: non-scaling-stroke; }
   .node circle { fill:#e2e8f0; stroke:#0d0e11; stroke-width:1.5px;
                  transition: r .18s ease, stroke-width .18s ease; }
   .node text  { fill:#e2e8f0; pointer-events:none;
@@ -220,7 +239,9 @@ _HTML = r"""<!doctype html>
   <button id="m-dict">Dictations</button>
   <button id="m-conc">Concepts</button>
   <button id="m-note">Notes</button>
-  <button id="m-hulls" class="active" title="Toggle cluster hulls">Hulls</button>
+  <button id="m-hulls" title="Toggle cluster hulls">Hulls</button>
+  <button id="m-layout" class="active"
+          title="Semantic: position means meaning. Force: position means connections.">Semantic</button>
   <input id="search" placeholder="Search…" />
   <button id="fit" class="icon" title="Fit to view">⤢</button>
 </div>
@@ -269,13 +290,23 @@ const W = () => window.innerWidth, H = () => window.innerHeight;
 // Zoom/pan container (zoom behavior attached lower, after fitToView is defined).
 const root = svg.append('g');
 
+// Declared before hullsOn below, which reads it. `let` has no hoisting,
+// so declaring this further down threw a temporal-dead-zone ReferenceError
+// and the whole script died before a single edge was drawn.
+// 'semantic' anchors nodes to their embedding projection; 'force' is the
+// classic edge-tension layout.
+let layoutMode = 'semantic';
 const hullLayer = root.append('g').attr('class','hulls');
+hullLayer.classed('off', true);   // matches hullsOn default below
 const linkLayer = root.append('g').attr('class','links');
 const nodeLayer = root.append('g').attr('class','nodes');
 
 // Smooth closed-curve generator for cluster hull paths.
 const hullLine = d3.line().curve(d3.curveBasisClosed);
-let hullsOn = true;
+// Convex hulls assume compact clusters. The semantic projection spreads them,
+// so eight hulls swallow each other into an unreadable wash. Off by default
+// there; the Hulls button still turns them on.
+let hullsOn = (layoutMode !== 'semantic');
 let hullGroups = []; // [{cluster, members:[node,...], color}]
 function rebuildHullGroups() {
   const by = new Map();
@@ -336,7 +367,11 @@ function applyMode(mode) {
   const ids = new Set(nodes.map(n => n.id));
   links = DATA.links
     .filter(l => ids.has(l.source.id || l.source) && ids.has(l.target.id || l.target))
-    .map(l => ({source: l.source.id || l.source, target: l.target.id || l.target, kind: l.kind}));
+    // Carry value/weak through: the remap used to keep only source/target/kind,
+    // so d.value was undefined downstream and every edge drew at the same
+    // fallback thickness no matter how similar the two nodes actually were.
+    .map(l => ({source: l.source.id || l.source, target: l.target.id || l.target,
+                kind: l.kind, value: l.value, weak: l.weak}));
 
   adjacency = new Map();
   nodeById = new Map();
@@ -402,15 +437,55 @@ function render() {
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let _tickN = 0;
 
-  sim = d3.forceSimulation(nodes)
-    .force('link', d3.forceLink(links).id(d => d.id).distance(110).strength(.35))
-    .force('charge', d3.forceManyBody().strength(-650).distanceMax(900))
-    .force('center', d3.forceCenter(W()/2, H()/2))
-    .force('x', d3.forceX(W()/2).strength(.03))
-    .force('y', d3.forceY(H()/2).strength(.03))
-    .force('collide', d3.forceCollide()
-            .radius(d => Math.max((d.size || 8) + 14, labelW(d) / 2 + 6))
-            .strength(.9))
+  // Semantic layout: the server sends sx/sy per node, a t-SNE projection of
+  // the 384-dim embedding normalised to [-1, 1]. Anchor each node there and
+  // let collision push apart the overlaps, instead of letting edge tension
+  // decide position. Force layout is the fallback when the projection is
+  // unavailable (sklearn missing, or too few points).
+  const SPREAD = 1500;   // half-width of the semantic canvas, in px
+  const sxOf = d => W()/2 + d.sx * SPREAD;
+  const syOf = d => H()/2 + d.sy * SPREAD;
+  const semanticReady = nodes.length > 0 &&
+        nodes.every(n => typeof n.sx === 'number' && typeof n.sy === 'number');
+  const useSemantic = semanticReady && layoutMode === 'semantic';
+
+  // Start from the true position so the settle is a nudge, not a journey.
+  if (useSemantic) nodes.forEach(n => { n.x = sxOf(n); n.y = syOf(n); });
+
+  sim = d3.forceSimulation(nodes);
+  if (useSemantic) {
+    sim
+      // Strong anchor: on-screen position should mean semantic position, so
+      // nothing else is allowed to drag a node far from it.
+      .force('x', d3.forceX(sxOf).strength(.85))
+      .force('y', d3.forceY(syOf).strength(.85))
+      // forceLink at strength 0. It is here for its SIDE EFFECT, not its force:
+      // forceLink.initialize() is what swaps each link's string id for the real
+      // node object. Without it applyPositions reads d.source.x off a string,
+      // gets undefined, and every edge draws at NaN and vanishes. Strength 0
+      // keeps edge tension out of a layout that is supposed to mean meaning.
+      .force('link', d3.forceLink(links).id(d => d.id).strength(0))
+      // No charge force on purpose: it moves nodes for reasons unrelated to
+      // meaning, which is the whole point of the semantic layout.
+      // Barely-there collision. At .75 with a label-width radius this shoved
+      // 1012 nodes into an even lattice and erased the clustering entirely:
+      // the map looked like uniform static. Dense clusters are the signal, so
+      // only nudge apart nodes that literally overlap.
+      .force('collide', d3.forceCollide()
+              .radius(d => (d.size || 8) + 2)
+              .strength(.25));
+  } else {
+    sim
+      .force('link', d3.forceLink(links).id(d => d.id).distance(110).strength(.35))
+      .force('charge', d3.forceManyBody().strength(-650).distanceMax(900))
+      .force('center', d3.forceCenter(W()/2, H()/2))
+      .force('x', d3.forceX(W()/2).strength(.03))
+      .force('y', d3.forceY(H()/2).strength(.03))
+      .force('collide', d3.forceCollide()
+              .radius(d => Math.max((d.size || 8) + 14, labelW(d) / 2 + 6))
+              .strength(.9));
+  }
+  sim
     .alpha(1).alphaDecay(.04)          // settle faster → less total CPU
     .on('tick', () => {
       applyPositions();
@@ -551,6 +626,19 @@ for (const [id, m] of MODE_BTNS) {
     MODE_BTNS.forEach(([bid]) => document.getElementById(bid).classList.remove('active'));
     document.getElementById(id).classList.add('active');
     applyMode(m);
+  };
+}
+
+// Layout toggle. Semantic anchors each node to its embedding projection, so
+// where a thing sits is a claim about what it is about. Force is the original
+// edge-tension layout, kept because it reads connection structure better.
+const layoutBtn = document.getElementById('m-layout');
+if (layoutBtn) {
+  layoutBtn.onclick = () => {
+    layoutMode = (layoutMode === 'semantic') ? 'force' : 'semantic';
+    layoutBtn.textContent = (layoutMode === 'semantic') ? 'Semantic' : 'Force';
+    layoutBtn.classList.toggle('active', layoutMode === 'semantic');
+    applyMode(currentMode);
   };
 }
 
@@ -700,9 +788,17 @@ applyMode('all');
 def render(db_path: str) -> str:
     """Return the full HTML document as a string."""
     rows = _g._load_rows(db_path)
+    dictations = _g.build_dictation_graph(rows)
+    # Concepts carry no embedding, so they borrow their position from the
+    # dictations that mention them (centroid). Built here rather than inside
+    # the concept builder because only the dictation graph knows the layout.
+    coords_by_id = {
+        n["id"]: (n["sx"], n["sy"])
+        for n in dictations.get("nodes", []) if "sx" in n
+    }
     merged = _merge(
-        _g.build_dictation_graph(rows),
-        _g.build_concept_graph(rows),
+        dictations,
+        _g.build_concept_graph(rows, coords_by_id=coords_by_id),
         _g.build_notes_graph(db_path, rows),
     )
     # Inject as JSON inside a <script type=application/json> tag rather than

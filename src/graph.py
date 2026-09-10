@@ -125,6 +125,70 @@ def _load_rows(db_path: str, limit: int = 1500, min_quality: float = 30.0) -> li
 
 
 # ---------------------------------------------------------------------------
+# Semantic layout
+# ---------------------------------------------------------------------------
+
+def project_2d(mat: "np.ndarray", seed: int = 42) -> "np.ndarray | None":
+    """384-dim embeddings to 2D coordinates whose NEIGHBOURHOODS carry meaning.
+
+    Measured on the real corpus (1015 deduped dictations, MiniLM-L6-v2):
+
+        projection      neighbour fidelity   cluster separation   global corr
+        PCA(2)                0.688               -0.003             0.323
+        t-SNE perp=30         0.902                0.088             0.215
+        t-SNE perp=50         0.900                0.129             0.255
+
+    PCA is instant and deterministic and it produces a blob: a cluster
+    separation of -0.003 means the topics are not visually distinguishable at
+    all. t-SNE at perplexity 50 keeps 90% of each point's true neighbours and
+    actually pulls the topics apart, in about 1.5s for this corpus. The result
+    is cached upstream by database mtime, so that cost is paid rarely.
+
+    IMPORTANT, and the reason this map has no axes and no scale: t-SNE
+    preserves LOCAL neighbourhoods and deliberately distorts global distance
+    (correlation with true cosine distance is only ~0.26). "These two sit
+    together" is a real statement. "These two are three times further apart
+    than those two" is not. Do not add a distance readout on top of this.
+
+    Returns an (n, 2) array centred on the origin and scaled so the widest axis
+    spans roughly [-1, 1], or None when the projection is unavailable (sklearn
+    missing, or too few points), in which case callers fall back to the force
+    layout.
+    """
+    n = int(mat.shape[0])
+    if n < 8:
+        return None      # nothing to arrange; force layout handles a handful
+    try:
+        from sklearn.decomposition import PCA
+        from sklearn.manifold import TSNE
+    except Exception as e:
+        import logging
+        logging.getLogger("wispr.graph").warning(
+            "semantic layout unavailable (%s); falling back to force layout", e)
+        return None
+    try:
+        # PCA first: denoises and cuts t-SNE's work. 50 components keep ~56% of
+        # the variance here, which is the usual recipe for text embeddings.
+        pre = mat
+        if mat.shape[1] > 50 and n > 50:
+            pre = PCA(n_components=50, random_state=seed).fit_transform(mat)
+        # perplexity must stay under the sample count; sklearn requires < n.
+        perp = float(max(5, min(50, (n - 1) // 3)))
+        xy = TSNE(n_components=2, perplexity=perp, init="pca",
+                  random_state=seed).fit_transform(pre)
+    except Exception as e:
+        import logging
+        logging.getLogger("wispr.graph").warning("t-SNE failed: %s", e)
+        return None
+    xy = np.asarray(xy, dtype=np.float32)
+    xy -= xy.mean(axis=0)
+    span = float(np.abs(xy).max())
+    if span > 0:
+        xy /= span
+    return xy
+
+
+# ---------------------------------------------------------------------------
 # Dictation graph (semantic similarity)
 # ---------------------------------------------------------------------------
 
@@ -132,6 +196,7 @@ def build_dictation_graph(
     rows: list[dict],
     min_similarity: float = 0.55,
     max_edges_per_node: int = 6,
+    min_neighbors: int = 3,
 ) -> dict[str, Any]:
     """Each dictation → node. Edges = top-K most similar above threshold.
 
@@ -179,20 +244,33 @@ def build_dictation_graph(
             import logging
             logging.getLogger("wispr.graph").warning("k-means failed: %s", e)
 
-    # Build top-K edges per node, deduplicated, above threshold
+    # Edges, deduplicated. Two rules, in order of rank:
+    #
+    #   1. The nearest `min_neighbors` are ALWAYS linked, similarity floor or
+    #      not. Under the old threshold-only rule roughly 40% of dictations came
+    #      out as islands with no edge at all, so things that clearly belong
+    #      together looked unrelated. If two nodes sit together they should be
+    #      tied together.
+    #   2. Beyond that, an edge has to earn its place by clearing
+    #      `min_similarity`, up to `max_edges_per_node`.
     seen_edges = set()
     links = []
     for i in range(n):
-        # argsort descending; take top K candidates
-        idxs = np.argsort(-sim[i])[: max_edges_per_node * 2]
+        # argsort descending; take enough candidates to satisfy both rules
+        want = max(max_edges_per_node * 2, min_neighbors + 1)
+        idxs = np.argsort(-sim[i])[:want]
         added = 0
+        rank = 0
         for j in idxs:
             j = int(j)
-            if j == i or added >= max_edges_per_node:
+            if j == i:
                 continue
             s = float(sim[i, j])
-            if s < min_similarity:
-                break
+            guaranteed = rank < min_neighbors
+            rank += 1
+            if not guaranteed:
+                if added >= max_edges_per_node or s < min_similarity:
+                    break
             key = (min(i, j), max(i, j))
             if key in seen_edges:
                 continue
@@ -201,15 +279,23 @@ def build_dictation_graph(
                 "source": rows_with_vec[key[0]]["id"],
                 "target": rows_with_vec[key[1]]["id"],
                 "value": round(s, 3),
+                # Weak links are drawn fainter, so a guaranteed-but-distant
+                # neighbour does not read as strongly as a real match.
+                "weak": s < min_similarity,
             })
             added += 1
 
+    # Semantic coordinates. The force layout positions nodes by edge tension,
+    # which says nothing about meaning; these put a dictation next to the ones
+    # it is actually about. None when unavailable, and the JS then falls back.
+    coords = project_2d(mat)
+
     nodes = []
-    for r, cl in zip(rows_with_vec, clusters):
+    for i, (r, cl) in enumerate(zip(rows_with_vec, clusters)):
         label = (r["cleaned"] or r["raw"]).strip()
         if len(label) > 40:
             label = label[:40].rstrip() + "…"
-        nodes.append({
+        node = {
             "id": r["id"],
             "label": label,
             "full": r["cleaned"] or r["raw"],
@@ -219,7 +305,11 @@ def build_dictation_graph(
             "quality": round(r.get("quality", 70.0), 1),
             "cluster": int(cl),
             "count": int(r.get("count", 1)),
-        })
+        }
+        if coords is not None:
+            node["sx"] = round(float(coords[i][0]), 4)
+            node["sy"] = round(float(coords[i][1]), 4)
+        nodes.append(node)
 
     # Auto-label clusters with their most-distinctive concepts.
     cluster_labels = _label_clusters(rows_with_vec, clusters)
@@ -307,22 +397,37 @@ def build_concept_graph(
     rows: list[dict],
     min_freq: int = 2,
     max_edges: int = 600,
+    coords_by_id: "dict[int, tuple[float, float]] | None" = None,
 ) -> dict[str, Any]:
     """Concepts (proper nouns / acronyms / CamelCase) → nodes.
-    Two concepts share an edge if they appear in the same dictation."""
+    Two concepts share an edge if they appear in the same dictation.
+
+    A concept has no embedding of its own, so `coords_by_id` (dictation id →
+    semantic x/y) is used to place it at the centroid of the dictations that
+    mention it. A word therefore lands among the sentences that use it, which
+    is a real statement about the corpus rather than force-layout noise.
+    """
     concept_freq: Counter[str] = Counter()
     concept_ts: dict[str, float] = {}   # first-seen timestamp per concept
     per_dictation: list[tuple[float, set[str]]] = []
+    # Running centroid of the dictations each concept appears in.
+    concept_xy: dict[str, list[float]] = {}
     for r in rows:
         text = r["cleaned"] or r["raw"]
         cs = set(_extract_concepts(text))
         if not cs:
             continue
         per_dictation.append((r["ts"], cs))
+        here = (coords_by_id or {}).get(r["id"])
         for c in cs:
             concept_freq[c] += 1
             if c not in concept_ts or r["ts"] < concept_ts[c]:
                 concept_ts[c] = r["ts"]
+            if here is not None:
+                acc = concept_xy.setdefault(c, [0.0, 0.0, 0.0])
+                acc[0] += here[0]
+                acc[1] += here[1]
+                acc[2] += 1.0
 
     # Keep only concepts appearing >= min_freq
     kept = {c for c, n in concept_freq.items() if n >= min_freq}
@@ -362,13 +467,18 @@ def build_concept_graph(
     nodes = []
     max_freq = max(concept_freq[c] for c in used)
     for c in used:
-        nodes.append({
+        node = {
             "id": c,
             "label": c,
             "freq": concept_freq[c],
             "size": round(6 + 14 * (concept_freq[c] / max_freq), 2),
             "ts": concept_ts[c],
-        })
+        }
+        acc = concept_xy.get(c)
+        if acc and acc[2] > 0:
+            node["sx"] = round(acc[0] / acc[2], 4)
+            node["sy"] = round(acc[1] / acc[2], 4)
+        nodes.append(node)
     return {"nodes": nodes, "links": links, "kind": "concept"}
 
 
