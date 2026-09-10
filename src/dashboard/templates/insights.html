@@ -85,6 +85,17 @@
   /* ---- instrument tile ---- */
   .oc-rack { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
              gap: 14px; }
+  /* Every chart used to render in --accent, so six tiles measuring six
+     different things were visually identical and colour carried no meaning.
+     Each instrument now owns a hue from the categorical ramp. */
+  .oc-i { --series: var(--data-1); }
+  .oc-rack > .oc-i:nth-of-type(1) { --series: var(--data-1); }
+  .oc-rack > .oc-i:nth-of-type(2) { --series: var(--data-2); }
+  .oc-rack > .oc-i:nth-of-type(3) { --series: var(--data-3); }
+  .oc-rack > .oc-i:nth-of-type(4) { --series: var(--data-5); }  /* kept as written: neutral, not a warning colour */
+  .oc-rack > .oc-i:nth-of-type(5) { --series: var(--data-4); }  /* response time: warm reads as slow */
+  .oc-rack > .oc-i:nth-of-type(6) { --series: var(--data-2); }
+  .oc-card, .oc-panel { --series: var(--data-1); }
   .oc-i { border: 1px solid var(--border); border-radius: 10px;
           padding: 12px 14px 13px; min-width: 0;
           background: linear-gradient(180deg,
@@ -139,7 +150,7 @@
   /* Column charts: daily bars, kept/edited stacks, latency histogram. */
   .oc-cols { display: flex; align-items: flex-end; gap: 1px; height: 40px;
              position: relative; }
-  .oc-cols > i { flex: 1 1 0; min-width: 0; background: var(--accent);
+  .oc-cols > i { flex: 1 1 0; min-width: 0; background: var(--series);
                  border-radius: 1px 1px 0 0; display: block; }
   .oc-cols > i.nil { background: color-mix(in oklab, var(--muted) 30%, transparent); }
   .oc-cols.tall { height: 52px; }
@@ -149,7 +160,7 @@
               justify-content: flex-end; border-radius: 1px 1px 0 0;
               overflow: hidden; }
   .oc-stack > span { display: block; width: 100%; }
-  .oc-stack .k { background: var(--accent); }
+  .oc-stack .k { background: var(--series); }
   .oc-stack .e { background: color-mix(in oklab, var(--muted) 62%, transparent); }
   .oc-stack.nil { background: color-mix(in oklab, var(--muted) 30%, transparent);
                   height: 1px; }
@@ -157,13 +168,13 @@
   /* Pinned scale with the distribution behind it and two marks on it. */
   .oc-scale { position: relative; height: 40px; }
   .oc-scale > i { position: absolute; bottom: 0; display: block;
-                  background: color-mix(in oklab, var(--accent) 45%, transparent);
+                  background: color-mix(in oklab, var(--series) 45%, transparent);
                   border-radius: 1px 1px 0 0;
                   border-right: 1px solid var(--w-bg); }
   .oc-mk { position: absolute; top: -2px; bottom: 0; width: 0;
-           border-left: 1.5px solid var(--accent); }
+           border-left: 1.5px solid var(--series); }
   .oc-mk::after { content: ""; position: absolute; top: -4px; left: -3.5px;
-                  border: 3.5px solid transparent; border-top-color: var(--accent); }
+                  border: 3.5px solid transparent; border-top-color: var(--series); }
   .oc-mk.soft { border-left: 1px dashed color-mix(in oklab, var(--muted) 80%, transparent); }
   .oc-mk.soft::after { display: none; }
   .oc-mk.p95 { border-left: 1px dashed color-mix(in oklab, var(--warn) 90%, transparent); }
@@ -173,16 +184,16 @@
   .oc-strip { display: flex; gap: 3px; height: 26px; }
   .oc-strip > i { flex: 1 1 0; min-width: 0; border-radius: 2px;
                   background: color-mix(in oklab, var(--text) 8%, transparent); }
-  .l1 { background: color-mix(in oklab, var(--accent) 26%, transparent) !important; }
-  .l2 { background: color-mix(in oklab, var(--accent) 50%, transparent) !important; }
-  .l3 { background: color-mix(in oklab, var(--accent) 75%, transparent) !important; }
-  .l4 { background: var(--accent) !important; }
+  .l1 { background: color-mix(in oklab, var(--series) 26%, transparent) !important; }
+  .l2 { background: color-mix(in oklab, var(--series) 50%, transparent) !important; }
+  .l3 { background: color-mix(in oklab, var(--series) 75%, transparent) !important; }
+  .l4 { background: var(--series) !important; }
 
   /* Cumulative line. */
   .oc-line { position: relative; height: 40px; }
   .oc-line svg { width: 100%; height: 100%; display: block; }
-  .oc-line .fill { fill: color-mix(in oklab, var(--accent) 16%, transparent); }
-  .oc-line .stroke { fill: none; stroke: var(--accent); stroke-width: 1.6;
+  .oc-line .fill { fill: color-mix(in oklab, var(--series) 16%, transparent); }
+  .oc-line .stroke { fill: none; stroke: var(--series); stroke-width: 1.6;
                      stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 
   /* ---- panels ---- */
@@ -216,13 +227,13 @@
                   background: color-mix(in oklab, var(--text) 8%, transparent); }
   .oc-churn-bar > span { display: block; height: 100%;
                          transition: width .7s cubic-bezier(.2,.7,.2,1); }
-  .oc-churn-bar .add { background: var(--accent); }
+  .oc-churn-bar .add { background: var(--data-3); }
   .oc-churn-bar .cut { background: color-mix(in oklab, var(--muted) 55%, transparent); }
   .oc-churn-key { display: flex; gap: 18px; margin-top: 9px; font-size: 11.5px;
                   color: var(--muted); flex-wrap: wrap; }
   .oc-churn-key span { display: inline-flex; align-items: center; gap: 7px; }
   .oc-churn-key i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
-  .oc-churn-key i.add { background: var(--accent); }
+  .oc-churn-key i.add { background: var(--data-3); }
   .oc-churn-key i.cut { background: color-mix(in oklab, var(--muted) 55%, transparent); }
   .oc-churn-key b { color: var(--text); font-family: var(--font-mono); font-weight: 600;
                     font-variant-numeric: tabular-nums; }
@@ -250,7 +261,7 @@
             background: var(--w-bg);
             box-shadow: inset 0 1px 2px var(--w-inset),
                         inset 0 0 0 1px color-mix(in oklab, var(--border) 70%, transparent); }
-  .oc-bar > span { display: block; height: 100%; background: var(--accent);
+  .oc-bar > span { display: block; height: 100%; background: var(--series);
                    transition: width .7s cubic-bezier(.2,.7,.2,1); }
 
   /* Activity grid: month axis, weekday gutter and cells in one grid, so the
@@ -285,12 +296,12 @@
   .oc-plot .mid  { stroke: color-mix(in oklab, var(--muted) 55%, transparent);
                    stroke-width: 1; stroke-dasharray: 2 4;
                    vector-effect: non-scaling-stroke; }
-  .oc-plot .area { fill: color-mix(in oklab, var(--accent) 12%, transparent); }
-  .oc-plot .line { fill: none; stroke: var(--accent); stroke-width: 1.7;
+  .oc-plot .area { fill: color-mix(in oklab, var(--series) 12%, transparent); }
+  .oc-plot .line { fill: none; stroke: var(--series); stroke-width: 1.7;
                    stroke-linejoin: round; stroke-linecap: round;
                    vector-effect: non-scaling-stroke; }
   .oc-plot-dot { position: absolute; right: 0; width: 6px; height: 6px;
-                 border-radius: 50%; background: var(--accent);
+                 border-radius: 50%; background: var(--series);
                  transform: translate(50%, -50%); pointer-events: none; }
 
   .oc-empty { color: var(--muted); font-size: 12.5px; padding: 8px 0 4px; }

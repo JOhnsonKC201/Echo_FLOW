@@ -78,7 +78,7 @@
             <input type="text" id="accent_color_text" value="{{ values.accent_color }}" class="set-accent-hex" spellcheck="false">
             <button type="button" class="btn set-accent-reset" id="accent_reset">Reset</button>
           </div>
-          <span class="set-field-hint">Hex like <code>#3eaf6f</code> (the default).</span>
+          <span class="set-field-hint">Hex like <code>{{ values.accent_default }}</code> (this theme's default).</span>
         </div>
       </div>
 
@@ -100,7 +100,10 @@
       t.addEventListener('change', () => {
         if (/^#[0-9a-fA-F]{6}$/.test(t.value)) c.value = t.value.toLowerCase();
       });
-      if (r) r.addEventListener('click', () => { c.value = '#3eaf6f'; t.value = '#3eaf6f'; });
+      if (r) r.addEventListener('click', () => {
+        var d = '{{ values.accent_default }}';
+        c.value = d; t.value = d;
+      });
     })();
 
     // Live hotkey conflict check (probes /api/hotkey/check on blur).

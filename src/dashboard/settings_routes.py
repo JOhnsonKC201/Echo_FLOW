@@ -23,7 +23,7 @@ from ..cleanup import PE_STYLES as _PE_STYLES
 # base.html only emits an --accent override when accent_color is non-empty, so
 # "" means "let each theme use its own", which is what keeps the light theme's
 # darker accent (and its AA contrast against white button labels) intact.
-_THEME_ACCENTS = {"light": "#1a4a3a", "dark": "#3eaf6f"}
+_THEME_ACCENTS = {"light": "#7a5c1e", "dark": "#c79a4b"}
 
 
 def _theme_accent(dashboard_cfg: dict) -> str:
@@ -111,6 +111,10 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             # save-only-if-changed check below, submitting the form untouched
             # stays a no-op instead of freezing one theme's accent onto both.
             "accent_color": dc.get("accent_color") or _theme_accent(dc),
+            # Reset used to hardcode the dark accent, so resetting on the light
+            # theme froze the dark one onto both and the save stopped being a
+            # no-op. The default is per-theme, so the button has to be too.
+            "accent_default": _theme_accent(dc),
         })
 
     @flask_app.post("/settings/general/save")

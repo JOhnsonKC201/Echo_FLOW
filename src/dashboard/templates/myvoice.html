@@ -10,7 +10,7 @@
 
 {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
 
-<div class="card" style="border-left: 3px solid var(--accent, #3eaf6f);">
+<div class="card" style="border-left: 3px solid var(--accent, #c79a4b);">
   <h2>Status</h2>
   <div class="muted" style="line-height: 1.7;">
     My Voice is
@@ -25,7 +25,7 @@
   </div>
 </div>
 
-<div class="card" style="border-left: 3px solid var(--accent, #3eaf6f);">
+<div class="card" style="border-left: 3px solid var(--accent, #c79a4b);">
   <h2>Humanize</h2>
   <div class="muted small" style="margin-bottom: 12px;">
     Paste AI-written text and get a human version back, with the AI tells stripped out.
@@ -96,7 +96,7 @@
 
 {# The result lands in its own card below the form (the "different box"). It is
    filled server-side (no-JS) or replaced in place by the fetch handler. #}
-<div class="card" id="hz-result-card" style="border-left: 3px solid var(--accent, #3eaf6f); {% if not hz_ran %}display: none;{% endif %}">
+<div class="card" id="hz-result-card" style="border-left: 3px solid var(--accent, #c79a4b); {% if not hz_ran %}display: none;{% endif %}">
   <div id="hz-result">{% include "_humanize_result.html" %}</div>
 </div>
 

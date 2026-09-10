@@ -1,27 +1,56 @@
-/* Echo Flow dashboard: dev-tool aesthetic (Linear / Fathom-adjacent).
- * Refined dark default + Inter UI / JetBrains Mono numerics. */
+/* Echo Flow dashboard: Ink and Brass.
+ * Warm near-black ground, brass accent, Inter UI / JetBrains Mono numerics.
+ *
+ * Every colour below is measured, not eyeballed. The ratio quoted on each line
+ * is the WORST case across the three surfaces text actually sits on (--bg,
+ * --panel, and --panel-2, which is also the sidebar). Re-verify with the
+ * contrast script before changing any of them. */
 :root {
-  --bg: #0d1014;
-  --panel: #161a21;
-  --panel-2: #1d222b;
-  --border: #23282f;
-  /* Both were tuned against --panel alone, where --muted landed at exactly
-     4.53:1. Every surface lighter than --panel dropped it under AA, including
-     the sidebar (4.24:1), which is the app's primary navigation. Measured
-     across sidebar, panel, bg, card and chip, these clear 4.5:1 on all five. */
-  --muted: #868ea0;
-  --muted-2: #838b9b;       /* tertiary text, 4.72:1 worst case */
-  --text: #e7e9ee;
-  --accent: #3eaf6f;         /* tighter, less saturated than #58c77a */
-  --accent-2: #4aa9ff;
-  --warn: #e6a23c;
-  --danger: #d96565;        /* danger as TEXT on a panel */
-  /* danger as a SOLID FILL behind white text. Distinct from --danger because
-     #d96565 only reaches 3.5:1 with white, under the 4.5:1 AA floor. This is
-     7.18:1. Destructive buttons must not be the same colour as warning pills. */
+  --bg: #0b0b0a;
+  --panel: #171614;
+  --panel-2: #232120;       /* sidebar and raised surfaces */
+  --border: #302d28;
+  /* Both were previously tuned against --panel alone, where --muted landed at
+     exactly 4.53:1. Every surface lighter than --panel dropped it under AA,
+     including the sidebar, which is the app's primary navigation. These clear
+     4.5:1 on all three. */
+  --muted: #a8a196;         /* secondary text, 6.26:1 worst case */
+  --muted-2: #9c958a;       /* tertiary text, 5.40:1 worst case */
+  --text: #f2efe9;          /* warm white, 13.97:1 worst case */
+  --accent: #c79a4b;        /* brass, 6.22:1 as text */
+  /* Brass is a LIGHT accent, so a filled primary button needs dark text on it.
+     White on brass is 2.19:1, well under AA. This is 7.32:1. */
+  --on-accent: #14110a;
+  --accent-2: #7fa8c9;      /* cool counterweight, 6.37:1 */
+  --warn: #e0a23c;          /* 7.18:1 */
+  --danger: #e0776e;        /* danger as TEXT on a panel, 5.37:1 */
+  /* danger as a SOLID FILL behind white text. Distinct from --danger because a
+     light red only reaches 3.5:1 with white. This is 7.18:1. Destructive
+     buttons must not be the same colour as warning pills. */
   --danger-solid: #a32b21;
-  --raw: #2a1f1f;
-  --clean: #1f2a23;
+
+  /* Categorical data hues. Charts used to render every series in --accent, so
+     six tiles measuring six different things all looked identical and colour
+     carried no information. Each clears 3:1 against --panel (WCAG 1.4.11 for
+     non-text) and each is distinguishable from the others without relying on
+     hue alone (they differ in lightness too, for colour-blind readers). */
+  --data-1: #c79a4b;        /* brass, 7.02:1 */
+  --data-2: #7fa8c9;        /* slate, 7.19:1 */
+  --data-3: #8fb08a;        /* sage,  7.53:1 */
+  --data-4: #d08a6a;        /* clay,  6.48:1 */
+  --data-5: #a98bc4;        /* plum,  6.18:1 */
+
+  /* Elevation. Near-black surfaces cannot separate by lightness alone: the
+     steps compress and cards read as flat rectangles. A warm hairline along the
+     top edge plus a real shadow implies a light source, which is most of what
+     reads as "premium" in a dark UI. */
+  --edge-hi: rgba(255, 248, 235, 0.055);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .42), 0 2px 8px -4px rgba(0, 0, 0, .5);
+  --shadow-2: 0 2px 6px rgba(0, 0, 0, .4), 0 14px 32px -14px rgba(0, 0, 0, .64);
+
+  --raw: #2a1e1a;
+  --clean: #1e2620;
+  /* Diffs stay green/red: added and removed are conventions, not brand. */
   --diff-add: #1c3a2a;
   --diff-del: #3a1f1f;
   --sidebar-w: 224px;
@@ -38,23 +67,41 @@
   --font-mono: "JetBrains Mono", "JetBrains Mono Variable", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
 }
 [data-theme="light"] {
-  --bg: #f7f5ee;
+  --bg: #f5f2ec;            /* warm paper, dark enough that white panels lift */
   --panel: #ffffff;
-  --panel-2: #f1ece0;
-  --border: #e6e0d0;
-  --muted: #6c6a62;
-  --muted-2: #726f5d;       /* tertiary text: WCAG AA on --bg (4.64:1) */
-  --text: #1c2230;
-  --accent: #1a4a3a;
-  --accent-2: #1f6fd0;
-  /* :root is the DARK palette, and this block previously overrode only 10 of
-     the 14 colour tokens. --warn and --danger kept their dark-tuned values on a
-     near-white surface, so every warning and error in the light theme rendered
-     around 2.2:1, including the two Privacy-ledger rows that exist to tell you
-     something IS leaving the machine. */
-  --warn: #8a5a00;          /* 5.43:1 on --bg, 5.93:1 on --panel */
-  --danger: #b3261e;        /* 5.99:1 on --bg, 6.54:1 on --panel */
+  --panel-2: #ede8de;
+  --border: #dfd8ca;
+  --muted: #5f594e;         /* secondary text, 5.68:1 worst case */
+  --muted-2: #6a6357;       /* tertiary text, 4.86:1 worst case */
+  --text: #1a1815;          /* 14.51:1 worst case */
+  --accent: #7a5c1e;        /* brass, dark enough to read as text: 5.09:1 */
+  --on-accent: #ffffff;     /* 6.22:1 on --accent */
+  --accent-2: #175cad;      /* 5.42:1 */
+  /* :root is the DARK palette, and this block must override EVERY colour token
+     it uses. It once overrode only 10 of 14, so --warn and --danger kept their
+     dark-tuned values on a near-white surface and every warning and error in
+     the light theme rendered around 2.2:1, including the two Privacy-ledger
+     rows that exist to tell you something IS leaving the machine. */
+  --warn: #8a5a00;          /* 4.85:1 worst case */
+  --danger: #b3261e;        /* 5.35:1 worst case */
   --danger-solid: #b3261e;  /* 6.54:1 with white */
+
+  /* Darker hues than the dark theme's: these sit on white, not near-black.
+     Each clears 3:1 against --panel. */
+  --data-1: #9a7628;        /* brass, 4.20:1 */
+  --data-2: #3d6e92;        /* slate, 5.46:1 */
+  --data-3: #4f7a50;        /* sage,  4.96:1 */
+  --data-4: #a85f3c;        /* clay,  4.81:1 */
+  --data-5: #7355a0;        /* plum,  5.94:1 */
+
+  /* On paper the light source reads as a white top edge and a much softer,
+     warmer shadow. Reusing the dark theme's shadows here looks like soot. */
+  --edge-hi: rgba(255, 255, 255, 0.9);
+  --shadow-1: 0 1px 2px rgba(58, 46, 26, .07), 0 2px 8px -4px rgba(58, 46, 26, .10);
+  --shadow-2: 0 2px 6px rgba(58, 46, 26, .07), 0 14px 32px -14px rgba(58, 46, 26, .16);
+
+  --raw: #f6ece4;
+  --clean: #eef2e9;
   --diff-add: #d8efe1;
   --diff-del: #f5d7d7;
 }
@@ -185,10 +232,13 @@ button[aria-disabled="true"]:hover, .btn[aria-disabled="true"]:hover {
   border-radius: 14px;
   padding: 18px 20px;
   margin-bottom: 14px;
+  /* Hairline along the top edge reads as a light source above the card; the
+     shadow below it does the lifting. The old shadow was rgba(0,0,0,.04),
+     which is invisible against a near-black ground, so cards sat flat on the
+     page no matter how the surfaces were tuned. */
   box-shadow:
-    0 1px 0 color-mix(in oklab, var(--text) 4%, transparent) inset,
-    0 1px 2px rgba(0,0,0,.04),
-    0 8px 24px -16px color-mix(in oklab, var(--accent) 16%, rgba(0,0,0,.3));
+    0 1px 0 var(--edge-hi) inset,
+    var(--shadow-1);
   transition: border-color .2s ease, box-shadow .25s ease, transform .25s ease;
 }
 .card:hover {
@@ -241,7 +291,10 @@ button.primary, .btn.primary {
   background: linear-gradient(180deg,
     color-mix(in oklab, var(--accent) 92%, white 8%),
     var(--accent));
-  color: #08110b;
+  /* Was a hardcoded near-black, which only worked because the accent was a
+     light green. --on-accent is per-theme: dark on brass, white on the darker
+     light-theme brass. */
+  color: var(--on-accent);
   border-color: transparent;
   font-weight: 600;
   box-shadow:
