@@ -17,11 +17,11 @@
   --muted: #a8a196;         /* secondary text, 6.26:1 worst case */
   --muted-2: #9c958a;       /* tertiary text, 5.40:1 worst case */
   --text: #f2efe9;          /* warm white, 13.97:1 worst case */
-  --accent: #c79a4b;        /* brass, 6.22:1 as text */
+  --accent: #e0a33f;        /* brass, 7.24:1 as text */
   /* Brass is a LIGHT accent, so a filled primary button needs dark text on it.
      White on brass is 2.19:1, well under AA. This is 7.32:1. */
   --on-accent: #14110a;
-  --accent-2: #7fa8c9;      /* cool counterweight, 6.37:1 */
+  --accent-2: #6bb6e8;      /* cool counterweight, 7.4:1 */
   --warn: #e0a23c;          /* 7.18:1 */
   --danger: #e0776e;        /* danger as TEXT on a panel, 5.37:1 */
   /* danger as a SOLID FILL behind white text. Distinct from --danger because a
@@ -34,11 +34,11 @@
      carried no information. Each clears 3:1 against --panel (WCAG 1.4.11 for
      non-text) and each is distinguishable from the others without relying on
      hue alone (they differ in lightness too, for colour-blind readers). */
-  --data-1: #c79a4b;        /* brass, 7.02:1 */
-  --data-2: #7fa8c9;        /* slate, 7.19:1 */
-  --data-3: #8fb08a;        /* sage,  7.53:1 */
-  --data-4: #d08a6a;        /* clay,  6.48:1 */
-  --data-5: #a98bc4;        /* plum,  6.18:1 */
+  --data-1: #e0a33f;        /* brass,  8.16:1 */
+  --data-2: #5cc2f0;        /* cyan,   8.98:1 */
+  --data-3: #5fd39a;        /* green,  9.71:1 */
+  --data-4: #f5945a;        /* orange, 7.98:1 */
+  --data-5: #b98cf5;        /* violet, 7.00:1 */
 
   /* Elevation. Near-black surfaces cannot separate by lightness alone: the
      steps compress and cards read as flat rectangles. A warm hairline along the
@@ -74,7 +74,7 @@
   --muted: #5f594e;         /* secondary text, 5.68:1 worst case */
   --muted-2: #6a6357;       /* tertiary text, 4.86:1 worst case */
   --text: #1a1815;          /* 14.51:1 worst case */
-  --accent: #7a5c1e;        /* brass, dark enough to read as text: 5.09:1 */
+  --accent: #8a5f14;        /* brass, dark enough to read as text: 4.61:1 */
   --on-accent: #ffffff;     /* 6.22:1 on --accent */
   --accent-2: #175cad;      /* 5.42:1 */
   /* :root is the DARK palette, and this block must override EVERY colour token
@@ -88,11 +88,11 @@
 
   /* Darker hues than the dark theme's: these sit on white, not near-black.
      Each clears 3:1 against --panel. */
-  --data-1: #9a7628;        /* brass, 4.20:1 */
-  --data-2: #3d6e92;        /* slate, 5.46:1 */
-  --data-3: #4f7a50;        /* sage,  4.96:1 */
-  --data-4: #a85f3c;        /* clay,  4.81:1 */
-  --data-5: #7355a0;        /* plum,  5.94:1 */
+  --data-1: #8a5f14;        /* brass,  5.63:1 */
+  --data-2: #0a6fa8;        /* cyan,   5.45:1 */
+  --data-3: #1d7a4f;        /* green,  5.32:1 */
+  --data-4: #b8501c;        /* orange, 5.00:1 */
+  --data-5: #6b3fb0;        /* violet, 7.09:1 */
 
   /* On paper the light source reads as a white top edge and a much softer,
      warmer shadow. Reusing the dark theme's shadows here looks like soot. */

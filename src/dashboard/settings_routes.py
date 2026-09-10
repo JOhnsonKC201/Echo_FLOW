@@ -23,7 +23,7 @@ from ..cleanup import PE_STYLES as _PE_STYLES
 # base.html only emits an --accent override when accent_color is non-empty, so
 # "" means "let each theme use its own", which is what keeps the light theme's
 # darker accent (and its AA contrast against white button labels) intact.
-_THEME_ACCENTS = {"light": "#7a5c1e", "dark": "#c79a4b"}
+_THEME_ACCENTS = {"light": "#8a5f14", "dark": "#e0a33f"}
 
 
 def _theme_accent(dashboard_cfg: dict) -> str:

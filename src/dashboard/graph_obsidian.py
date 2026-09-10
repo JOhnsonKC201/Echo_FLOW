@@ -16,6 +16,9 @@ import json
 from typing import Any
 
 from .. import graph as _g
+from .. import log as wlog
+
+_log = wlog.get("dashboard.graph")
 
 
 def _xy(node: dict) -> dict[str, float]:
@@ -796,9 +799,21 @@ def render(db_path: str) -> str:
         n["id"]: (n["sx"], n["sy"])
         for n in dictations.get("nodes", []) if "sx" in n
     }
+    try:
+        concepts = _g.build_concept_graph(rows, coords_by_id=coords_by_id)
+    except TypeError:
+        # A long-running daemon can end up holding this module's new code
+        # alongside the src.graph it imported at startup, which predates the
+        # coords_by_id parameter. That skew used to take the whole page down
+        # with "Graph render failed". Fall back to the old call: concepts lose
+        # their semantic placement, everything else still renders.
+        _log.warning(
+            "src.graph is older than this module (no coords_by_id); "
+            "concepts will fall back to force placement. Restart to fix.")
+        concepts = _g.build_concept_graph(rows)
     merged = _merge(
         dictations,
-        _g.build_concept_graph(rows, coords_by_id=coords_by_id),
+        concepts,
         _g.build_notes_graph(db_path, rows),
     )
     # Inject as JSON inside a <script type=application/json> tag rather than
