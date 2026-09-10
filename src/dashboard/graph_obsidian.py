@@ -121,7 +121,16 @@ def _merge(dict_g: dict, concept_g: dict, notes_g: dict) -> dict[str, Any]:
             "value": float(l.get("value", 0.7)),
         })
 
-    return {"nodes": nodes, "links": links}
+    return {
+        "nodes": nodes,
+        "links": links,
+        # Computed by _label_clusters and previously discarded here. These are
+        # what let the zoomed-out map name its regions instead of showing a
+        # thousand anonymous dots.
+        "cluster_labels": {
+            str(k): v for k, v in (dict_g.get("cluster_labels") or {}).items()
+        },
+    }
 
 
 _HTML = r"""<!doctype html>
@@ -151,6 +160,21 @@ _HTML = r"""<!doctype html>
   .node.g-note    circle { fill:#34d399; }       /* emerald */
   .node.g-note    text   { font-size:13px; font-weight:600; }
 
+  /* Region names: the zoomed-out reading of the map. Deliberately inverse of
+     node labels, which appear only when you zoom in. Without these, a 1000-node
+     semantic map is a field of anonymous dots: you can see that clusters exist
+     but not what any of them are about. */
+  /* font-size and stroke-width are deliberately NOT set here: a CSS rule beats
+     a presentation attribute, so declaring them would override the per-zoom
+     counter-scaling applied in scaleRegions() and the names would render tiny
+     however hard the JS tried. */
+  .regions text { fill:#f0ece4; fill-opacity:.72; pointer-events:none;
+                  font-weight:600; letter-spacing:.04em;
+                  text-transform:uppercase; text-anchor:middle;
+                  paint-order:stroke; stroke:#0d0e11;
+                  transition: opacity .2s ease; }
+  body:not(.labels-hidden) .regions text { opacity: 0; }
+
   /* Hide labels by default in large graphs / zoomed-out — toggled by JS */
   .labels-hidden .node text { opacity: 0; }
   .labels-hidden .node.lit text,
@@ -158,6 +182,7 @@ _HTML = r"""<!doctype html>
   .labels-hidden .node.hover text { opacity: 1; }
 
   /* Dim everything */
+  .links.off { display: none; }
   .dimmed .link { stroke-opacity:.06; }
   .dimmed .node circle { fill-opacity:.18; }
   .dimmed .node text   { fill-opacity:.18; }
@@ -243,6 +268,7 @@ _HTML = r"""<!doctype html>
   <button id="m-conc">Concepts</button>
   <button id="m-note">Notes</button>
   <button id="m-hulls" title="Toggle cluster hulls">Hulls</button>
+  <button id="m-links" class="active" title="Toggle links. Off gives a pure semantic map.">Links</button>
   <button id="m-layout" class="active"
           title="Semantic: position means meaning. Force: position means connections.">Semantic</button>
   <input id="search" placeholder="Search…" />
@@ -303,6 +329,9 @@ const hullLayer = root.append('g').attr('class','hulls');
 hullLayer.classed('off', true);   // matches hullsOn default below
 const linkLayer = root.append('g').attr('class','links');
 const nodeLayer = root.append('g').attr('class','nodes');
+// Appended LAST so region names paint on top. Created before the link and
+// node layers, 3074 edges drew straight over them and they were invisible.
+const regionLayer = root.append('g').attr('class','regions');
 
 // Smooth closed-curve generator for cluster hull paths.
 const hullLine = d3.line().curve(d3.curveBasisClosed);
@@ -327,6 +356,51 @@ function rebuildHullGroups() {
     hullGroups.push({cluster: c, members, color});
   }
 }
+// Place one name at the centre of each cluster. Uses the MEDIAN rather than
+// the mean: a handful of outliers dragged toward another topic would otherwise
+// pull the label off its own territory and into empty space.
+const REGION_LABELS = (DATA.cluster_labels || {});
+// Region names sit inside the zoomed group, so without this they shrink with
+// the map and at fit-to-view render at half size, which is unreadable. Counter-
+// scaling by the zoom factor holds them at a constant size on screen.
+function scaleRegions() {
+  const k = currentZoom || 1;
+  regionLayer.attr('font-size', (17 / k) + 'px')
+             .attr('stroke-width', (5 / k) + 'px');
+}
+function updateRegions() {
+  const byCluster = new Map();
+  for (const n of nodes) {
+    if (n.group !== 'dictation') continue;      // concepts borrow positions
+    const c = String(n.cluster);
+    if (!REGION_LABELS[c]) continue;
+    if (!byCluster.has(c)) byCluster.set(c, []);
+    byCluster.get(c).push(n);
+  }
+  const med = (arr) => {
+    if (!arr.length) return 0;
+    const a = arr.slice().sort((p, q) => p - q);
+    return a[Math.floor(a.length / 2)];
+  };
+  const data = [...byCluster.entries()]
+    // Tiny clusters do not earn a name; their label would just add clutter.
+    .filter(([, ns]) => ns.length >= 8)
+    .map(([c, ns]) => ({
+      cluster: c,
+      label: REGION_LABELS[c],
+      x: med(ns.map(n => n.x || 0)),
+      y: med(ns.map(n => n.y || 0)),
+    }));
+  scaleRegions();
+  const sel = regionLayer.selectAll('text').data(data, d => d.cluster);
+  sel.exit().remove();
+  sel.enter().append('text')
+    .merge(sel)
+    .attr('x', d => d.x)
+    .attr('y', d => d.y)
+    .text(d => d.label);
+}
+
 function updateHulls() {
   const sel = hullLayer.selectAll('path').data(hullGroups, d => d.cluster);
   sel.exit().remove();
@@ -401,7 +475,12 @@ function render() {
   const linkAll = linkEnter.merge(link)
     // Edge thickness scales with similarity / weight (0..1 → .5..2.6px)
     .attr('stroke-width', d => 0.5 + 2.1 * Math.max(0, Math.min(1, d.value || 0.5)))
-    .attr('stroke-opacity', d => 0.35 + 0.4 * Math.max(0, Math.min(1, d.value || 0.5)));
+    // Weak links (the guaranteed nearest-neighbour ones below the similarity
+    // floor) are 1821 of the 3074 edges. At full opacity they crossed the whole
+    // map and buried the real structure, so they render as faint texture and
+    // only come forward when you hover their node.
+    .attr('stroke-opacity', d => d.weak ? 0.07
+                                        : 0.30 + 0.45 * Math.max(0, Math.min(1, d.value || 0.5)));
 
   const node = nodeLayer.selectAll('g.node').data(nodes, d => d.id);
   node.exit().remove();
@@ -492,9 +571,9 @@ function render() {
     .alpha(1).alphaDecay(.04)          // settle faster → less total CPU
     .on('tick', () => {
       applyPositions();
-      if (_tickN++ % 3 === 0) { updateHulls(); updateMinimap(); }
+      if (_tickN++ % 3 === 0) { updateHulls(); updateRegions(); updateMinimap(); }
     })
-    .on('end', () => { updateHulls(); updateMinimap(); fitToView(); });
+    .on('end', () => { updateHulls(); updateRegions(); updateMinimap(); fitToView(); });
 
   // Reduced motion → run the layout to completion synchronously, paint once,
   // stop. No animated settle, no per-frame CPU at all.
@@ -503,6 +582,7 @@ function render() {
     for (let i = 0; i < 220; i++) sim.tick();
     applyPositions();
     updateHulls();
+    updateRegions();
     updateMinimap();
     fitToView();
   }
@@ -525,9 +605,10 @@ const zoomBehavior = d3.zoom().scaleExtent([0.15, 6])
   .on('zoom', e => {
     root.attr('transform', e.transform);
     currentZoom = e.transform.k;
+    scaleRegions();
     // Obsidian-style: labels appear when you zoom in close.
     // Auto-hide threshold scales with graph size.
-    const threshold = nodes.length > 500 ? 1.4 : (nodes.length > 200 ? 0.9 : 0.55);
+    const threshold = nodes.length > 500 ? 0.9 : (nodes.length > 200 ? 0.7 : 0.55);
     document.body.classList.toggle('labels-hidden', currentZoom < threshold);
     updateMinimap();
   });
@@ -688,6 +769,15 @@ window.addEventListener('resize', () => {
 });
 
 // --- Hulls toggle ------------------------------------------------------
+const linksBtn = document.getElementById('m-links');
+if (linksBtn) {
+  linksBtn.onclick = () => {
+    const off = linkLayer.classed('off');
+    linkLayer.classed('off', !off);
+    linksBtn.classList.toggle('active', off);
+  };
+}
+
 const hullsBtn = document.getElementById('m-hulls');
 hullsBtn.onclick = (e) => {
   e.stopPropagation();

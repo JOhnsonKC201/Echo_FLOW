@@ -13,7 +13,10 @@ import pytest
 def test_merge_empty_inputs_returns_empty_lists():
     from src.dashboard.graph_obsidian import _merge
     out = _merge({}, {}, {})
-    assert out == {"nodes": [], "links": []}
+    assert out["nodes"] == []
+    assert out["links"] == []
+    # cluster_labels names the regions on the zoomed-out map; empty in, empty out.
+    assert out["cluster_labels"] == {}
 
 
 def test_merge_namespaces_dictation_ids():
