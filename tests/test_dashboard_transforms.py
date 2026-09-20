@@ -153,6 +153,13 @@ def test_anything_that_validates_can_actually_register(combo):
     registration because the converter did not know the macOS spellings. Tying
     the two together here means neither can drift again without failing.
     """
+    # The point is to ask the real pynput. The conftest stand-in on the
+    # dep-light lanes has no HotKey, and teaching it to parse would add a third
+    # copy of the grammar that can drift from the library, which is the bug this
+    # test exists to retire. The full lane has real pynput and runs it.
+    import pynput
+    if getattr(pynput, "__stubbed_for_tests__", False):
+        pytest.skip("needs real pynput (HotKey.parse), stubbed on the dep-light lane")
     from pynput.keyboard import HotKey
     canonical = tf._validate_hotkey(combo)
     pynput_combo = _transform_combo_to_pynput(canonical)
