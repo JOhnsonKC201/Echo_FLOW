@@ -749,13 +749,26 @@ class App:
         if self.tray:
             self.tray.set_state("paused" if self._paused else "ok")
 
+    def _dictation_worker(self, audio, t_release: float | None = None):
+        """Thread entry for a dictation. The daemon's stderr is DEVNULL, so an
+        exception escaping this thread used to vanish and the recording was
+        silently lost; log it with the traceback and tell the user instead."""
+        try:
+            self._do_dictation(audio, t_release)
+        except Exception as e:
+            _log.exception("dictation failed: %s", e)
+            wnotify.notify("Echo Flow", f"Dictation failed: {e}", "error")
+            self._tray_idle()
+
     def _do_dictation(self, audio, t_release: float | None = None):
         if self._paused:
             console.print("[dim]Paused, discarding audio.[/dim]")
+            _log.info("dictation dropped: paused")
             self._tray_idle()
             return
         if audio.size == 0:
             console.print("[yellow]No audio captured.[/yellow]")
+            _log.info("dictation dropped: no audio captured")
             self._tray_idle()
             return
         # Bug fix: reject too-short clips before sending to Whisper.
@@ -764,6 +777,7 @@ class App:
         duration_ms = int(len(audio) / sr * 1000)
         if duration_ms < 400:
             console.print(f"[yellow]Too short ({duration_ms}ms), ignored.[/yellow]")
+            _log.info("dictation dropped: too short (%dms)", duration_ms)
             self._tray_idle()
             return
         import numpy as np
@@ -772,6 +786,16 @@ class App:
         rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
         if rms < 0.003:
             console.print(f"[yellow]Too quiet (RMS={rms:.4f}), likely silence, ignored.[/yellow]")
+            _log.warning("dictation dropped: too quiet (RMS=%.4f over %dms, gate 0.003)",
+                         rms, duration_ms)
+            # A long clip that is still silent is not the user pausing, it is a
+            # muted or wrong microphone; say so instead of doing nothing.
+            wnotify.notify(
+                "Echo Flow",
+                f"Heard almost nothing (level {rms:.4f}). Check that the "
+                "microphone is unmuted and is the Windows default input.",
+                "warning",
+            )
             self._tray_idle()
             return
         if self.tray:
@@ -1504,7 +1528,7 @@ class App:
         wsound.play("stop", self.cfg.get("sound"))
         console.print("[bold]■ stop[/bold]")
         threading.Thread(
-            target=self._do_dictation, args=(audio, t_release), daemon=True
+            target=self._dictation_worker, args=(audio, t_release), daemon=True
         ).start()
 
     def on_cancel_hold(self):
@@ -1563,7 +1587,7 @@ class App:
             if audio is None or cancelled:
                 self._tray_idle()
                 return
-            self._do_dictation(audio)
+            self._dictation_worker(audio)
         threading.Thread(target=_run, daemon=True).start()
 
     # --- tray callbacks ---
