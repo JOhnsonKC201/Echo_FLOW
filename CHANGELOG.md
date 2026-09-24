@@ -146,6 +146,17 @@ All notable changes are documented here. Format roughly follows
 
 ### Fixed
 
+- **A web page can no longer change or wipe the dashboard's data.** The Host
+  header check stops DNS rebinding but not a plain cross-site form: a page
+  the user visits could auto-submit to `/privacy/wipe` and delete every
+  dictation, since the browser sends the genuine `Host: 127.0.0.1:8766`.
+  Every POST is now refused with 403 when its `Origin` is not the
+  dashboard's own, or when `Sec-Fetch-Site` is `cross-site`. The dashboard's
+  own forms and non-browser clients are unaffected.
+- **Port tests no longer fail on machines with Hyper-V or WSL.** The tests
+  hardcoded ports 49321 and 49333, which Windows can reserve in blocks
+  (`netsh int ipv4 show excludedportrange`); binding there raised
+  WinError 10013. They now ask the OS for ports that are actually free.
 - **Voice commands press the Mac's keys on a Mac.** Command Mode's table is
   written in Windows chords, so "computer, undo that" sent Ctrl+Z to macOS,
   which ignores it. `classify()` now returns the chord for the running OS

@@ -72,7 +72,10 @@ the Echo Flow icon.
 - `Host:` header is checked on every request; anything not in
   `{127.0.0.1, localhost}:{port..port+4}` returns HTTP 400. Cheap defense
   against DNS-rebinding from a malicious webpage.
-- No cookies, no sessions, no CSRF tokens in v1 (loopback + single user).
+- No cookies or sessions. Loopback alone does not stop CSRF, because the
+  attacking page runs in the user's own browser, so every POST is refused
+  with 403 when its `Origin` or `Sec-Fetch-Site` header says it came from
+  another site. Plain HTML forms keep working without tokens.
 - Werkzeug dev server is fine here for the same reason the mobile bridge
   uses it: single-user, local-only.
 

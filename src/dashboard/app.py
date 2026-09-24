@@ -137,6 +137,28 @@ def _allowed_hosts_for(host: str, port: int) -> set[str]:
     }
 
 
+def _is_cross_site(headers, allowed_origins: set[str]) -> bool:
+    """True when a state-changing request came from another site (CSRF).
+
+    The Host allowlist does not cover this: a malicious page's auto-submitting
+    form reaches us with the genuine `Host: 127.0.0.1:<port>`. Browsers do
+    attach `Origin` (e.g. "https://evil.example", or "null" from sandboxed
+    iframes and file:// pages) and `Sec-Fetch-Site` ("same-origin",
+    "same-site", "cross-site", or "none" when the user typed the URL), and a
+    page cannot forge either. Clients that send neither (curl, scripts, the
+    test client) cannot be driven by a web page.
+
+    `allowed_origins` holds this dashboard's own origins, like
+    "http://127.0.0.1:8766" and "http://localhost:8766".
+    """
+    # Origin wins when present: it carries the port, so another server on
+    # localhost (which Sec-Fetch-Site calls "same-site") is still rejected.
+    origin = headers.get("Origin")
+    if origin is not None:
+        return origin not in allowed_origins
+    return headers.get("Sec-Fetch-Site") == "cross-site"
+
+
 def _form_int(form, key: str = "id", default: int = 0) -> int:
     """Parse an int form field, returning `default` for missing/non-numeric
     values instead of raising ValueError (which would 500 the POST handler on a
@@ -199,6 +221,16 @@ def make_app(app_ref, bound_port: int | None = None):
         h = request.headers.get("Host", "")
         if h not in allowlist:
             abort(400, description="bad host")
+
+    allowed_origins = {f"http://{h}" for h in allowlist}
+
+    @flask_app.before_request
+    def _reject_cross_site_writes():
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        if _is_cross_site(request.headers, allowed_origins):
+            abort(403, description="cross-site request blocked")
+        return None
 
     # --- Section routes --------------------------------------------------
     @flask_app.get("/")
