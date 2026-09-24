@@ -42,7 +42,6 @@ def _make_app(history, raw=RAW, cleaned=CLEANED):
     app._paused = False
     app.cfg = {"audio": {"sample_rate": 16000}, "experimental": {}}
     app.tray = None
-    app._press_title = "Editor"
     app._pe_cfg = {}
     app._prompt_mode = False
     app._prompt_oneshot = False
@@ -68,6 +67,7 @@ def _make_app(history, raw=RAW, cleaned=CLEANED):
     app.cleaner.clean.return_value = (cleaned, False)
     app.injector = MagicMock()
     app.injector.trailing_space = True
+    app.injector.focused_title.return_value = "Editor"
     return app
 
 

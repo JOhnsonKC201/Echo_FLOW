@@ -749,18 +749,20 @@ class App:
         if self.tray:
             self.tray.set_state("paused" if self._paused else "ok")
 
-    def _dictation_worker(self, audio, t_release: float | None = None):
+    def _dictation_worker(self, audio, t_release: float | None = None,
+                          title: str | None = None):
         """Thread entry for a dictation. The daemon's stderr is DEVNULL, so an
         exception escaping this thread used to vanish and the recording was
         silently lost; log it with the traceback and tell the user instead."""
         try:
-            self._do_dictation(audio, t_release)
+            self._do_dictation(audio, t_release, title)
         except Exception as e:
             _log.exception("dictation failed: %s", e)
             wnotify.notify("Echo Flow", f"Dictation failed: {e}", "error")
             self._tray_idle()
 
-    def _do_dictation(self, audio, t_release: float | None = None):
+    def _do_dictation(self, audio, t_release: float | None = None,
+                      title: str | None = None):
         if self._paused:
             console.print("[dim]Paused, discarding audio.[/dim]")
             _log.info("dictation dropped: paused")
@@ -834,10 +836,11 @@ class App:
             return
 
         # M8: prefer the title captured at hotkey-press time (no Win32 call
-        # on the hot path). Fall back to a live lookup if nothing was cached
-        # (e.g. mobile-bridge entry point that doesn't go through a hotkey).
-        title = self._press_title
-        self._press_title = None
+        # on the hot path), handed in by the caller. It is not read from
+        # self._press_title here: transcription takes seconds, and a second
+        # press in that gap would overwrite it with the next window's title.
+        # Fall back to a live lookup if none was captured (e.g. the
+        # mobile-bridge entry point that doesn't go through a hotkey).
         if title is None:
             title = self.injector.focused_title()
         style = self.cleaner.pick_style(title)
@@ -1522,13 +1525,17 @@ class App:
             if not self._active:
                 return
             self._active = False
+            # Take this recording's title out under the same lock that ends
+            # it, so the next press cannot overwrite it before the worker runs.
+            title, self._press_title = self._press_title, None
         t_release = time.perf_counter()
         audio = self.recorder.stop()
         _log.info("hotkey released: stop, captured %d samples", len(audio))
         wsound.play("stop", self.cfg.get("sound"))
         console.print("[bold]■ stop[/bold]")
         threading.Thread(
-            target=self._dictation_worker, args=(audio, t_release), daemon=True
+            target=self._dictation_worker, args=(audio, t_release, title),
+            daemon=True,
         ).start()
 
     def on_cancel_hold(self):
@@ -1557,11 +1564,12 @@ class App:
                 return
             self._active = True
             self._cancelled = False
-        # M8: cache focused title at press time (see on_press_hold).
+        # M8: capture focused title at press time (see on_press_hold). Kept
+        # local to this recording's thread, never shared on self.
         try:
-            self._press_title = self.injector.focused_title()
+            title = self.injector.focused_title()
         except Exception:
-            self._press_title = None
+            title = None
         wsound.play("start", self.cfg.get("sound"))
         console.print("[bold red]● REC (auto-stop on silence)[/bold red]")
         if self.tray: self.tray.set_state("rec")
@@ -1587,7 +1595,7 @@ class App:
             if audio is None or cancelled:
                 self._tray_idle()
                 return
-            self._dictation_worker(audio)
+            self._dictation_worker(audio, title=title)
         threading.Thread(target=_run, daemon=True).start()
 
     # --- tray callbacks ---

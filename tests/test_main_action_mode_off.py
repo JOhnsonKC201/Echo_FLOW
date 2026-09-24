@@ -24,7 +24,6 @@ def _make_app(cfg, transcript, history=None):
     app._paused = False
     app.cfg = cfg
     app.tray = None
-    app._press_title = "Editor"
     app._pe_cfg = {}
     app._prompt_mode = False
     app._prompt_oneshot = False
@@ -44,6 +43,7 @@ def _make_app(cfg, transcript, history=None):
     app.cleaner.clean.return_value = (transcript, False)
     app.injector = MagicMock()
     app.injector.trailing_space = True
+    app.injector.focused_title.return_value = "Editor"
     return app
 
 

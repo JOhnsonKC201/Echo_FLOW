@@ -173,3 +173,41 @@ def test_tray_pause_toggle_concurrent_with_on_press_hold(monkeypatch):
     assert inconsistencies == 0, (
         f"recorder.start called more than once in {inconsistencies} iterations"
     )
+
+
+# ---------------------------------------------------------------------------
+# (d) back-to-back dictations keep their own window title
+# ---------------------------------------------------------------------------
+# The worker used to read self._press_title after transcription, which takes
+# seconds. A second press in that gap overwrote it, so the first dictation was
+# cleaned with the second window's style and logged under its title.
+
+def test_second_press_does_not_steal_first_dictations_title(monkeypatch):
+    monkeypatch.setattr("src.main.wsound.play", lambda *a, **k: None)
+    monkeypatch.setattr("src.main.console.print", lambda *a, **k: None)
+
+    started = []
+
+    class _Thread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target, self.args, self.kwargs = target, args, kwargs or {}
+
+        def start(self):
+            started.append(self)
+
+    monkeypatch.setattr("src.main.threading.Thread", _Thread)
+
+    app = _make_app()
+    seen = []
+    app._dictation_worker = lambda audio, t_release=None, title=None: seen.append(title)
+
+    app.injector.focused_title.return_value = "Slack"
+    app.on_press_hold()
+    app.on_release_hold()                       # worker 1 queued, not yet run
+    app.injector.focused_title.return_value = "Gmail"
+    app.on_press_hold()                         # user starts the next one
+    app.on_release_hold()
+
+    for t in started:                           # now the workers run
+        t.target(*t.args, **t.kwargs)
+    assert seen == ["Slack", "Gmail"]
