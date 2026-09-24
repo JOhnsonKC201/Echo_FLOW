@@ -164,3 +164,11 @@ def test_watch_survives_a_failing_callback():
         _Probe(flips_after=0), _boom,
         timeout_sec=1, poll_sec=0.01, sleep=lambda s: None,
     )
+
+
+def test_supervisor_logs_reach_the_wispr_log():
+    # wispr.log only collects the "wispr" logger tree. Under
+    # logging.getLogger(__name__) every spawn result, timeout and spawn error
+    # was dropped, so a failed autostart left no trace to diagnose.
+    from src import ollama_supervisor
+    assert ollama_supervisor._log.name.startswith("wispr.")

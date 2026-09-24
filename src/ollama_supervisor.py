@@ -25,7 +25,6 @@ the wait loop take injectable callables.
 """
 from __future__ import annotations
 
-import logging
 import os
 import shutil
 import subprocess
@@ -37,8 +36,9 @@ from typing import Callable, Iterable
 import requests
 
 from . import hostos
+from . import log as wlog
 
-_log = logging.getLogger(__name__)
+_log = wlog.get("ollama")
 
 # Ollama's Windows installer is per-user and lands in LOCALAPPDATA. "ollama
 # app.exe" is the tray application the Start Menu shortcut points at; it starts

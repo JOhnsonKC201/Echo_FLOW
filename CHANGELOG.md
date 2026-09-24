@@ -146,6 +146,17 @@ All notable changes are documented here. Format roughly follows
 
 ### Fixed
 
+- **A stopped Ollama costs well under a second, not 4 seconds, per
+  dictation.** On Windows a connect to a closed local port is retried for
+  about 2 s per address, and `localhost` is both `::1` and `127.0.0.1`, so
+  with only a read timeout every dictation waited ~4 s before pasting raw
+  text. Connecting now has its own short timeout
+  (`ollama.connect_timeout_sec`, default 0.5 s); generation keeps
+  `timeout_sec`.
+- **Ollama autostart now leaves a trace in `wispr.log`.** The supervisor
+  logged under `src.ollama_supervisor`, outside the `wispr` tree the log
+  file collects, so every spawn, timeout and spawn error was dropped and a
+  failed autostart at login could not be diagnosed.
 - **A web page can no longer change or wipe the dashboard's data.** The Host
   header check stops DNS rebinding but not a plain cross-site form: a page
   the user visits could auto-submit to `/privacy/wipe` and delete every
