@@ -1265,6 +1265,12 @@ class Cleaner:
         # A caller rewriting multiple paragraphs (humanize_text) passes its own
         # far longer budget; every other call site keeps the tight default.
         timeout = float(timeout_sec if timeout_sec else oc.get("timeout_sec", 8.0))
+        # Connecting is separate from generating. On Windows a connect to a
+        # stopped Ollama is not refused at once: the stack retries for ~2 s per
+        # address, and localhost is both ::1 and 127.0.0.1, so a read-only
+        # timeout cost ~4 s on every dictation during an outage. A loopback
+        # handshake takes milliseconds even while Ollama is busy generating.
+        connect = float(oc.get("connect_timeout_sec", 0.5))
         # The dictation model is deliberately small (3B) to leave VRAM for
         # Whisper. A caller that runs off the hot path — humanize_text, invoked
         # by a button press — may pin a stronger local model instead.
@@ -1286,7 +1292,7 @@ class Cleaner:
             # provider. Ollama accepts think:false on non-reasoning models too,
             # so this is safe for whatever model the user has pinned.
             payload["think"] = False
-        r = self._session.post(url, json=payload, timeout=timeout)
+        r = self._session.post(url, json=payload, timeout=(connect, timeout))
         r.raise_for_status()
         return r.json()["message"]["content"].strip()
 

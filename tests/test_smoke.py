@@ -169,7 +169,7 @@ def test_via_ollama_passes_num_predict(monkeypatch):
     # H4: max_tokens now passed as an explicit kwarg, not an instance field.
     out = cleaner._via_ollama("sys", "user", max_tokens=700)
     assert out == "ok"
-    assert captured["timeout"] == 5.0
+    assert captured["timeout"] == (0.5, 5.0)  # (connect, read)
     assert captured["json"]["options"]["num_predict"] == 700
     assert captured["json"]["keep_alive"] == "10m"
 
