@@ -122,21 +122,51 @@ def test_os_chosen_bound_port_in_allowlist():
 
 # --- Port picker -------------------------------------------------------------
 
+def _bindable(port: int) -> bool:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _free_port_run(length: int) -> int:
+    """Return a port where `length` consecutive ports are all bindable.
+
+    Hardcoded ports are unsafe on Windows: with Hyper-V or WSL enabled the OS
+    reserves whole blocks (see `netsh int ipv4 show excludedportrange`), and
+    binding inside one raises WinError 10013 even though nothing is listening.
+    """
+    for _ in range(50):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(("127.0.0.1", 0))
+        start = s.getsockname()[1]
+        s.close()
+        if start + length <= 65535 and all(
+            _bindable(start + i) for i in range(length)
+        ):
+            return start
+    pytest.skip("no run of free consecutive ports on this machine")
+
+
 def test_pick_port_returns_preferred_when_free():
     from src.dashboard.server import pick_port
-    # Pick something high and obscure to avoid collisions in CI.
-    chosen = pick_port("127.0.0.1", 49321)
-    assert chosen == 49321
+    preferred = _free_port_run(1)
+    assert pick_port("127.0.0.1", preferred) == preferred
 
 
 def test_pick_port_falls_back_when_busy():
     from src.dashboard.server import pick_port
+    busy = _free_port_run(5)
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("127.0.0.1", 49333))
+    s.bind(("127.0.0.1", busy))
     try:
-        chosen = pick_port("127.0.0.1", 49333)
-        assert chosen != 49333  # picked one of the next 4
-        assert 49333 < chosen <= 49337
+        chosen = pick_port("127.0.0.1", busy)
+        assert chosen != busy  # picked one of the next 4
+        assert busy < chosen <= busy + 4
     finally:
         s.close()
 
