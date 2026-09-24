@@ -296,3 +296,12 @@ def test_actions_save_url_target_ok(tmp_path):
                 data={"kind": "app", "name": "mail", "target": "https://mail.proton.me"})
     rows = {r["name"]: r["target"] for r in app_ref.history.list_action_targets("app")}
     assert rows == {"mail": "https://mail.proton.me"}
+
+
+def test_actions_save_rejects_unc_app(tmp_path):
+    client, app_ref = _client(tmp_path)
+    bs = chr(92)
+    unc = bs + bs + "attacker" + bs + "share" + bs + "evil.exe"
+    client.post("/actions/save", headers=HOST,
+                data={"kind": "app", "name": "evil", "target": unc})
+    assert app_ref.history.list_action_targets("app") == []

@@ -1438,11 +1438,11 @@ def make_app(app_ref, bound_port: int | None = None):
             return True, ""
         if any(c in t for c in "&|<>^`$;"):
             return False, "Target can't contain shell characters (& | < > ^ ` $ ;)."
-        if kind == "folder":
-            # UNC paths trigger outbound SMB auth — block them (handler does too).
-            if t[:2] in ("\\\\", "//"):
-                return False, "Network (UNC) folder paths aren't allowed."
-        elif kind == "app":
+        # Before the isfile() below: touching a UNC path already sends the
+        # user's NetNTLM hash. The handlers refuse these too.
+        if _va._is_unc(t):
+            return False, "Network (UNC) paths aren't allowed."
+        if kind == "app":
             # Mirror _h_open_app: a non-file target with a command-line flag
             # ("notepad /k x") is rejected so it can't persist then fail at launch.
             if not _os.path.isfile(t) and _re2.search(r"\s/\w", t):

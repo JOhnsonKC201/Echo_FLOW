@@ -156,3 +156,31 @@ def test_redact_label_passes_through_safe_handlers():
     assert va.redact_label("open_app", "Open spotify", {"app": "spotify"},
                            _APP_CFG) == "Open spotify"
     assert va.redact_label("media_key", "Play / pause", {"key": "playpause"}) == "Play / pause"
+
+
+# --- UNC app targets --------------------------------------------------------
+# open_folder already refuses \host\share; open_app did not. On Windows any
+# touch of a UNC path (even os.path.isfile) opens an SMB session that sends the
+# user's NetNTLM hash, and Popen/startfile would run a remote binary.
+
+_BS = chr(92)
+
+
+@pytest.mark.parametrize("target", [
+    _BS + _BS + "attacker" + _BS + "share" + _BS + "evil.exe",
+    "//attacker/share/evil.exe",
+])
+def test_open_app_refuses_unc_target_without_touching_it(monkeypatch, target):
+    import os
+    import subprocess
+    touched = []
+    monkeypatch.setattr(os.path, "isfile", lambda p: touched.append(p) or False)
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: touched.append(a))
+    monkeypatch.setattr(os, "startfile", lambda p: touched.append(p), raising=False)
+    ctx = va.ActionContext(focused_title=None, focused_path=None,
+                           cfg={"experimental": {"action_apps": {"evil": target}}},
+                           notify=lambda *a, **k: None)
+    ok, msg = va.dispatch(va.ActionMatch("open_app", "Open evil", {"app": "evil"}), ctx)
+    assert ok is False
+    assert "network" in msg.lower()
+    assert touched == []

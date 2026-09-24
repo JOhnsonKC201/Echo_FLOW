@@ -348,6 +348,16 @@ def _h_web_search(args: dict, ctx: ActionContext) -> tuple[bool, str]:
         return (False, f"Couldn't open the browser: {e}")
 
 
+def _is_unc(path: str) -> bool:
+    """True for a network path (\\\\host\\share or //host/share).
+
+    On Windows, merely touching one (os.path.isfile, shutil.which, Popen,
+    os.startfile) opens an outbound SMB session that sends the user's NetNTLM
+    hash, and launching it runs a remote binary. Check before any of those.
+    """
+    return path[:2] in ("\\\\", "//")
+
+
 def _h_open_app(args: dict, ctx: ActionContext) -> tuple[bool, str]:
     app = ((args or {}).get("app") or "").strip().lower()
     apps = user_targets("app", ctx.cfg, ctx.history)
@@ -375,6 +385,10 @@ def _h_open_app(args: dict, ctx: ActionContext) -> tuple[bool, str]:
         # here undid the redaction redact_args/redact_label perform.
         return (False, "I don't have that app configured. "
                        "Add it under Settings, Action targets.")
+
+    if _is_unc(target):
+        return (False, f"The configured target for “{app}” is a network path, "
+                       "which isn't allowed.")
 
     # SEC-4: reject a configured target that smuggles shell syntax / arguments,
     # unless it is a real file on disk. Voice never reaches here, but a bad
@@ -640,9 +654,7 @@ def _h_open_folder(args: dict, ctx: ActionContext) -> tuple[bool, str]:
         # SEC-3: same reasoning as the app case above, do not echo the slot.
         return (False, "I don't have that folder configured. "
                        "Add it under Settings, Action targets.")
-    # Refuse UNC paths — os.startfile on \\host\share triggers an outbound SMB
-    # auth (NetNTLM leak). A configured local folder never needs this form.
-    if target[:2] in ("\\\\", "//"):
+    if _is_unc(target):
         return (False, "That folder location isn't allowed.")
     if not os.path.isdir(target):
         return (False, f"That folder doesn't exist: {target}")
