@@ -153,6 +153,18 @@ All notable changes are documented here. Format roughly follows
   Every POST is now refused with 403 when its `Origin` is not the
   dashboard's own, or when `Sec-Fetch-Site` is `cross-site`. The dashboard's
   own forms and non-browser clients are unaffected.
+- **App shortcuts can no longer point at a network path.** Folder shortcuts
+  already refused `\\host\share`, but app shortcuts did not, so a target
+  like `\\host\share\tool.exe` would be launched from another machine. On
+  Windows even checking whether such a path exists sends the user's NetNTLM
+  hash to that host. Both the dashboard's save check and the voice handler
+  now refuse network paths before touching them.
+- **Back-to-back dictations keep their own window.** The dictation worker
+  read the focused-window title from shared state after transcription,
+  which takes seconds, so pressing the hotkey again in that gap gave the
+  first dictation the second window's title and cleanup style (casual for
+  Slack, full sentences for Gmail). Each recording now hands its own title
+  to its worker.
 - **Port tests no longer fail on machines with Hyper-V or WSL.** The tests
   hardcoded ports 49321 and 49333, which Windows can reserve in blocks
   (`netsh int ipv4 show excludedportrange`); binding there raised
