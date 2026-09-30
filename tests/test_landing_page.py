@@ -31,6 +31,11 @@ GZIP_BUDGET = 14_000
 # WCAG 2.2 AA for body text.
 MIN_CONTRAST = 4.5
 
+# How far the hero's test count may trail the real suite: 2 percent, but
+# never less than 20 tests, so a few small PRs don't each have to edit it.
+MAX_TEST_COUNT_LAG_PCT = 2
+MIN_TEST_COUNT_LAG = 20
+
 # Tags whose src/href the browser fetches while rendering the page.
 SUBRESOURCE_ATTRS = {
     "script": "src",
@@ -205,14 +210,44 @@ def test_test_count_claim_is_honest(html: str, request: pytest.FixtureRequest) -
     assert_claim_is_honest(claimed, collected)
 
 
+@pytest.mark.parametrize(
+    ("claimed", "collected", "honest"),
+    [
+        (1878, 1878, True),   # exact
+        (1858, 1878, True),   # 20 behind, the floor
+        (1841, 1878, True),   # 37 behind, 2 percent of 1878
+        (1840, 1878, False),  # 38 behind, stale
+        (1879, 1878, False),  # overstates by one
+    ],
+)
+def test_claim_rule(claimed: int, collected: int, honest: bool) -> None:
+    if honest:
+        assert_claim_is_honest(claimed, collected)
+    else:
+        with pytest.raises(AssertionError, match=f"to {collected}"):
+            assert_claim_is_honest(claimed, collected)
+
+
 def assert_claim_is_honest(claimed: int, collected: int) -> None:
     """Decide how far the published number may sit from the real one.
 
     ``claimed`` is what docs/index.html says; ``collected`` is what pytest
     actually gathered for this run. Raise AssertionError with a message that
     tells the reader which number to put on the page.
+
+    Overstating fails outright: the page states an exact count, so a number
+    above the real suite is a false claim. Trailing is fine for a while, since
+    otherwise every PR that adds a test would have to edit the page too.
     """
-    # TODO(human)
+    fix = f'set <span id="test-count"> in docs/index.html to {collected}'
+    assert claimed <= collected, (
+        f"the page claims {claimed} tests but the suite has {collected}; {fix}"
+    )
+    allowed_lag = max(MIN_TEST_COUNT_LAG, collected * MAX_TEST_COUNT_LAG_PCT // 100)
+    assert collected - claimed <= allowed_lag, (
+        f"the page claims {claimed} tests, {collected - claimed} behind the real "
+        f"{collected} (allowed lag {allowed_lag}); {fix}"
+    )
 
 
 # --- Rendering: readable text, hero paints immediately ---------------------------
