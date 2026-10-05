@@ -87,6 +87,22 @@ All notable changes are documented here. Format roughly follows
 
 ### Changed
 
+- **Starting Echo Flow no longer opens the Ollama window.** Autostart launched
+  `ollama app.exe`, which in current Ollama builds opens its chat window on top
+  of whatever you were doing and was measured at 25s+ before the port answered,
+  so startup timed out into rules-only cleanup with a toast. Echo Flow now
+  starts the headless `ollama.exe serve` when both are installed: nothing
+  opens, and the port is up within the startup wait. The tray app is still
+  used on an install that ships only that, and macOS is unchanged.
+- **A server Echo Flow starts is limited to one model and one request slot**
+  (`OLLAMA_MAX_LOADED_MODELS=1`, `OLLAMA_NUM_PARALLEL=1`). Each extra model or
+  slot is VRAM taken from Whisper, and past the card's limit Ollama spills onto
+  the CPU. A value you set yourself is left alone, and an Ollama that was
+  already running is not touched.
+- **`cleanup.ollama.keep_alive` is `30m`, down from `8h`.** Pinning the model
+  for a whole day held ~2.4 GB of an 8 GB card while a game or a training run
+  wanted it. Thirty minutes covers a working session and gives the VRAM back
+  when dictation stops; the price is one ~2s cold load after a long break.
 - **The cleanup model stays resident between dictations.**
   `cleanup.ollama.keep_alive` was `10m`, so any gap longer than a coffee break
   paid a cold model load on the next dictation: 1966ms of `load_duration`
