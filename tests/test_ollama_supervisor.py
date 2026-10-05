@@ -89,15 +89,62 @@ def test_finds_the_tray_app_in_localappdata(monkeypatch, tmp_path):
     assert sup.find_ollama() == exe
 
 
-def test_prefers_the_tray_app_over_the_bare_server(monkeypatch, tmp_path):
-    """The tray app is what the Start Menu shortcut runs, so our spawn looks
-    exactly like the user starting it themselves."""
+def test_prefers_the_bare_server_over_the_tray_app(monkeypatch, tmp_path):
+    """The tray app opens Ollama's chat window and was measured at 25s+ to
+    answer. A background daemon wants the headless server: no window, and the
+    port is up in a second or two."""
     d = tmp_path / "Programs" / "Ollama"
     d.mkdir(parents=True)
     (d / "ollama app.exe").write_text("")
     (d / "ollama.exe").write_text("")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    assert sup.find_ollama().name == "ollama app.exe"
+    assert sup.find_ollama().name == "ollama.exe"
+
+
+# --- the spawn itself -------------------------------------------------------
+
+class _FakePopen:
+    """Records the one spawn instead of starting a process."""
+
+    def __init__(self):
+        self.args = None
+        self.kwargs = None
+
+    def __call__(self, args, **kwargs):
+        self.args, self.kwargs = args, kwargs
+
+
+def test_headless_server_is_spawned_with_resource_limits(monkeypatch):
+    """One model, one request at a time: Echo Flow is the only client we start
+    it for, and each extra slot or model is VRAM taken from Whisper."""
+    popen = _FakePopen()
+    monkeypatch.setattr(sup.subprocess, "Popen", popen)
+    monkeypatch.delenv("OLLAMA_MAX_LOADED_MODELS", raising=False)
+    monkeypatch.delenv("OLLAMA_NUM_PARALLEL", raising=False)
+
+    assert sup._spawn(Path("ollama.exe")) is True
+    assert popen.args == ["ollama.exe", "serve"]
+    assert popen.kwargs["env"]["OLLAMA_MAX_LOADED_MODELS"] == "1"
+    assert popen.kwargs["env"]["OLLAMA_NUM_PARALLEL"] == "1"
+
+
+def test_resource_limits_do_not_override_the_users_own(monkeypatch):
+    """Someone who set these deliberately knows their machine better than we do."""
+    popen = _FakePopen()
+    monkeypatch.setattr(sup.subprocess, "Popen", popen)
+    monkeypatch.setenv("OLLAMA_NUM_PARALLEL", "4")
+
+    sup._spawn(Path("ollama.exe"))
+    assert popen.kwargs["env"]["OLLAMA_NUM_PARALLEL"] == "4"
+
+
+def test_spawn_does_not_touch_the_callers_environment(monkeypatch):
+    popen = _FakePopen()
+    monkeypatch.setattr(sup.subprocess, "Popen", popen)
+    monkeypatch.delenv("OLLAMA_MAX_LOADED_MODELS", raising=False)
+
+    sup._spawn(Path("ollama.exe"))
+    assert "OLLAMA_MAX_LOADED_MODELS" not in sup.os.environ
 
 
 def test_falls_back_to_path(monkeypatch, tmp_path):

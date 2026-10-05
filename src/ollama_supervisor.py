@@ -41,12 +41,24 @@ from . import log as wlog
 _log = wlog.get("ollama")
 
 # Ollama's Windows installer is per-user and lands in LOCALAPPDATA. "ollama
-# app.exe" is the tray application the Start Menu shortcut points at; it starts
-# the server and gives the user the tray icon they expect to see. "ollama.exe
-# serve" is the headless server. Prefer the tray app so our spawn looks exactly
-# like the user starting it themselves, and fall back to the server binary.
+# app.exe" is the tray application the Start Menu shortcut points at; "ollama.exe
+# serve" is the headless server. Prefer the server. The tray app opens Ollama's
+# chat window on top of whatever the user was doing and was measured at 25s+
+# before the port answered, which is why startup used to time out into
+# rules-only cleanup. The server opens nothing and answers in a second or two.
+# The tray app stays as the fallback for an install that ships only that.
 _TRAY_RELATIVE = Path("Programs") / "Ollama" / "ollama app.exe"
 _SERVER_RELATIVE = Path("Programs") / "Ollama" / "ollama.exe"
+
+# Applied only to a server we start ourselves, and only where the user has not
+# set the variable. Echo Flow is the one client it is started for, so a second
+# resident model or a second request slot is VRAM taken from Whisper for no
+# benefit; past the card's limit Ollama spills layers onto the CPU, and that
+# is what makes the whole machine crawl.
+_SERVER_LIMITS = {
+    "OLLAMA_MAX_LOADED_MODELS": "1",
+    "OLLAMA_NUM_PARALLEL": "1",
+}
 
 # Machine-wide installs, plus the Program Files layout some builds use.
 _EXTRA_DIRS = (
@@ -92,11 +104,11 @@ def _candidate_paths() -> Iterable[Path]:
     local = os.environ.get("LOCALAPPDATA")
     if local:
         base = Path(local)
-        yield base / _TRAY_RELATIVE
         yield base / _SERVER_RELATIVE
+        yield base / _TRAY_RELATIVE
     for d in _EXTRA_DIRS:
-        yield d / "ollama app.exe"
         yield d / "ollama.exe"
+        yield d / "ollama app.exe"
     if hostos.is_mac():
         yield from _MAC_CANDIDATES
 
@@ -114,8 +126,8 @@ def _is_installed(p: Path) -> bool:
 def find_ollama() -> Path | None:
     """Locate an installed Ollama executable, or None.
 
-    Checks the known install locations first, then PATH. Returns the tray app
-    in preference to the bare server when both exist.
+    Checks the known install locations first, then PATH. On Windows returns
+    the headless server in preference to the tray app when both exist.
     """
     for p in _candidate_paths():
         try:
@@ -145,6 +157,7 @@ def _spawn(exe: Path) -> bool:
     else:
         args = [str(exe), "serve"]
     kwargs: dict = {
+        "env": {**_SERVER_LIMITS, **os.environ},
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
         "stdin": subprocess.DEVNULL,
