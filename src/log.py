@@ -7,6 +7,7 @@ INFO+ so post-mortem debugging works when the daemon ran overnight.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -17,13 +18,21 @@ _DATEFMT = "%Y-%m-%d %H:%M:%S"
 _configured = False
 
 
-def setup(log_dir: str = "data", level: int = logging.INFO) -> None:
-    """Initialize root logger. Idempotent."""
+def setup(log_dir: str = "data", level: int = logging.INFO,
+          filename: str = "wispr.log") -> None:
+    """Initialize root logger. Idempotent.
+
+    ECHOFLOW_LOG_DIR overrides log_dir. The test suite sets it: importing
+    src.main calls setup(), and from the repo root "data" is the running
+    daemon's own directory, so test fixtures such as "cuda went away" used to
+    land in the real wispr.log and read as real failures.
+    """
     global _configured
     if _configured:
         return
+    log_dir = os.environ.get("ECHOFLOW_LOG_DIR") or log_dir
     Path(log_dir).mkdir(parents=True, exist_ok=True)
-    log_path = Path(log_dir) / "wispr.log"
+    log_path = Path(log_dir) / filename
 
     root = logging.getLogger("wispr")
     root.setLevel(level)

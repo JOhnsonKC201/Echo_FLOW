@@ -11,6 +11,10 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Set before anything imports src.main, whose import calls log.setup(). Without
+# it the suite appends its fixture errors to the running daemon's data/wispr.log.
+os.environ["ECHOFLOW_LOG_DIR"] = tempfile.mkdtemp(prefix="echoflow-test-logs-")
+
 
 # --- Stub leaf native/I-O shims when absent --------------------------------
 # Echo Flow's runtime pulls in platform shims (clipboard, input, audio, tray,
