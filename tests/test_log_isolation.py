@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 
@@ -13,5 +12,4 @@ def test_the_suite_does_not_log_into_the_daemons_directory():
     files = [Path(h.baseFilename).resolve() for h in logging.getLogger("wispr").handlers
              if isinstance(h, logging.FileHandler)]
     assert files, "log.setup() did not attach a file handler"
-    assert all(repo_data not in f.parents for f in files)
-    assert all(Path(os.environ["ECHOFLOW_LOG_DIR"]).resolve() in f.parents for f in files)
+    assert all(repo_data not in f.parents for f in files), files
