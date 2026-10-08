@@ -22,7 +22,13 @@ def _paste_with(monkeypatch, platform: str) -> list[tuple]:
     from src import inject
     import pyautogui
     calls: list[tuple] = []
-    monkeypatch.setattr(pyautogui, "hotkey", lambda *keys: calls.append(keys))
+
+    def hotkey(*keys, _pause=True):
+        # pyautogui sleeps 0.1 s after sending unless told not to; that pause
+        # sat on every dictation's release-to-text path.
+        assert _pause is False
+        calls.append(keys)
+    monkeypatch.setattr(pyautogui, "hotkey", hotkey)
     monkeypatch.setattr(inject.pyperclip, "copy", lambda t: None)
     monkeypatch.setattr(inject.time, "sleep", lambda s: None)
     monkeypatch.setattr(sys, "platform", platform)

@@ -10,6 +10,7 @@ from pathlib import Path
 import pyperclip
 
 from . import hostos
+from .hotkey import own_keystrokes
 
 
 def _focused_window_title() -> str:
@@ -90,12 +91,18 @@ class Injector:
         pyperclip.copy(text)
         time.sleep(0.008)  # min wait for the clipboard to settle
         import pyautogui
-        pyautogui.hotkey(*hostos.paste_keys())  # Ctrl+V, or Command+V on macOS
+        # _pause=False: pyautogui otherwise sleeps its default 0.1 s after the
+        # keys are already sent, which only delayed every dictation.
+        with own_keystrokes():
+            pyautogui.hotkey(*hostos.paste_keys(), _pause=False)  # Ctrl+V, or Command+V on macOS
         if self.restore_clipboard and prev is not None:
             # Restore in background so it doesn't block return
             import threading
             def _restore():
-                time.sleep(0.1)
+                # The target app reads the clipboard some time after Ctrl+V.
+                # 0.2 s keeps the gap the old code had (its 0.1 s plus the
+                # pyautogui pause above); restoring sooner pastes the old text.
+                time.sleep(0.2)
                 try:
                     pyperclip.copy(prev)
                 except Exception:
@@ -104,7 +111,8 @@ class Injector:
 
     def _type(self, text: str):
         import pyautogui
-        pyautogui.typewrite(text, interval=0.005)
+        with own_keystrokes():
+            pyautogui.typewrite(text, interval=0.005)
 
     def send_key(self, key: str) -> bool:
         """Fire a single key. Phase 12 — used for trailing voice commands.
@@ -117,7 +125,8 @@ class Injector:
             import pyautogui
             # Small grace period so the prior paste settles before the key.
             time.sleep(0.05)
-            pyautogui.press(key)
+            with own_keystrokes():
+                pyautogui.press(key)
             return True
         except Exception:
             return False
@@ -136,7 +145,8 @@ class Injector:
         try:
             import pyautogui
             time.sleep(0.05)
-            pyautogui.hotkey(*parts)
+            with own_keystrokes():
+                pyautogui.hotkey(*parts)
             return True
         except Exception:
             return False

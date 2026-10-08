@@ -1,6 +1,9 @@
 """Global hotkey listener (push-to-talk or toggle)."""
 from __future__ import annotations
 
+import time
+from contextlib import contextmanager
+
 # pynput is imported lazily inside the functions that need it so pure-logic
 # and dashboard code paths (and the test suite) can import this module's
 # callers on machines without a display/input backend installed.
@@ -41,6 +44,32 @@ def _parse_combo(combo: str):
         else:
             raise ValueError(f"Unknown key: {part}")
     return keys
+
+
+# Echo Flow pastes by sending Ctrl+V, and the global hook sees those keys like
+# any others. While the user still holds Shift (re-paste releases one key at a
+# time, or they have already started the next dictation), the synthetic Ctrl
+# completed Ctrl+Shift and started a recording nobody asked for, and the
+# synthetic Ctrl-up cut a real one short. Only injected events inside our own
+# sending window are ignored: a remapper or remote desktop that injects the
+# hotkey on the user's behalf must keep working.
+_OWN_KEYS_GRACE = 0.25   # the hook delivers events slightly after we send them
+_own_keys_until = 0.0
+
+
+@contextmanager
+def own_keystrokes():
+    """Wrap any keystroke Echo Flow sends so the listeners ignore it."""
+    global _own_keys_until
+    _own_keys_until = float("inf")
+    try:
+        yield
+    finally:
+        _own_keys_until = time.monotonic() + _OWN_KEYS_GRACE
+
+
+def _is_own(injected) -> bool:
+    return bool(injected) and time.monotonic() < _own_keys_until
 
 
 class HotkeyListener:
@@ -95,7 +124,9 @@ class HotkeyListener:
             import logging
             logging.getLogger("wispr.hotkey").error("%s callback failed: %s", label, e)
 
-    def _on_press(self, key):
+    def _on_press(self, key, injected=False):
+        if _is_own(injected):
+            return
         k = self._norm(key)
         self._pressed.add(k)
         # Veto: a "longer" combo is forming. Cancel if active, skip otherwise.
@@ -111,7 +142,9 @@ class HotkeyListener:
             self._active = True
             self._safe(self.on_activate, "activate")
 
-    def _on_release(self, key):
+    def _on_release(self, key, injected=False):
+        if _is_own(injected):
+            return
         k = self._norm(key)
         self._pressed.discard(k)
         if self._active and not self.combo.issubset(self._pressed):
