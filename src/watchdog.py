@@ -272,6 +272,13 @@ def main():
     if not getattr(sys, "frozen", False):
         os.chdir(Path(__file__).resolve().parent.parent)
 
+    # Its own file: this process had no handler at all, so "daemon is dead,
+    # relaunching" and the crash-loop breaker were never recorded anywhere.
+    # Not wispr.log, which the daemon rotates; two processes cannot rotate one
+    # file on Windows.
+    from . import log as wlog
+    wlog.setup(filename="watchdog.log")
+
     # Single-instance for the watchdog itself
     lock = _acquire_lock()
     if lock is None:
