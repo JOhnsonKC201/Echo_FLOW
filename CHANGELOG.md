@@ -6,6 +6,28 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Fixed
+- **A dead default microphone no longer costs you the dictation.** Windows
+  makes any newly plugged USB audio device the default input, whether or not
+  its microphone hears anything, and Echo Flow recorded from the default
+  alone. Every dictation then ended as "too quiet" until the device was
+  unplugged. With no device pinned, the recorder now also listens on the other
+  real microphones and uses the one that heard you, says so once, and logs
+  which device every recording came from. Loopback inputs such as Stereo Mix
+  are never used as a backup. `audio.fallback_mics: false` turns it off.
+- **A microphone plugged in while Echo Flow is running is seen without a
+  restart.** The device list was read once at startup.
+- **Echo Flow's own paste no longer triggers its hotkey.** The Ctrl+V it sends
+  came back through the global hook; with Shift still held it started a
+  recording nobody asked for, or cut the next one short.
+- **Paste lands about 100 ms sooner.** pyautogui's default pause ran after the
+  keys were already sent.
+- **The watchdog writes `data/watchdog.log`.** It had no log handler, so a
+  relaunch or a tripped crash-loop breaker left no record.
+- **The test suite no longer writes into the running daemon's `wispr.log`.**
+  Fixture errors there read as real failures.
+- A recording dropped as a likely Whisper hallucination is now logged.
+
 ### Added
 - **Whisper runs on the Apple GPU.** faster-whisper has no Metal backend, so
   every Mac transcribed on the CPU with the `base` model. `Transcriber` now
