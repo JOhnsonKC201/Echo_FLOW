@@ -13,6 +13,10 @@ audio:
   sample_rate: 16000
   channels: 1
   device: null       # null = system default; or int index from python -m sounddevice
+  # With device null, also listen on the other real microphones and use one of
+  # them when the system default hears nothing (Windows makes any newly plugged
+  # USB audio device the default, working mic or not).
+  fallback_mics: true
   vad_enabled: true
   silence_timeout_ms: 1500   # auto-stop after this much silence (toggle mode)
 

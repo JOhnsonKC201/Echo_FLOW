@@ -73,3 +73,51 @@ def test_worker_exception_is_logged_and_tray_recovers(caplog, toasts):
     assert "cuda went away" in caplog.text
     app.tray.set_state.assert_called_with("ok")
     toasts.assert_called_once()
+
+
+def _capture(device, rescued_from, **levels):
+    from src.audio import CaptureInfo
+    return CaptureInfo(device=device, rescued_from=rescued_from, levels=levels)
+
+
+def test_quiet_drop_names_every_microphone_and_its_level(caplog, toasts):
+    """Three weeks of "too quiet" drops could not be explained because the log
+    never said which device the silence came from."""
+    app = _make_app()
+    quiet = np.full(16000, 0.0005, dtype=np.float32)
+    cap = _capture("USB mic", None, **{"USB mic": 0.0005, "Laptop array": 0.0002})
+
+    with caplog.at_level(logging.INFO, logger="wispr.main"):
+        app._do_dictation(quiet, capture=cap)
+
+    assert "USB mic 0.0005" in caplog.text
+    assert "Laptop array 0.0002" in caplog.text
+    assert "USB mic" in toasts.call_args.args[1]
+
+
+def test_a_rescued_recording_is_logged_every_time_and_toasted_once(caplog, toasts):
+    app = _make_app()
+    app.recorder = MagicMock()
+    app.recorder.last_capture = _capture(
+        "Laptop array", "USB mic", **{"USB mic": 0.0005, "Laptop array": 0.05})
+
+    with caplog.at_level(logging.INFO, logger="wispr.main"):
+        first = app._note_capture()
+        app._note_capture()
+
+    assert first.device == "Laptop array"
+    assert caplog.text.count("default microphone USB mic was silent") == 2
+    toasts.assert_called_once()
+    assert "USB mic heard nothing" in toasts.call_args.args[1]
+
+
+def test_an_ordinary_recording_reports_nothing(caplog, toasts):
+    app = _make_app()
+    app.recorder = MagicMock()
+    app.recorder.last_capture = _capture("USB mic", None, **{"USB mic": 0.05})
+
+    with caplog.at_level(logging.INFO, logger="wispr.main"):
+        app._note_capture()
+
+    assert "silent" not in caplog.text
+    toasts.assert_not_called()

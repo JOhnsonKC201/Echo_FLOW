@@ -199,7 +199,7 @@ def test_second_press_does_not_steal_first_dictations_title(monkeypatch):
 
     app = _make_app()
     seen = []
-    app._dictation_worker = lambda audio, t_release=None, title=None: seen.append(title)
+    app._dictation_worker = lambda audio, t_release=None, title=None, capture=None: seen.append(title)
 
     app.injector.focused_title.return_value = "Slack"
     app.on_press_hold()

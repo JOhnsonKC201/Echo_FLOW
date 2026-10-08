@@ -33,7 +33,7 @@ import yaml
 from rich.console import Console
 from rich.panel import Panel
 
-from .audio import AudioConfig, Recorder
+from .audio import SILENCE_RMS, AudioConfig, CaptureInfo, Recorder
 from .transcribe import WhisperConfig, Transcriber
 from .cleanup import Cleaner
 from .inject import Injector
@@ -321,6 +321,7 @@ class App:
             device=ac.get("device"),
             vad_enabled=ac.get("vad_enabled", True),
             silence_timeout_ms=ac.get("silence_timeout_ms", 1500),
+            fallback_mics=ac.get("fallback_mics", True),
         ))
         wc = cfg["whisper"]
         backend = wc.get("backend", "local")
@@ -749,20 +750,47 @@ class App:
         if self.tray:
             self.tray.set_state("paused" if self._paused else "ok")
 
+    # Silent default microphones the user has already been told about.
+    _rescue_told: frozenset = frozenset()
+
+    def _note_capture(self):
+        """Report which microphone the recording that just ended came from.
+        Called right after the recorder stops, before the next press can
+        replace last_capture."""
+        cap = getattr(self.recorder, "last_capture", None)
+        if not isinstance(cap, CaptureInfo):
+            return None
+        if not cap.rescued_from:
+            return cap
+        _log.warning("default microphone %s was silent (level %.4f); used %s",
+                     cap.rescued_from, cap.levels.get(cap.rescued_from, 0.0),
+                     cap.device)
+        # Once per silent device: the log has every occurrence, the user needs
+        # to be told only that their Windows default is not the mic they use.
+        if cap.rescued_from not in self._rescue_told:
+            self._rescue_told = self._rescue_told | {cap.rescued_from}
+            wnotify.notify(
+                "Echo Flow",
+                f"{cap.rescued_from} heard nothing, so I used {cap.device}. "
+                "Windows has the silent one set as the default microphone.",
+                "warning",
+            )
+        return cap
+
     def _dictation_worker(self, audio, t_release: float | None = None,
-                          title: str | None = None):
+                          title: str | None = None, capture=None):
         """Thread entry for a dictation. The daemon's stderr is DEVNULL, so an
         exception escaping this thread used to vanish and the recording was
         silently lost; log it with the traceback and tell the user instead."""
         try:
-            self._do_dictation(audio, t_release, title)
+            self._do_dictation(audio, t_release, title, capture)
         except Exception as e:
             _log.exception("dictation failed: %s", e)
             wnotify.notify("Echo Flow", f"Dictation failed: {e}", "error")
             self._tray_idle()
 
     def _do_dictation(self, audio, t_release: float | None = None,
-                      title: str | None = None):
+                      title: str | None = None, capture=None):
         if self._paused:
             console.print("[dim]Paused, discarding audio.[/dim]")
             _log.info("dictation dropped: paused")
@@ -786,16 +814,19 @@ class App:
         # Recorder.stop() already returns float32; skip the redundant copy.
         audio_f32 = audio if audio.dtype == np.float32 else audio.astype(np.float32)
         rms = float(np.sqrt(np.mean(audio_f32 ** 2)))
-        if rms < 0.003:
+        if rms < SILENCE_RMS:
             console.print(f"[yellow]Too quiet (RMS={rms:.4f}), likely silence, ignored.[/yellow]")
-            _log.warning("dictation dropped: too quiet (RMS=%.4f over %dms, gate 0.003)",
-                         rms, duration_ms)
+            mics = ", ".join(f"{name} {level:.4f}" for name, level in
+                             capture.levels.items()) if capture else "unknown"
+            _log.warning("dictation dropped: too quiet (RMS=%.4f over %dms, gate %.3f; mics: %s)",
+                         rms, duration_ms, SILENCE_RMS, mics)
             # A long clip that is still silent is not the user pausing, it is a
             # muted or wrong microphone; say so instead of doing nothing.
+            heard = f" from {capture.device}" if capture else ""
             wnotify.notify(
                 "Echo Flow",
-                f"Heard almost nothing (level {rms:.4f}). Check that the "
-                "microphone is unmuted and is the Windows default input.",
+                f"Heard almost nothing{heard} (level {rms:.4f}). Check that "
+                "the microphone is unmuted and close enough.",
                 "warning",
             )
             self._tray_idle()
@@ -832,6 +863,8 @@ class App:
         # off the END of an otherwise-real utterance.
         if raw.strip().lower() in HALLUCINATIONS and duration_ms < 2000:
             console.print(f"[yellow]Likely Whisper hallucination on silence, dropped.[/yellow]")
+            _log.info("dictation dropped: likely Whisper hallucination on silence (%r, %dms)",
+                      raw.strip(), duration_ms)
             if self.tray: self.tray.set_state("ok")
             return
 
@@ -1530,11 +1563,13 @@ class App:
             title, self._press_title = self._press_title, None
         t_release = time.perf_counter()
         audio = self.recorder.stop()
-        _log.info("hotkey released: stop, captured %d samples", len(audio))
+        capture = self._note_capture()
+        _log.info("hotkey released: stop, captured %d samples from %s",
+                  len(audio), capture.device if capture else "unknown")
         wsound.play("stop", self.cfg.get("sound"))
         console.print("[bold]■ stop[/bold]")
         threading.Thread(
-            target=self._dictation_worker, args=(audio, t_release, title),
+            target=self._dictation_worker, args=(audio, t_release, title, capture),
             daemon=True,
         ).start()
 
@@ -1595,7 +1630,7 @@ class App:
             if audio is None or cancelled:
                 self._tray_idle()
                 return
-            self._dictation_worker(audio, title=title)
+            self._dictation_worker(audio, title=title, capture=self._note_capture())
         threading.Thread(target=_run, daemon=True).start()
 
     # --- tray callbacks ---
