@@ -257,8 +257,8 @@ update:
   notify: true              # show a tray toast when a newer version is available
 
 # Experimental features (off by default). Surfaced in the dashboard's
-# Settings → Experimental panel. These ship in later phases; toggling
-# them now persists the preference but has no runtime effect yet.
+# Settings > Experimental panel. Each flag is live: main.py reads them at
+# dictation time, so a toggle takes effect on the next dictation.
 experimental:
   press_enter_command: false   # Phase 12: "press enter" / "send it" trailing trigger
   command_mode: false          # Phase 13: full voice command mode

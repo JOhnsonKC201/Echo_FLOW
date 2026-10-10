@@ -161,16 +161,22 @@ def ledger(cfg: dict, history_db: Path, cfg_path: Path, data_dir: Path) -> dict:
     if hz["cloud"]:
         exceptions.append(
             "My Voice (humanize) sends the CLEANED text to Groq/Anthropic when it rewrites")
+    # The one page that leaves the machine without any opt-in: the Graph page
+    # loads D3 from d3js.org inside the dashboard window (no dictation data is
+    # sent, but it is a socket off-box). Stated in both branches so the ledger
+    # never claims localhost-only while that page exists.
+    graph_note = (" The Graph page fetches the D3 library from d3js.org when "
+                  "opened; no text or audio goes with it.")
     if exceptions:
         egress_note = (
             "Opt-in exception(s) ACTIVE: " + "; ".join(exceptions) + ". No audio, "
-            "telemetry, or identifiers are sent otherwise."
+            "telemetry, or identifiers are sent otherwise." + graph_note
         )
     else:
         egress_note = (
             "Architectural fact: Echo Flow only opens sockets to "
             "127.0.0.1 (Ollama, mobile bridge, dashboard). No telemetry, "
-            "no cloud sync. Verify with `netstat -an`."
+            "no cloud sync. Verify with `netstat -an`." + graph_note
         )
     return {
         "humanize": hz,
