@@ -9,7 +9,8 @@ and [`PRODUCT_OVERVIEW.md`](../PRODUCT_OVERVIEW.md) (the big picture). Deeper do
 | [`MOBILE_SETUP.md`](MOBILE_SETUP.md) | iOS keyboard pairing and setup |
 | [`MOBILE_BRIDGE.md`](MOBILE_BRIDGE.md) | The local Wi-Fi bridge: protocol, security, LAN exposure |
 | [`ACTION_LAYER_SPEC.md`](ACTION_LAYER_SPEC.md) | Phase 14 voice Action Layer: design & safety model |
-| [`ACTION_LAYER_ROADMAP.md`](ACTION_LAYER_ROADMAP.md) | Action Layer roadmap |
+| [`ROADMAP.md`](ROADMAP.md) | The single backlog: ideas to adopt, adapt, or skip, from the 2026-10 Wispr Flow audit |
+| [`ACTION_LAYER_ROADMAP.md`](ACTION_LAYER_ROADMAP.md) | Action Layer roadmap (mostly shipped; open items folded into ROADMAP.md) |
 | [`AUDIT.md`](AUDIT.md) | Earlier system audit (2026-05-29) |
 | [`AUDIT_2026-06-03.md`](AUDIT_2026-06-03.md) | Full-system audit: casing fallback paths, dashboard & daemon hardening |
 

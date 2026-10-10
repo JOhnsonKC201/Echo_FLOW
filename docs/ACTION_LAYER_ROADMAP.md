@@ -9,6 +9,9 @@ and `config.yaml experimental:`. Spec of record: `ACTION_LAYER_SPEC.md`.
 
 ## 0. Status (updated 2026-07-08)
 
+> 2026-10-10: open items (CAT-WINDOW) now live in [`ROADMAP.md`](ROADMAP.md),
+> the single backlog. This file is the design record.
+
 Most of this roadmap has shipped. Treat sections 1 to 3 as the *original* design
 record, not current state. Landed since:
 
