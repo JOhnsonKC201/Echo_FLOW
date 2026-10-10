@@ -30,7 +30,7 @@ Whisper model once; after that it works fully offline.
 | Feature | What it gives you |
 |---|---|
 | **Local transcription** | OpenAI Whisper running on-device (`tiny` → `large-v3-turbo`, or `auto` by hardware). Nothing uploaded. |
-| **Local cleanup** | A small LLM via Ollama (`qwen2.5:3b-instruct`) polishes raw output. No Ollama → you still get raw Whisper text. |
+| **Local cleanup** | A small LLM via Ollama (`qwen2.5:3b-instruct`) polishes raw output. No Ollama: you still get rules-only cleanup (casing, punctuation, fillers). |
 | **Re-paste** (`Ctrl+Shift+Win`) | Drops your last dictation into a new window: say it once in Slack, paste it again in email. |
 | **Snippets** | Short codes expand post-cleanup: "btw" → "by the way", "lgtm" → "looks good to me". Case- and word-boundary-aware. |
 | **App-aware profiles** | Cleanup style adapts to the focused app: casual punctuation in Slack, symbol-aware in VS Code, full sentences in Gmail. |
@@ -159,10 +159,10 @@ phase, and which optional features are wired, without exposing keys.
 
 ## Maturity
 
-- **Current line:** `0.3.0` (2026-07-25). See [CHANGELOG.md](CHANGELOG.md) for
+- **Current line:** `0.3.1`. See [CHANGELOG.md](CHANGELOG.md) for
   what shipped; `src/__init__.py` holds the version the release workflow checks
   the tag against, so that file is the one to trust.
-- **Tests:** 1502 passing, covering dictation, cleanup/casing fallback paths,
+- **Tests:** 1900+ passing, covering dictation, cleanup/casing fallback paths,
   actions, tags, notes, grading, snippet expansion, A/B logging, veto behavior,
   and the action-layer security model.
 - **Cost:** nothing when run fully local. Groq is free at single-human speaking
