@@ -39,8 +39,8 @@ import re
 # "a new line", "the period", "every comma", "no question mark".
 _DETERMINERS = frozenset({
     "a", "an", "the", "this", "that", "these", "those", "each", "every",
-    "any", "some", "no", "one", "two", "three", "another", "first", "last",
-    "next", "my", "your", "his", "her", "its", "our", "their",
+    "any", "some", "no", "another", "first", "last", "next",
+    "my", "your", "his", "her", "its", "our", "their",
 })
 
 # Spoken form -> inserted text. Longest forms first so "new paragraph" is not
@@ -147,11 +147,15 @@ def _scratch(text: str, applied: list[str]) -> str:
                 start = cut_from - 1
                 continue
             break
+        rest = text[cut_to:].lstrip()
+        if cut_from and text[cut_from - 1] in ".!?" and rest[:1].islower():
+            # The surviving words now open a sentence.
+            rest = rest[0].upper() + rest[1:]
         if cut_from and text[cut_from - 1] == "\n":
             # Keep the line break; the struck clause lived on the line after it.
-            candidate = text[:cut_from] + text[cut_to:].lstrip()
+            candidate = text[:cut_from] + rest
         else:
-            candidate = (text[:cut_from].rstrip() + " " + text[cut_to:].lstrip()).strip()
+            candidate = (text[:cut_from].rstrip() + " " + rest).strip()
         if not candidate.strip():
             # Never empty the dictation. Leave the words and stop looking.
             return text
@@ -165,15 +169,20 @@ def _breaks(text: str, applied: list[str]) -> str:
             return m.group(0)
         cmd = _norm(m.group("cmd"))
         applied.append(cmd)
-        return "\x00" + dict(_BREAKS)[cmd] + "\x01"
+        # Whisper fences a command it took for an aside with commas on both
+        # sides ("first line, new line, second"). Only then is the comma before
+        # it noise; "Dear Sam, new paragraph" keeps its comma.
+        fenced = "," in m.group("tail")
+        return ("\x02" if fenced else "\x00") + dict(_BREAKS)[cmd] + "\x01"
 
     out = _RE_BREAK.sub(_sub, text)
-    if "\x00" not in out:
+    if "\x00" not in out and "\x02" not in out:
         return out
-    # Tidy around each break: drop the space before it and a comma Whisper put
-    # there ("first line, new line"), keep a real terminator ("First line."),
-    # and eat whitespace after it so the next line starts flush.
-    out = re.sub(r"[ \t]*,?[ \t]*\x00", "", out)
+    # Tidy around each break: drop the space before it (and the fencing comma
+    # when there was one), keep a real terminator ("First line."), and eat
+    # whitespace after it so the next line starts flush.
+    out = re.sub(r"[ \t]*,?[ \t]*\x02", "", out)
+    out = re.sub(r"[ \t]*\x00", "", out)
     out = re.sub(r"\x01[ \t]*", "", out)
     return out
 

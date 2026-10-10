@@ -114,6 +114,6 @@ def test_empty_and_whitespace_passthrough():
 
 
 def test_reports_what_it_applied():
-    out, applied = spoken_format.apply("a comma b new line c. x scratch that d")
-    assert out == "a, b\nc. d"
+    out, applied = spoken_format.apply("x comma b new line c. y scratch that d")
+    assert out == "x, b\nc. D"
     assert applied == ["scratch that", "new line", "comma"]
