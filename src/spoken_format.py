@@ -119,10 +119,18 @@ def _period_is_command(prev_word: str, next_word: str, tail: str, at_end: bool) 
       "the trial period ended"         -> noun    (next word lowercase)
       "a period of two weeks"          -> noun    (determiner before it)
     """
-    # TODO(human): implement the rule. Consider which signal should win when
-    # they disagree, e.g. a determiner before it but a capitalized word after
-    # ("the period Then"), and whether `tail` alone is strong enough evidence.
-    raise NotImplementedError
+    # Whisper heard a stop and wrote one: strongest evidence, it wins even
+    # before a lowercase word, because that word was heard as a new sentence
+    # the model just failed to capitalize.
+    if any(c in ".!?" for c in tail):
+        return True
+    # Nothing follows: a trailing noun "period" with no verb after it is far
+    # rarer than a spoken terminator.
+    if at_end:
+        return True
+    # Otherwise the next word decides. Whisper capitalizes what it took for a
+    # sentence start; a lowercase continuation means the noun ("period ended").
+    return bool(next_word) and next_word[0].isupper()
 
 
 def _is_noun_phrase(text: str, m: re.Match[str]) -> bool:
