@@ -515,9 +515,11 @@ _BACKTRACK_RULE = (
     "not a correction; leave it.\n"
     "LINE BREAKS: keep every line break and blank line exactly where it is."
 )
-for _k in tuple(SYSTEM_PROMPTS):
-    if _k not in ("code", "prompt"):
-        SYSTEM_PROMPTS[_k] = SYSTEM_PROMPTS[_k] + _BACKTRACK_RULE
+# Only the dictation-cleanup styles. The humanizer, the prompt-engineering
+# tiers and the code style have their own contracts and must end exactly
+# where their tests say they end.
+for _k in ("default", "medium", "polished", "casual", "email"):
+    SYSTEM_PROMPTS[_k] = SYSTEM_PROMPTS[_k] + _BACKTRACK_RULE
 
 # The PE styles the user can pick — id → human label. 'simple' is the faithful
 # one-shot cleanup (the original behaviour); the others EXPAND the dictation
