@@ -149,6 +149,20 @@ def test_render_returns_html_with_graph_data_script(tmp_path):
     assert '<svg id="g"></svg>' in html
 
 
+def test_render_labels_are_a_budget_not_a_switch(tmp_path):
+    """Regression: with 1000+ nodes every label used to switch on at once past
+    a zoom threshold and the map became unreadable text soup. Labels are now
+    placed by a screen-space budget, with a pointer lens for reading dense
+    regions, and weak edges drop out when zoomed far."""
+    from src.dashboard import graph_obsidian
+    html = graph_obsidian.render(_seed_db(tmp_path, n=4))
+    assert "function relabelNow" in html
+    assert ".node.labeled text" in html
+    assert "class', 'lens-ring'" in html
+    assert "body.far .link.weak { display:none; }" in html
+    assert "labels-hidden" not in html
+
+
 def test_render_escapes_closing_script_tag(tmp_path, monkeypatch):
     """A malicious label containing </script> must not be able to break out of
     the JSON data island into executable JS context."""
