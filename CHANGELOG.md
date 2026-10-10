@@ -6,6 +6,20 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Changed
+- **The Graph page is readable at every zoom.** Labels used to be a switch:
+  past a zoom threshold all 1000+ switched on at once and the map turned into
+  overlapping text. They are now a budget. On every zoom, tick and pointer
+  move a greedy pass in screen space hands out labels to the most important
+  nodes first (pinned, under the lens, search hits, the focused
+  neighbourhood, notes and concepts, then dictations by degree and repeats)
+  and only where the label's grid cells are still free, so nothing overlaps.
+  The budget grows as you zoom in. A reading lens follows the pointer and
+  names the dozen nearest nodes inside its ring, so a dense region can be
+  read by sweeping it instead of zooming in and out. Weak edges drop out
+  below 0.9x and the edge layer fades to 35% at the far limit, so the
+  zoomed-out view is structure rather than a hairball.
+
 ### Fixed
 - **A dead default microphone no longer costs you the dictation.** Windows
   makes any newly plugged USB audio device the default input, whether or not
