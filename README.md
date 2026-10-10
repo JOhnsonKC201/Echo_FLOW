@@ -563,7 +563,8 @@ ios/              iOS keyboard-extension port (see ios/README.md)
 ```
 
 **Where to read more:** [`PRODUCT_OVERVIEW.md`](PRODUCT_OVERVIEW.md) for the big
-picture · [`CHANGELOG.md`](CHANGELOG.md) for feature history · [`docs/`](docs/)
+picture · [`CHANGELOG.md`](CHANGELOG.md) for feature history ·
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for what is next · [`docs/`](docs/)
 for deeper specs (start at [`docs/README.md`](docs/README.md)).
 
 ---
