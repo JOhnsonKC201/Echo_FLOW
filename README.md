@@ -5,7 +5,7 @@
 <p>
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20iOS-1f6fd0">
   <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-3776ab">
-  <img alt="audio" src="https://img.shields.io/badge/audio-100%25%20on--device-1a4a3a">
+  <img alt="audio" src="https://img.shields.io/badge/desktop%20audio-100%25%20on--device-1a4a3a">
   <img alt="cloud" src="https://img.shields.io/badge/cloud-opt--in%20only-6c6a62">
   <a href="https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml"><img alt="tests" src="https://github.com/JOhnsonKC201/Echo_FLOW/actions/workflows/tests.yml/badge.svg"></a>
   <img alt="version" src="https://img.shields.io/badge/version-0.3.1-58c77a">
@@ -72,7 +72,7 @@ the Whisper model once; after that it works fully offline.
 | **Local cleanup** | A small LLM via Ollama (`qwen2.5:3b-instruct`) polishes raw output: punctuation, capitalization, filler removal. With no Ollama and no key you get deterministic rules-only cleanup, which still handles casing, punctuation and fillers. |
 | **Re-paste** (`Ctrl+Shift+Win`) | Drops your last dictation into a new window: say it once in Slack, paste it again in email. |
 | **Snippets** | Short codes expand after cleanup: `btw` → "by the way", `lgtm` → "looks good to me". Case- and word-boundary-aware. |
-| **App-aware profiles** | Cleanup style adapts to the focused app: casual punctuation in Slack, symbol-aware in VS Code, full sentences in Gmail. |
+| **App-aware profiles** | Cleanup style can follow the focused app: casual in Slack, symbol-aware in VS Code, full sentences in Gmail. Ships with every profile on `medium`; differentiate them in Dashboard > Style. |
 | **Casing control** | Learns a word's casing from one edit (`tiktok` → `TikTok` sticks forever, possessives included) and flattens Whisper's accidental "Every Word Capitalized" back to normal sentence case. |
 | **Hallucination guard** | Length + RMS gate drops silent/short clips so Whisper can't invent "thank you for watching"; if the model goes off-track, your raw words are pasted (casing-normalized) instead. |
 
@@ -588,8 +588,10 @@ for deeper specs (start at [`docs/README.md`](docs/README.md)).
 ## iOS
 
 A custom keyboard you install via Settings. Hold to dictate, release to insert.
-It talks to your desktop's local bridge over Wi-Fi, or falls back to on-device
-Whisper. Building it needs a Mac with Xcode; see [`ios/README.md`](ios/README.md).
+It talks to your desktop's local bridge over Wi-Fi. Without the bridge it
+defaults to Groq cloud transcription with on-device Whisper as the fallback;
+pin "on-device only" in the host app to keep audio on the phone. Building it
+needs a Mac with Xcode; see [`ios/README.md`](ios/README.md).
 
 ---
 

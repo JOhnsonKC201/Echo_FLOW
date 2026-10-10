@@ -129,6 +129,20 @@ def test_ledger_stays_quiet_when_cleanup_is_local(tmp_path):
     assert "no cloud sync" in out["egress_provenance"].lower()
 
 
+def test_ledger_names_the_graph_page_cdn_in_both_branches(tmp_path):
+    """The Graph page loads D3 from d3js.org in the embedded browser. That is a
+    real socket off the machine, so the ledger must say so whether or not any
+    cloud opt-in is active; "only opens sockets to 127.0.0.1" alone is false.
+    """
+    local = priv.ledger({"cleanup": {"provider": "ollama"}},
+                        tmp_path / "m.db", tmp_path / "c.yaml", tmp_path)
+    cloud = priv.ledger({"cleanup": {"provider": "groq", "allow_cloud_cleanup": True}},
+                        tmp_path / "m.db", tmp_path / "c.yaml", tmp_path)
+    for out in (local, cloud):
+        assert "d3js.org" in out["egress_provenance"]
+        assert "Graph" in out["egress_provenance"]
+
+
 def test_humanize_bytes_thresholds():
     assert priv.humanize_bytes(0) == "0 B"
     assert priv.humanize_bytes(500) == "500 B"
