@@ -173,13 +173,30 @@ _HTML = r"""<!doctype html>
                   text-transform:uppercase; text-anchor:middle;
                   paint-order:stroke; stroke:#0d0e11;
                   transition: opacity .2s ease; }
-  body:not(.labels-hidden) .regions text { opacity: 0; }
+  body.near .regions text { opacity: 0; }
 
-  /* Hide labels by default in large graphs / zoomed-out — toggled by JS */
-  .labels-hidden .node text { opacity: 0; }
-  .labels-hidden .node.lit text,
-  .labels-hidden .node.focus text,
-  .labels-hidden .node.hover text { opacity: 1; }
+  /* Labels are a budget, not a switch. relabel() hands out .labeled to the
+     nodes that won a free slot in a screen-space grid, most important first,
+     so at any zoom you read a legible subset instead of 1000 strings fighting
+     for the same pixels. Everything else stays dark until you zoom in, hover,
+     pin, search, or sweep the lens over it. */
+  .node text { opacity: 0; }
+  .node.labeled text,
+  .node.lit text,
+  .node.focus text,
+  .node.hover text,
+  .node.lens text { opacity: 1; }
+  .node.lens text { fill:#ffffff; }
+  .node.lens circle { stroke:#a78bfa; stroke-width:2px; }
+
+  /* The lens: a soft ring that follows the pointer and names what is under
+     it. Reading the map by sweeping beats zooming in and out. */
+  .lens-ring { fill:#a78bfa; fill-opacity:.05; stroke:#a78bfa;
+               stroke-opacity:.35; stroke-width:1px; pointer-events:none; }
+
+  /* Edges thin out with distance: zoomed out, only the strong ones draw, so
+     the far view is structure, not a hairball. */
+  body.far .link.weak { display:none; }
 
   /* Dim everything */
   .links.off { display: none; }
@@ -458,9 +475,6 @@ function applyMode(mode) {
     adjacency.get(l.target).add(l.source);
   });
 
-  // Perf: default to labels-hidden for large graphs; show on hover/zoom-in.
-  document.body.classList.toggle('labels-hidden', nodes.length > 500);
-
   rebuildHullGroups();
   render();
   document.getElementById('stats').textContent =
@@ -480,7 +494,8 @@ function render() {
     // map and buried the real structure, so they render as faint texture and
     // only come forward when you hover their node.
     .attr('stroke-opacity', d => d.weak ? 0.07
-                                        : 0.30 + 0.45 * Math.max(0, Math.min(1, d.value || 0.5)));
+                                        : 0.30 + 0.45 * Math.max(0, Math.min(1, d.value || 0.5)))
+    .classed('weak', d => !!d.weak);
 
   const node = nodeLayer.selectAll('g.node').data(nodes, d => d.id);
   node.exit().remove();
@@ -571,9 +586,9 @@ function render() {
     .alpha(1).alphaDecay(.04)          // settle faster → less total CPU
     .on('tick', () => {
       applyPositions();
-      if (_tickN++ % 3 === 0) { updateHulls(); updateRegions(); updateMinimap(); }
+      if (_tickN++ % 3 === 0) { updateHulls(); updateRegions(); updateMinimap(); relabel(); }
     })
-    .on('end', () => { updateHulls(); updateRegions(); updateMinimap(); fitToView(); });
+    .on('end', () => { updateHulls(); updateRegions(); updateMinimap(); fitToView(); relabel(); });
 
   // Reduced motion → run the layout to completion synchronously, paint once,
   // stop. No animated settle, no per-frame CPU at all.
@@ -585,6 +600,7 @@ function render() {
     updateRegions();
     updateMinimap();
     fitToView();
+    relabel();
   }
 
   // Pause the simulation timer when the page is backgrounded; resume only if
@@ -606,15 +622,125 @@ const zoomBehavior = d3.zoom().scaleExtent([0.15, 6])
     root.attr('transform', e.transform);
     currentZoom = e.transform.k;
     scaleRegions();
-    // Obsidian-style: labels appear when you zoom in close.
-    // Auto-hide threshold scales with graph size.
+    // Region names are the far reading of the map; they step aside once the
+    // node labels take over. Threshold scales with graph size.
     const threshold = nodes.length > 500 ? 0.9 : (nodes.length > 200 ? 0.7 : 0.55);
-    document.body.classList.toggle('labels-hidden', currentZoom < threshold);
+    document.body.classList.toggle('near', currentZoom >= threshold);
+    // Weak edges are texture up close and mud from afar.
+    document.body.classList.toggle('far', currentZoom < 0.9);
+    // The whole edge layer breathes with zoom: 35% at the far limit, 75% at
+    // 1x and beyond. Never full, so up close the labels sit above the mesh.
+    linkLayer.attr('opacity', Math.min(0.75, 0.35 + 0.4 * (currentZoom - 0.15) / 0.85));
     updateMinimap();
+    relabel();
   });
 svg.call(zoomBehavior);
 // Click on empty canvas → unpin
 svg.on('click', () => { if (pinned) unpin(); });
+
+// --- label budget --------------------------------------------------------
+// At every zoom, decide which labels get drawn. A greedy pass in screen space:
+// nodes in priority order each try to reserve the grid cells their label
+// would cover; a collision means the label stays dark. Priority: pinned, then
+// the lens, then the focused neighbourhood, then notes and concepts, then
+// dictations by degree and repeat count. The budget grows with zoom, so the
+// far view shows a few dozen anchors and a close view shows everything that
+// fits. Scheduled on an animation frame so zoom, tick and pointer events
+// coalesce into one pass.
+let _litIds = new Set();
+let _lensIds = new Set();
+let _hitIds = new Set();
+let _relabelReq = 0;
+const LABEL_CELL = 18;   // screen px; grid cells a label reserves
+function relabel() {
+  if (_relabelReq) return;
+  _relabelReq = requestAnimationFrame(() => { _relabelReq = 0; relabelNow(); });
+}
+function relabelNow() {
+  if (!nodes.length) return;
+  const t = d3.zoomTransform(svg.node());
+  const k = t.k, w = W(), h = H();
+  const budget = Math.round(Math.min(nodes.length, 36 + 160 * Math.max(0, k - 0.3)));
+  const degree = d => (adjacency.get(d.id) || {size: 1}).size;
+  const pri = d =>
+    (pinned && d.id === pinned.id ? 1e9 : 0) +
+    (_lensIds.has(d.id) ? 1e6 : 0) +
+    (_hitIds.has(d.id) ? 5e5 : 0) +
+    (_litIds.has(d.id) ? 1e5 : 0) +
+    (d.group === 'note' ? 400 : d.group === 'concept' ? 250 : 0) +
+    degree(d) * 10 + (d.count || 1) * 20 + (d.freq || 0);
+  const order = nodes.slice().sort((a, b) => pri(b) - pri(a));
+  const taken = new Set();
+  const shown = new Set();
+  for (const d of order) {
+    if (shown.size >= budget) break;
+    if (!isFinite(d.x) || !isFinite(d.y)) continue;
+    const sx = t.applyX(d.x), sy = t.applyY(d.y);
+    if (sx < -60 || sx > w + 60 || sy < -40 || sy > h + 40) continue;
+    // 7.5px per glyph at 12px is slightly generous on purpose, and the half
+    // cell of padding on each side keeps neighbours from touching.
+    const lw = Math.min(190, 7.5 * ((d.label || d.id).length)) * k + LABEL_CELL;
+    const top = sy + ((d.size || 8) + 4) * k;
+    const x0 = Math.floor((sx - lw / 2) / LABEL_CELL), x1 = Math.floor((sx + lw / 2) / LABEL_CELL);
+    const y0 = Math.floor(top / LABEL_CELL),            y1 = Math.floor((top + 16 * k) / LABEL_CELL);
+    let free = true;
+    outer: for (let cx = x0; cx <= x1; cx++)
+      for (let cy = y0; cy <= y1; cy++)
+        if (taken.has(cx * 100003 + cy)) { free = false; break outer; }
+    if (!free) continue;
+    for (let cx = x0; cx <= x1; cx++)
+      for (let cy = y0; cy <= y1; cy++) taken.add(cx * 100003 + cy);
+    shown.add(d.id);
+  }
+  nodeLayer.selectAll('g.node').classed('labeled', d => shown.has(d.id));
+}
+
+// --- lens ----------------------------------------------------------------
+// A reading glass that follows the pointer. The dozen nearest nodes inside
+// the ring get their names drawn whatever the budget says, so you can read a
+// dense region by sweeping it instead of zooming into it and back out.
+const LENS_R = 110;      // screen px
+const LENS_MAX = 12;
+const lensLayer = svg.append('g').attr('class', 'lens-layer');
+const lensRing = lensLayer.append('circle').attr('class', 'lens-ring')
+  .attr('r', LENS_R).style('display', 'none');
+let _lensReq = 0, _lensPt = null;
+function updateLens() {
+  _lensReq = 0;
+  if (!_lensPt) {
+    lensRing.style('display', 'none');
+    if (_lensIds.size) {
+      _lensIds = new Set();
+      nodeLayer.selectAll('g.node').classed('lens', false);
+      relabel();
+    }
+    return;
+  }
+  const [px, py] = _lensPt;
+  lensRing.style('display', null).attr('cx', px).attr('cy', py);
+  const t = d3.zoomTransform(svg.node());
+  const near = [];
+  for (const d of nodes) {
+    const dx = t.applyX(d.x) - px, dy = t.applyY(d.y) - py;
+    const dd = dx * dx + dy * dy;
+    if (dd <= LENS_R * LENS_R) near.push([dd, d.id]);
+  }
+  near.sort((a, b) => a[0] - b[0]);
+  const next = new Set(near.slice(0, LENS_MAX).map(p => p[1]));
+  let changed = next.size !== _lensIds.size;
+  if (!changed) for (const id of next) if (!_lensIds.has(id)) { changed = true; break; }
+  if (!changed) return;
+  _lensIds = next;
+  nodeLayer.selectAll('g.node').classed('lens', d => _lensIds.has(d.id));
+  relabel();
+}
+svg.on('pointermove', e => {
+  _lensPt = d3.pointer(e, svg.node());
+  if (!_lensReq) _lensReq = requestAnimationFrame(updateLens);
+}).on('pointerleave', () => {
+  _lensPt = null;
+  if (!_lensReq) _lensReq = requestAnimationFrame(updateLens);
+});
 
 function fitToView(padding = 80) {
   if (!nodes.length) return;
@@ -639,11 +765,15 @@ function focus(d) {
     .classed('focus', n => n.id === d.id);
   linkLayer.selectAll('line')
     .classed('lit', l => (l.source.id === d.id || l.target.id === d.id));
+  _litIds = neigh;
+  relabel();
 }
 function unfocus() {
   svg.classed('dimmed', false);
   nodeLayer.selectAll('g.node').classed('lit', false).classed('focus', false);
   linkLayer.selectAll('line').classed('lit', false);
+  _litIds = new Set();
+  relabel();
 }
 
 // --- pin / detail panel ------------------------------------------------
@@ -732,7 +862,8 @@ const searchEl = document.getElementById('search');
 function runSearch() {
   const q = searchEl.value.trim().toLowerCase();
   nodeLayer.selectAll('g.node').classed('hit', false);
-  if (!q) { if (!pinned) unfocus(); lastHits = []; return; }
+  _hitIds = new Set();
+  if (!q) { if (!pinned) unfocus(); lastHits = []; relabel(); return; }
   const hits = nodes.filter(n => (n.label||'').toLowerCase().includes(q) ||
                                  (n.full||'').toLowerCase().includes(q) ||
                                  n.id.toLowerCase().includes(q));
@@ -747,6 +878,9 @@ function runSearch() {
     .classed('focus', false);
   linkLayer.selectAll('line')
     .classed('lit', l => lit.has(l.source.id) && lit.has(l.target.id));
+  _hitIds = hitIds;
+  _litIds = lit;
+  relabel();
 }
 searchEl.oninput = runSearch;
 searchEl.onkeydown = (e) => {
