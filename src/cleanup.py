@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from . import log as wlog
 from . import fillers
 from . import notify
+from . import spoken_format
 _log = wlog.get("cleanup")
 
 
@@ -503,6 +504,22 @@ SYSTEM_PROMPTS = {
         "the work, no commentary."
     ),
 }
+
+# Shared with every prose style. Self-corrections are the most common thing a
+# speaker does that a proofreader prompt gets wrong (both halves kept), and a
+# small model happily flattens the line breaks spoken_format just inserted.
+_BACKTRACK_RULE = (
+    "\nSELF-CORRECTIONS: when the speaker corrects themselves, keep ONLY the "
+    "corrected version and drop the abandoned one. \"let's meet at 5, "
+    "actually 6\" becomes \"let's meet at 6\". \"I actually enjoyed it\" is "
+    "not a correction; leave it.\n"
+    "LINE BREAKS: keep every line break and blank line exactly where it is."
+)
+# Only the dictation-cleanup styles. The humanizer, the prompt-engineering
+# tiers and the code style have their own contracts and must end exactly
+# where their tests say they end.
+for _k in ("default", "medium", "polished", "casual", "email"):
+    SYSTEM_PROMPTS[_k] = SYSTEM_PROMPTS[_k] + _BACKTRACK_RULE
 
 # The PE styles the user can pick — id → human label. 'simple' is the faithful
 # one-shot cleanup (the original behaviour); the others EXPAND the dictation
@@ -1054,6 +1071,19 @@ class Cleaner:
         instead of inferring from the skip-counter delta, which races under
         concurrent bridge access.
         """
+        # Spoken formatting ("new line", "comma", "scratch that") runs before
+        # everything else, including the enabled check: it is a rules pass that
+        # must behave the same with a model, without one, or with cleanup off.
+        # The model then sees real breaks and marks instead of the words.
+        if (bool(self.cfg.get("spoken_formatting", True)) and style != "prompt"
+                and text.strip()):
+            try:
+                text, cmds = spoken_format.apply(text)
+                if cmds:
+                    _log.debug("spoken formatting applied: %s", cmds)
+            except Exception as e:
+                # Never let a formatting bug cost the user their dictation.
+                _log.warning("spoken formatting failed, keeping raw text: %s", e)
         if not self.enabled or not text.strip():
             return text, False
         self._n_clean_calls += 1
