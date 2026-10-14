@@ -6,6 +6,23 @@ All notable changes are documented here. Format roughly follows
 
 ## Unreleased
 
+### Added
+- **Spoken formatting commands and "scratch that".** Say "new line", "new
+  paragraph", "comma", "full stop", "period", "question mark", "exclamation
+  mark", "colon" or "semicolon" and the mark is inserted instead of the word.
+  "Scratch that" or "strike that" deletes the clause you just said, back to
+  the previous sentence or line break. It is a rules pass in
+  `src/spoken_format.py` that runs before the model, so it behaves the same
+  with Ollama, with the learned provider, with no model at all, and with
+  cleanup disabled. A determiner keeps the word a word ("a new line", "the
+  trial period"), "period" before a lowercase word stays a noun, and a mark
+  Whisper already wrote next to the command is absorbed rather than doubled.
+  Off switch: `cleanup.spoken_formatting: false`. First item from the
+  Wispr Flow audit in `docs/ROADMAP.md`.
+- **Self-corrections in the model prompts.** Every cleanup style now tells
+  the model to keep only the corrected version when the speaker fixes
+  themselves ("at 5, actually 6") and to preserve line breaks.
+
 ### Fixed
 - **A dead default microphone no longer costs you the dictation.** Windows
   makes any newly plugged USB audio device the default input, whether or not

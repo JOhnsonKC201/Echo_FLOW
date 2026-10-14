@@ -66,6 +66,13 @@ cleanup:
   # subtractive, so it can never substitute a word you did not say. The model
   # prompts already ask for this, so it changes nothing when a model is up.
   strip_fillers: true
+  # Spoken formatting commands, converted by rules before any model: "new
+  # line", "new paragraph", "comma", "full stop", "period", "question mark",
+  # "exclamation mark", "colon", "semicolon", and "scratch that" / "strike
+  # that" to delete the clause you just said. Works with Ollama, with the
+  # learned provider, with no model, and with cleanup disabled. "a new line"
+  # or "the trial period" stay words. Set false to type those words literally.
+  spoken_formatting: true
   # Fast-path: if Whisper output is already clean (capitalized, punctuated, no
   # fillers, <=140 chars) skip the LLM polish entirely. Saves 200-2000ms on
   # the common case. Set false to force LLM polish on every dictation.

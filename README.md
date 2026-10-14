@@ -70,6 +70,7 @@ the Whisper model once; after that it works fully offline.
 |---|---|
 | **Local transcription** | OpenAI Whisper on-device (`tiny` through `large-v3-turbo`, or `auto` by hardware). Nothing uploaded. |
 | **Local cleanup** | A small LLM via Ollama (`qwen2.5:3b-instruct`) polishes raw output: punctuation, capitalization, filler removal. With no Ollama and no key you get deterministic rules-only cleanup, which still handles casing, punctuation and fillers. |
+| **Spoken formatting** | Say "new line", "new paragraph", "comma", "full stop", "question mark" and get the mark, not the word. "Scratch that" deletes the clause you just said. Rules, not a model, so it works the same with Ollama, without it, or with cleanup off; "a new line" and "the trial period" stay words. `cleanup.spoken_formatting: false` turns it off. |
 | **Re-paste** (`Ctrl+Shift+Win`) | Drops your last dictation into a new window: say it once in Slack, paste it again in email. |
 | **Snippets** | Short codes expand after cleanup: `btw` → "by the way", `lgtm` → "looks good to me". Case- and word-boundary-aware. |
 | **App-aware profiles** | Cleanup style can follow the focused app: casual in Slack, symbol-aware in VS Code, full sentences in Gmail. Ships with every profile on `medium`; differentiate them in Dashboard > Style. |
