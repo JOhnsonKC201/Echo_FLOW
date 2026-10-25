@@ -88,4 +88,8 @@ def test_canonical_or_none_never_raises(combo, expected):
 def test_everything_that_parses_registers_with_pynput(combo):
     """The drift this module exists to prevent: valid here, dead in pynput."""
     keyboard = pytest.importorskip("pynput.keyboard")
+    if not hasattr(keyboard, "HotKey"):
+        # The minimal CI lanes run on conftest's pynput stand-in, which has no
+        # HotKey parser; the full lane and local runs use the real package.
+        pytest.skip("real pynput not installed")
     keyboard.HotKey.parse(hs.to_pynput(combo))

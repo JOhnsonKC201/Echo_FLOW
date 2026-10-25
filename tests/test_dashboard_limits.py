@@ -19,11 +19,23 @@ def _flask(tmp_path, cleaner=None):
     return dash_app.make_app(app_ref)
 
 
-def test_oversized_body_is_refused_with_413(tmp_path):
+def _upload(client, size):
+    import io
+    return client.post("/dictionary/import", headers=HDR,
+                       data={"file": (io.BytesIO(b"x" * size), "terms.txt")},
+                       content_type="multipart/form-data")
+
+
+def test_oversized_upload_is_refused_with_413(tmp_path):
+    # A file upload, not a form field: Flask's own MAX_FORM_MEMORY_SIZE
+    # (500 KB per field) would refuse a big field before this cap is reached.
     client = _flask(tmp_path).test_client()
-    big = "x" * (dash_app.MAX_REQUEST_BYTES + 1)
-    r = client.post("/myvoice/humanize", headers=HDR, data={"hz_text": big})
-    assert r.status_code == 413
+    assert _upload(client, dash_app.MAX_REQUEST_BYTES + 1).status_code == 413
+
+
+def test_upload_under_the_cap_is_read(tmp_path):
+    client = _flask(tmp_path).test_client()
+    assert _upload(client, 1024 * 1024).status_code != 413
 
 
 class _BlockingCleaner:
@@ -101,7 +113,8 @@ def test_concurrent_hotkey_probe_is_refused(tmp_path, monkeypatch):
             pass
 
     import pynput.keyboard
-    monkeypatch.setattr(pynput.keyboard, "GlobalHotKeys", _SlowHotKeys)
+    # raising=False: conftest's pynput stand-in (minimal CI lanes) has none.
+    monkeypatch.setattr(pynput.keyboard, "GlobalHotKeys", _SlowHotKeys, raising=False)
     flask_app = _flask(tmp_path)
     first = {}
 
