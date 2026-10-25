@@ -104,11 +104,11 @@ curl -H "X-Echo-Key: <your-key>" \
 |---------------------|------|-----------------------------------|--------------------------------------------------------|
 | `GET  /v1/health`   | no   | none                              | `{ok, phase, providers, model_loaded}`                 |
 | `POST /v1/transcribe` | yes | multipart `file` = WAV          | `{text, language, ms}`                                 |
-| `POST /v1/cleanup`  | yes  | JSON `{text, style?}`             | `{text, style}`                                        |
+| `POST /v1/cleanup`  | yes  | JSON `{text, style?}`, at most 20,000 characters | `{text, style}`, or `413` when the text is longer |
 | `POST /v1/dictate`  | yes  | multipart `file` = WAV, `?style=`, `?source=` | `{raw, cleaned, language, style, source, ms, ...}` |
-| `GET  /v1/history`  | yes  | `?limit=N` (default 20, max 200) | `{items: [{ts, window_title, style, cleaned}, ...]}`   |
+| `GET  /v1/history`  | yes  | `?limit=N` (default 20, max 200) | `{items: [{ts, window_title, style, cleaned}, ...]}`, phone dictations only |
 
-Auth = send `X-Echo-Key: <shared key>` header. Wrong or missing key returns `401`. Audio that's too short (<400ms) or too quiet (RMS<0.003) returns `200` with `{"text":"","reason":"too_short"}` so your Shortcut doesn't error-popup on accidental triggers. Non-PCM16 WAV returns `415`.
+Auth = send `X-Echo-Key: <shared key>` header. Wrong or missing key returns `401`; after 10 failures in a minute that address gets `429` for 5 minutes. The bridge speaks plain HTTP, so on Wi-Fi the key is readable by anyone who can sniff the network: keep it on a network you trust. `/v1/history` never returns what you dictated at the desktop, and phone cleanups use your vocabulary but none of your desktop dictations as examples. Audio that's too short (<400ms) or too quiet (RMS<0.003) returns `200` with `{"text":"","reason":"too_short"}` so your Shortcut doesn't error-popup on accidental triggers. Non-PCM16 WAV returns `415`.
 
 ## Troubleshooting
 
