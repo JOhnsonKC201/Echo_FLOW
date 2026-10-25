@@ -238,6 +238,56 @@ def load_config() -> dict:
     return cfg
 
 
+# How long a finished dictation waits for an earlier, still-running one before
+# pasting anyway. Long enough for a slow polish (cleanup times out at 8 s on
+# top of transcription); short enough that one wedged dictation cannot hold
+# every later paste hostage.
+PASTE_ORDER_TIMEOUT_S = 30.0
+
+
+class _PasteTurns:
+    """Lets dictations paste in the order they were released.
+
+    The model lock is taken twice per dictation (transcribe, then clean) and
+    the paste happens after both, outside it, so a later dictation can reach
+    its paste first when an earlier one is slow between its two sections.
+    Each worker takes a ticket on entry; before pasting it waits until every
+    earlier ticket has finished, and it finishes its own right after the
+    paste, or when it drops out early or crashes.
+    """
+
+    def __init__(self):
+        self._cv = threading.Condition()
+        self._next = 0
+        self._low = 0            # every ticket below this has finished
+        self._finished: set[int] = set()
+
+    def take(self) -> int:
+        with self._cv:
+            ticket = self._next
+            self._next += 1
+            return ticket
+
+    def wait(self, ticket: int, timeout: float) -> bool:
+        with self._cv:
+            return self._cv.wait_for(lambda: self._low >= ticket, timeout)
+
+    def finish(self, ticket: int) -> None:
+        with self._cv:
+            if ticket < self._low:
+                return           # already finished; finish() is idempotent
+            self._finished.add(ticket)
+            while self._low in self._finished:
+                self._finished.discard(self._low)
+                self._low += 1
+            self._cv.notify_all()
+
+
+# The ticket of the dictation running on this thread, as (turns, ticket).
+_paste_ticket = threading.local()
+_PASTE_TURNS_INIT = threading.Lock()
+
+
 class App:
     def __init__(self, cfg: dict, cfg_path: Path | None = None):
         self.cfg = cfg
@@ -782,12 +832,45 @@ class App:
         """Thread entry for a dictation. The daemon's stderr is DEVNULL, so an
         exception escaping this thread used to vanish and the recording was
         silently lost; log it with the traceback and tell the user instead."""
+        turns = self._paste_turns()
+        ticket = turns.take()
+        _paste_ticket.value = (turns, ticket)
         try:
             self._do_dictation(audio, t_release, title, capture)
         except Exception as e:
             _log.exception("dictation failed: %s", e)
             wnotify.notify("Echo Flow", f"Dictation failed: {e}", "error")
             self._tray_idle()
+        finally:
+            _paste_ticket.value = None
+            turns.finish(ticket)
+
+    def _paste_turns(self) -> _PasteTurns:
+        turns = getattr(self, "_paste_turns_obj", None)
+        if turns is None:
+            # Created lazily so App shells built with App.__new__ (tests,
+            # tools) get one too; locked so two first workers share it.
+            with _PASTE_TURNS_INIT:
+                turns = getattr(self, "_paste_turns_obj", None)
+                if turns is None:
+                    turns = self._paste_turns_obj = _PasteTurns()
+        return turns
+
+    def _await_paste_turn(self) -> None:
+        held = getattr(_paste_ticket, "value", None)
+        if held is None:
+            return       # called outside a worker: nothing to order against
+        turns, ticket = held
+        if not turns.wait(ticket, PASTE_ORDER_TIMEOUT_S):
+            _log.warning("paste order: an earlier dictation is still running "
+                         "after %.0fs, pasting this one anyway",
+                         PASTE_ORDER_TIMEOUT_S)
+
+    def _end_paste_turn(self) -> None:
+        held = getattr(_paste_ticket, "value", None)
+        if held is not None:
+            turns, ticket = held
+            turns.finish(ticket)
 
     def _do_dictation(self, audio, t_release: float | None = None,
                       title: str | None = None, capture=None):
@@ -1324,6 +1407,7 @@ class App:
         # history block below, silently losing the dictation and leaving the
         # tray stuck on "thinking". The cleaned text is already cached in
         # _last_cleaned_text, so the paste-last hotkey recovers it.
+        self._await_paste_turn()
         try:
             pad_target = getattr(self, "_scratchpad_target_id", None)
             if pad_target and self.history is not None:
@@ -1381,6 +1465,9 @@ class App:
                 )
             except Exception:
                 pass
+        # The next dictation may paste now; history logging below can run in
+        # parallel with it.
+        self._end_paste_turn()
         t3 = time.perf_counter()
         if self.tray:
             self.tray.set_state("ok" if not self._paused else "paused")
