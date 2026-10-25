@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -25,7 +26,9 @@ def _focused_window_title() -> str:
 
 
 # A document filename embedded in a window title, e.g. "report.pdf - Adobe".
-_DOC_TOKEN = re.compile(r"([\w \-.()]+\.(?:pdf|txt|md|docx|doc))", re.IGNORECASE)
+# The lookahead stops 'notes.mdx' matching as 'notes.md' (and 'budget.docm' as
+# 'budget.doc'), which would resolve to a different file in the same folder.
+_DOC_TOKEN = re.compile(r"([\w \-.()]+\.(?:pdf|txt|md|docx|doc))(?!\w)", re.IGNORECASE)
 
 
 def _focused_document_path() -> str | None:
@@ -44,9 +47,18 @@ def _focused_document_path() -> str | None:
     if not m:
         return None
     name = m.group(1).strip()
-    bases = [Path.cwd()]
-    home = Path.home()
-    bases += [home / sub for sub in ("Documents", "Desktop", "Downloads")]
+    # Path.cwd() raises when the working directory was deleted and
+    # Path.home() when no home can be resolved; neither may escape.
+    bases: list[Path] = []
+    try:
+        bases.append(Path.cwd())
+    except Exception:
+        pass
+    try:
+        home = Path.home()
+        bases += [home / sub for sub in ("Documents", "Desktop", "Downloads")]
+    except Exception:
+        pass
     for base in bases:
         try:
             p = base / name
@@ -57,11 +69,26 @@ def _focused_document_path() -> str | None:
     return None
 
 
+# How long the target app may take to read the clipboard after Ctrl+V. The
+# clipboard is not restored, and the next paste does not overwrite it, sooner
+# than this. 0.2 s keeps the gap the code has always used for the restore.
+PASTE_GAP_S = 0.2
+
+
 class Injector:
     def __init__(self, method: str = "paste", restore_clipboard: bool = True, trailing_space: bool = True):
         self.method = method
         self.restore_clipboard = restore_clipboard
         self.trailing_space = trailing_space
+        # Clipboard restore state, shared by back-to-back pastes. The user's
+        # clipboard is saved once per burst and only the newest paste's timer
+        # puts it back; otherwise a second paste inside the restore delay saves
+        # the first dictation as "previous" and the user's clipboard is lost.
+        self._clip_lock = threading.Lock()
+        self._saved_clip: str | None = None
+        self._restore_pending = False
+        self._restore_gen = 0
+        self._last_paste_at = float("-inf")
 
     def focused_title(self) -> str:
         return _focused_window_title()
@@ -82,32 +109,55 @@ class Injector:
             self._paste(text)
 
     def _paste(self, text: str):
-        prev = None
-        if self.restore_clipboard:
-            try:
-                prev = pyperclip.paste()
-            except Exception:
-                prev = None
-        pyperclip.copy(text)
-        time.sleep(0.008)  # min wait for the clipboard to settle
-        import pyautogui
-        # _pause=False: pyautogui otherwise sleeps its default 0.1 s after the
-        # keys are already sent, which only delayed every dictation.
-        with own_keystrokes():
-            pyautogui.hotkey(*hostos.paste_keys(), _pause=False)  # Ctrl+V, or Command+V on macOS
-        if self.restore_clipboard and prev is not None:
-            # Restore in background so it doesn't block return
-            import threading
-            def _restore():
-                # The target app reads the clipboard some time after Ctrl+V.
-                # 0.2 s keeps the gap the old code had (its 0.1 s plus the
-                # pyautogui pause above); restoring sooner pastes the old text.
-                time.sleep(0.2)
+        gen = None
+        # Held across copy AND keystroke, so no other paste can swap the
+        # clipboard between this copy and this Ctrl+V.
+        with self._clip_lock:
+            # The target app reads the clipboard some time after Ctrl+V, so a
+            # paste right on the heels of another must not replace the text
+            # the previous Ctrl+V is still about to read.
+            gap = PASTE_GAP_S - (time.monotonic() - self._last_paste_at)
+            if gap > 0:
+                time.sleep(gap)
+            if self.restore_clipboard and not self._restore_pending:
                 try:
-                    pyperclip.copy(prev)
+                    self._saved_clip = pyperclip.paste()
                 except Exception:
-                    pass
-            threading.Thread(target=_restore, daemon=True).start()
+                    self._saved_clip = None
+            pyperclip.copy(text)
+            if self.restore_clipboard and self._saved_clip is not None:
+                self._restore_pending = True
+                self._restore_gen += 1
+                gen = self._restore_gen
+            try:
+                time.sleep(0.008)  # min wait for the clipboard to settle
+                import pyautogui
+                # _pause=False: pyautogui otherwise sleeps its default 0.1 s
+                # after the keys are already sent, which only delayed every
+                # dictation.
+                with own_keystrokes():
+                    pyautogui.hotkey(*hostos.paste_keys(), _pause=False)  # Ctrl+V, or Command+V on macOS
+            finally:
+                self._last_paste_at = time.monotonic()
+                if gen is not None:
+                    # Restore in background so it doesn't block return.
+                    # Started even if the keystroke failed, so the pending
+                    # flag clears.
+                    threading.Thread(target=lambda: self._restore_clipboard(gen),
+                                     daemon=True).start()
+
+    def _restore_clipboard(self, gen: int) -> None:
+        # Restoring sooner than the target app reads would paste the old text.
+        time.sleep(PASTE_GAP_S)
+        with self._clip_lock:
+            if gen != self._restore_gen:
+                return  # a newer paste owns the restore now
+            self._restore_pending = False
+            saved, self._saved_clip = self._saved_clip, None
+            try:
+                pyperclip.copy(saved)
+            except Exception:
+                pass
 
     def _type(self, text: str):
         import pyautogui

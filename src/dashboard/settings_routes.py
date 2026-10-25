@@ -189,17 +189,30 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
         ]
         # Persist cue aliases only when the form actually submits them, so a
         # caller posting just the toggle can't blank the user's chosen sounds.
+        from .. import sound as _sound
+        refused = []
         for field, key in (
             ("sound_start_alias", "sound.start_alias"),
             ("sound_stop_alias", "sound.stop_alias"),
             ("sound_error_alias", "sound.error_alias"),
         ):
             if field in f:
-                edits.append((key, (f.get(field, "") or "").strip()))
+                value = (f.get(field, "") or "").strip()
+                if _sound.is_safe_spec(value):
+                    edits.append((key, value))
+                else:
+                    refused.append(key.split(".", 1)[1].replace("_alias", ""))
         errs = _save_scalars(app_ref, edits, log)
         if errs:
             return redirect("/settings/system?flash=" + "; ".join(errs))
         maybe_reload_config(app_ref)
+        if refused:
+            # Everything else on the form was saved and is live; say which
+            # cue was kept at its old value and why.
+            return redirect(
+                "/settings/system?flash=" + _qp(
+                    "Saved, except the " + ", ".join(refused) + " sound: use one "
+                    "from the list or a file on this computer, not a network path."))
         return redirect("/settings/system?flash=Saved.")
 
     @flask_app.post("/settings/system/sound-preview")
@@ -217,6 +230,9 @@ def register(flask_app, app_ref, SECTIONS, dcfg, maybe_reload_config: Callable, 
             alias = request.form.get("alias", "")
         try:
             from .. import sound
+            if not sound.is_safe_spec(alias):
+                return jsonify({"ok": False, "alias": (alias or "").strip(),
+                                "error": "not a sound from the list or a local file"})
             ok = sound.preview(alias)
             return jsonify({"ok": bool(ok), "alias": (alias or "").strip()})
         except Exception as e:  # pragma: no cover - OS-dependent playback

@@ -26,6 +26,8 @@ from collections import Counter
 from contextlib import closing
 from dataclasses import dataclass
 
+from . import dbconn
+
 
 # Cache vocabulary so we don't recount on every dictation. The cache holds the
 # FULL ranked list (callers slice [:limit]); a lock guards reads/writes since
@@ -75,7 +77,7 @@ class Learner:
         self.retriever = retriever   # optional Retriever for semantic search
 
     def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        return dbconn.connect(self.db_path)
 
     def recent_examples(self, style: str, limit: int) -> list[tuple[str, str]]:
         """Pull (raw, cleaned) pairs that differ enough to be instructive."""
@@ -163,12 +165,17 @@ class Learner:
             _vocab_cache_ts = time.time()
         return ranked[:limit]
 
-    def build_prompt_augmentation(self, style: str, query_text: str = "") -> str:
+    def build_prompt_augmentation(self, style: str, query_text: str = "", *,
+                                  include_examples: bool = True) -> str:
         """Returns a string to append to the base system prompt.
 
         If a retriever is attached and query_text is provided, examples are
         chosen by SEMANTIC SIMILARITY to the current dictation (RAG).
         Otherwise falls back to most-recent examples.
+
+        include_examples=False keeps only the vocabulary block. The phone
+        bridge uses it: the RAW/CLEANED pairs are whole desktop dictations,
+        and a caller who can steer the model could have them repeated back.
         """
         if not self.cfg.enabled:
             return ""
@@ -183,6 +190,8 @@ class Learner:
 
         examples: list[tuple[str, str]] = []
         used_retrieval = False
+        if not include_examples:
+            return "\n\n---\n\n" + "\n\n".join(parts) if parts else ""
         if self.retriever and query_text:
             results = self.retriever.search(query_text, style=style)
             if results:
@@ -243,10 +252,24 @@ def _ensure_patterns_table(conn: sqlite3.Connection) -> None:
     # patterns came from the user vs. the teacher LLM, and lets us
     # selectively wipe teacher-only patterns if they go sideways.
     cols = {row[1] for row in conn.execute("PRAGMA table_info(learned_patterns)").fetchall()}
-    if "user_count" not in cols:
-        conn.execute("ALTER TABLE learned_patterns ADD COLUMN user_count INTEGER NOT NULL DEFAULT 0")
-    if "teacher_count" not in cols:
-        conn.execute("ALTER TABLE learned_patterns ADD COLUMN teacher_count INTEGER NOT NULL DEFAULT 0")
+    for col in ("user_count", "teacher_count"):
+        if col not in cols:
+            _add_column(conn, "learned_patterns", col, "INTEGER NOT NULL DEFAULT 0")
+
+
+def _add_column(conn: sqlite3.Connection, table: str, col: str, decl: str) -> None:
+    """ALTER TABLE ADD COLUMN that tolerates losing a race to another writer.
+
+    Several connections (desktop dictation, the phone bridge, calibration)
+    each check the column list and then add what is missing. Two of them can
+    both see the column absent; the second ALTER then fails with "duplicate
+    column name" even though the schema is now exactly what it wanted.
+    """
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e).lower():
+            raise
 
 
 def _ensure_ngrams_table(conn: sqlite3.Connection) -> None:
@@ -423,7 +446,7 @@ class PatternMiner:
         self.db_path = db_path
 
     def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        return dbconn.connect(self.db_path)
 
     def record(self, raw: str, cleaned: str, source: str = "user", *,
                drop_number_format: bool = False, weight: int = 1) -> int:

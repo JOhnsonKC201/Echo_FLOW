@@ -9,6 +9,8 @@ import sqlite3
 import webbrowser
 from pathlib import Path
 
+from . import dbconn
+
 
 HTML_TMPL = """<!doctype html>
 <html lang="en">
@@ -102,7 +104,7 @@ def render_history(db_path: str, out_path: str | None = None, open_browser: bool
     if not Path(db_path).exists():
         rows = []
     else:
-        conn = sqlite3.connect(db_path)
+        conn = dbconn.connect(db_path)
         try:
             cur = conn.execute(
                 "SELECT ts, window_title, style, language, duration_ms, raw_text, cleaned_text "

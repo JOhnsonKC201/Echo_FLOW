@@ -65,6 +65,30 @@ def read_port_file(path: Path = _PORT_FILE) -> int | None:
         return None
 
 
+def loopback_only(host: str | None) -> str:
+    """Return host if it is a loopback address, else '127.0.0.1'.
+
+    The dashboard has no login: it trusts that only this machine can reach it.
+    Binding a LAN or wildcard address would give every device on the network
+    the action-target editor, so a non-loopback dashboard.host is refused
+    rather than honoured.
+    """
+    import ipaddress
+    text = (host or "").strip()
+    if text == "localhost":
+        return text
+    try:
+        addr = ipaddress.ip_address(text)
+        # IPv4 only: pick_port and the port file assume AF_INET, so '::1'
+        # would crash the server thread instead of serving.
+        if addr.version == 4 and addr.is_loopback:
+            return text
+    except ValueError:
+        pass
+    _log.warning("dashboard.host %r is not loopback; binding 127.0.0.1 instead", host)
+    return "127.0.0.1"
+
+
 def serve(app_ref, host: str, port: int, log_fn=None) -> None:
     """Run the dashboard server in the current thread; caller spawns it as a daemon.
 
@@ -72,6 +96,7 @@ def serve(app_ref, host: str, port: int, log_fn=None) -> None:
     Writes the chosen port to data/dashboard.port.
     """
     global _active_server
+    host = loopback_only(host)
     bind_port = pick_port(host, port)
     write_port_file(bind_port)
 

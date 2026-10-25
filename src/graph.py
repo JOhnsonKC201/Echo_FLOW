@@ -20,6 +20,8 @@ import html
 import json
 import re
 import sqlite3
+
+from . import dbconn
 import webbrowser
 from collections import Counter, defaultdict
 from contextlib import closing
@@ -93,7 +95,7 @@ def _load_rows(db_path: str, limit: int = 1500, min_quality: float = 30.0) -> li
     if not Path(db_path).exists():
         return []
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             rows = conn.execute(
                 "SELECT id, ts, style, raw_text, cleaned_text, embedding, quality_score "
                 "FROM dictations WHERE raw_text IS NOT NULL AND raw_text != '' "
@@ -495,7 +497,7 @@ def build_notes_graph(db_path: str, rows: list[dict]) -> dict[str, Any]:
         return {"nodes": [], "links": [], "kind": "notes"}
     tags_by_dict: dict[int, list[str]] = {}
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             notes = conn.execute(
                 "SELECT id, dictation_id, title, description, created_at, updated_at "
                 "FROM notes ORDER BY updated_at DESC"
@@ -572,7 +574,7 @@ def build_notes_graph(db_path: str, rows: list[dict]) -> dict[str, Any]:
 def _all_confirmed_tags(db_path: str) -> list[tuple[str, int]]:
     """Returns [(tag_name, usage_count), ...] for all confirmed tags."""
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             rows = conn.execute(
                 "SELECT t.name, COUNT(*) AS n FROM tags t "
                 "JOIN dictation_tags dt ON dt.tag_id = t.id "
@@ -586,7 +588,7 @@ def _all_confirmed_tags(db_path: str) -> list[tuple[str, int]]:
 def _tags_index(db_path: str) -> dict[int, list[str]]:
     """Returns {dictation_id: [confirmed_tag_names...]}"""
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             rows = conn.execute(
                 "SELECT dt.dictation_id, t.name FROM dictation_tags dt "
                 "JOIN tags t ON t.id = dt.tag_id WHERE dt.confirmed = 1"
@@ -696,7 +698,7 @@ _HTML = r"""<!doctype html>
   <h3 id="panel-title"></h3>
   <div id="panel-body"></div>
 </div>
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>__D3_JS__</script>
 <script>
 const DICT = __DICT_DATA__;
 const CONCEPT = __CONCEPT_DATA__;
@@ -1000,6 +1002,21 @@ render();
 """
 
 
+_D3_PATH = Path(__file__).resolve().parent / "dashboard" / "static" / "vendor" / "d3.v7.min.js"
+
+
+def _inline_d3() -> str:
+    """The vendored D3, ready to sit inside an inline <script> block.
+
+    The report embeds the user's dictation text, so it must not load a script
+    from a CDN that could read the page. Inlined rather than linked because
+    the file is opened from disk, where a relative path to the package would
+    not resolve.
+    """
+    js = _D3_PATH.read_text(encoding="utf-8")
+    return re.sub(r"</(script)", r"<\/\1", js, flags=re.IGNORECASE)
+
+
 def render_graph(
     db_path: str,
     out_path: str | None = None,
@@ -1028,14 +1045,20 @@ def render_graph(
         # dashboard/graph_obsidian.py.
         return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
 
-    out = (_HTML
-        .replace("__DICT_DATA__", _script_json(dict_graph))
-        .replace("__CONCEPT_DATA__", _script_json(concept_graph))
-        .replace("__NOTES_DATA__", _script_json(notes_graph))
-        .replace("__TAG_USAGE__", _script_json(tag_usage))
-        .replace("__TAGS_INDEX__", _script_json(tags_index))
-        .replace("__TS_MIN__", str(ts_min))
-        .replace("__TS_MAX__", str(ts_max)))
+    # One pass over the template: chained .replace() calls would also rewrite
+    # a placeholder that appears inside already-substituted dictation text
+    # (a note titled "__D3_JS__" pulled the whole library into a JSON string).
+    values = {
+        "__DICT_DATA__": _script_json(dict_graph),
+        "__CONCEPT_DATA__": _script_json(concept_graph),
+        "__NOTES_DATA__": _script_json(notes_graph),
+        "__TAG_USAGE__": _script_json(tag_usage),
+        "__TAGS_INDEX__": _script_json(tags_index),
+        "__TS_MIN__": str(ts_min),
+        "__TS_MAX__": str(ts_max),
+        "__D3_JS__": _inline_d3(),
+    }
+    out = re.sub("|".join(map(re.escape, values)), lambda m: values[m.group(0)], _HTML)
 
     if out_path is None:
         out_path = str(Path(db_path).parent / "graph.html")

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html as _html
 import re as _re
+from threading import Semaphore as _Semaphore
 from pathlib import Path
 from urllib.parse import quote_plus as _qp
 
@@ -127,6 +128,27 @@ SECTIONS = [
 # loopback already constrains the network surface.
 _ALLOWED_HOSTS: set[str] = set()
 
+# Largest request body the dashboard reads. Imports (dictionary, snippets,
+# voice samples) are the biggest legitimate uploads and are far smaller.
+MAX_REQUEST_BYTES = 10 * 1024 * 1024
+
+# Everything the dashboard loads is served by the dashboard itself. Inline
+# script and style stay allowed because the templates use both; what the
+# policy removes is any third-party origin, plugins, <base> hijacking, form
+# posts to elsewhere, and framing by another site.
+_CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+])
+
 
 def _allowed_hosts_for(host: str, port: int) -> set[str]:
     """Build the Host: header allowlist for a given bind config."""
@@ -186,10 +208,18 @@ def make_app(app_ref, bound_port: int | None = None):
         static_url_path="/static",
     )
     flask_app.config["DASHBOARD_APP_REF"] = app_ref
+    flask_app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
+    # Routes that hold a slow shared resource admit one request at a time and
+    # answer "busy" to the rest, so a burst cannot stack up handler threads.
+    humanize_slot = _Semaphore(1)
+    hotkey_probe_slot = _Semaphore(1)
 
     # DNS-rebinding defense. Compute the allowlist from current dashboard cfg.
     dcfg = (app_ref.cfg.get("dashboard", {}) or {})
-    host = dcfg.get("host", "127.0.0.1")
+    # The address serve() will really bind (it refuses non-loopback values),
+    # so a rejected 0.0.0.0 or LAN host never ends up in the Host allowlist.
+    from .server import loopback_only
+    host = loopback_only(dcfg.get("host", "127.0.0.1"))
     port_pref = int(dcfg.get("port", 8766))
     # The allowlist must cover the actually-bound port. pick_port() scans the
     # preferred port plus 4 fallbacks, so include all five; also include the
@@ -231,6 +261,17 @@ def make_app(app_ref, bound_port: int | None = None):
         if _is_cross_site(request.headers, allowed_origins):
             abort(403, description="cross-site request blocked")
         return None
+
+    @flask_app.after_request
+    def _security_headers(resp):
+        # A framed page sends our own Origin, so the cross-site check above
+        # cannot stop clickjacking; refusing foreign frames does. SAMEORIGIN
+        # because /graph embeds /graph/raw in an iframe.
+        resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        resp.headers.setdefault("Content-Security-Policy", _CSP)
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "same-origin")
+        return resp
 
     # --- Section routes --------------------------------------------------
     @flask_app.get("/")
@@ -922,30 +963,37 @@ def make_app(app_ref, bound_port: int | None = None):
             reason = "too_long"        # refused up front, never sent to the model
         elif cleaner is None or history is None:
             reason = "provider_down"
+        elif not humanize_slot.acquire(blocking=False):
+            # One rewrite at a time: each holds the local model for up to the
+            # humanize timeout, and queued requests would only wait behind it.
+            reason = "busy"
         else:
             try:
-                retriever = getattr(app_ref, "retriever", None)
-                # Only build the (expensive) voice profile when it's actually
-                # used — 'human' and 'tone' modes need no samples at all.
-                profile = _vp.build(history, retriever) if mode == "voice" else ""
-                use_cloud = (bool(exp.get("humanize_use_cloud")) and bool(
-                    (app_ref.cfg.get("cleanup", {}) or {}).get(
-                        "allow_cloud_cleanup")))
-                outcome = cleaner.humanize_text(
-                    text, voice_profile=profile, mode=mode, tone=effective_tone,
-                    strength=strength, use_cloud=use_cloud, retriever=retriever,
-                    min_sim=float(exp.get("humanize_text_min_sim", 0.65)),
-                    timeout_sec=float(exp.get("humanize_text_timeout_sec", 45.0)),
-                    max_chars=max_chars,
-                    model=str(exp.get("humanize_text_model", "") or ""),
-                    escalate_model=str(exp.get("humanize_text_escalate_model", "auto")),
-                    delete_first=bool(exp.get("humanize_text_delete_first", True)),
-                    protect_spans=bool(exp.get("humanize_text_protect_spans", True)),
-                )
-                reason = outcome.reason
-            except Exception as e:
-                _log.warning("myvoice humanize failed: %s", e)
-                reason = "provider_down"
+                try:
+                    retriever = getattr(app_ref, "retriever", None)
+                    # Only build the (expensive) voice profile when it's actually
+                    # used — 'human' and 'tone' modes need no samples at all.
+                    profile = _vp.build(history, retriever) if mode == "voice" else ""
+                    use_cloud = (bool(exp.get("humanize_use_cloud")) and bool(
+                        (app_ref.cfg.get("cleanup", {}) or {}).get(
+                            "allow_cloud_cleanup")))
+                    outcome = cleaner.humanize_text(
+                        text, voice_profile=profile, mode=mode, tone=effective_tone,
+                        strength=strength, use_cloud=use_cloud, retriever=retriever,
+                        min_sim=float(exp.get("humanize_text_min_sim", 0.65)),
+                        timeout_sec=float(exp.get("humanize_text_timeout_sec", 45.0)),
+                        max_chars=max_chars,
+                        model=str(exp.get("humanize_text_model", "") or ""),
+                        escalate_model=str(exp.get("humanize_text_escalate_model", "auto")),
+                        delete_first=bool(exp.get("humanize_text_delete_first", True)),
+                        protect_spans=bool(exp.get("humanize_text_protect_spans", True)),
+                    )
+                    reason = outcome.reason
+                except Exception as e:
+                    _log.warning("myvoice humanize failed: %s", e)
+                    reason = "provider_down"
+            finally:
+                humanize_slot.release()
 
         result = outcome.text if outcome else None
         warnings = outcome.warnings if outcome else []
@@ -1687,6 +1735,15 @@ def make_app(app_ref, bound_port: int | None = None):
                  or _req.form.get("combo") or "").strip()
         if not combo:
             return jsonify({"available": False, "reason": "empty"}), 400
+        if not hotkey_probe_slot.acquire(blocking=False):
+            return jsonify({"available": False, "reason": "busy"}), 429
+        try:
+            return _probe_hotkey(combo)
+        finally:
+            hotkey_probe_slot.release()
+
+    def _probe_hotkey(combo):
+        from flask import jsonify
         try:
             from pynput.keyboard import GlobalHotKeys
         except Exception as e:
@@ -1746,7 +1803,7 @@ def make_app(app_ref, bound_port: int | None = None):
 
     # --- Knowledge graph -------------------------------------------------
     # /graph     — dashboard-wrapped view (iframe shell, preserves sidebar)
-    # /graph/raw - D3 HTML from graph_obsidian.render (pulls D3 from d3js.org)
+    # /graph/raw - D3 HTML from graph_obsidian.render (D3 from static/vendor)
     # Cached by db mtime; lock prevents duplicate expensive renders under
     # concurrent first-page-loads on the threaded Werkzeug server.
     import threading as _threading

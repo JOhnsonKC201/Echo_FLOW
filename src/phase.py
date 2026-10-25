@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 import requests
 
+from . import dbconn
 from . import ollama_supervisor
 
 from . import log as wlog
@@ -47,7 +48,7 @@ def _dictation_count(db_path: str) -> int:
     try:
         if not os.path.exists(db_path):
             return 0
-        conn = sqlite3.connect(db_path)
+        conn = dbconn.connect(db_path)
         # Count only real dictations toward self-sufficiency. Teacher rows
         # are background distillations of existing dictations — counting
         # them would let a chatty user trip the phase transition without
@@ -75,7 +76,7 @@ def _recent_avg_quality(db_path: str, n: int = 50) -> float | None:
     try:
         if not os.path.exists(db_path):
             return None
-        conn = sqlite3.connect(db_path)
+        conn = dbconn.connect(db_path)
         cur = conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dictations'"
         )
@@ -98,7 +99,7 @@ def _learned_pattern_count(db_path: str) -> int:
     try:
         if not os.path.exists(db_path):
             return 0
-        conn = sqlite3.connect(db_path)
+        conn = dbconn.connect(db_path)
         cur = conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='learned_patterns'"
         )

@@ -122,8 +122,6 @@ Claims that no longer match the code. Fix in a docs PR.
   `experimental:` says toggling "has no runtime effect yet". The flags are
   wired in `src/main.py`.
 - `PRODUCT_OVERVIEW.md`: version 0.3.0 and "1502 tests" are stale.
-- `src/dashboard/graph_obsidian.py` loads D3 from d3js.org, the one dashboard
-  page that reaches the public internet. Vendor it or say so on `/privacy`.
 
 ## Already there (do not re-propose)
 

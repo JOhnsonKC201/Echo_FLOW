@@ -152,6 +152,12 @@ def _local_ip_hint() -> str:
         return "127.0.0.1"
 
 
+# Longest text /v1/cleanup will polish. A four-minute dictation is about
+# 4,000 characters; anything far past that is not dictation and would hold the
+# shared model (or a paid cloud call) for as long as it takes.
+MAX_CLEANUP_CHARS = 20_000
+
+
 def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write: bool):
     """Build the Flask app. Imported lazily so tests can patch and the desktop
     path doesn't pay the import cost when mobile.enabled is False.
@@ -186,10 +192,20 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
     def _too_busy_response():
         return jsonify({"error": "pipeline_busy"}), 503, {"Retry-After": "1"}
 
-    def _record_auth_failure(ip: str) -> None:
-        """M1: count failures per-IP and lock out abusive callers."""
+    def _record_auth_failure(ip: str) -> bool:
+        """M1: count failures per-IP and lock out abusive callers.
+
+        Returns True when this IP was already locked out, so the caller answers
+        429 instead of 401. The lockout check at the top of auth_required runs
+        before the key compare, so a burst of requests can all pass it before
+        any failure is recorded; checking again here, under the same lock that
+        counts, keeps the burst to the threshold's worth of guesses.
+        """
         now = time.time()
         with _auth_fail_lock:
+            exp = _auth_lockouts.get(ip)
+            if exp is not None and now < exp:
+                return True
             # Opportunistic GC so the per-IP maps don't grow without bound as
             # transient source IPs come and go: drop fully-aged-out failure
             # deques and expired lockouts. Cheap — these maps stay tiny.
@@ -211,6 +227,7 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
                     "auth: locking out ip=%s for %ds after %d failures",
                     ip, int(_AUTH_LOCKOUT_S), _AUTH_FAIL_THRESHOLD,
                 )
+            return False
 
     def _is_locked_out(ip: str) -> bool:
         with _auth_fail_lock:
@@ -228,7 +245,10 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         if learner is None or len(text) < 25:
             return ""
         try:
-            return learner.build_prompt_augmentation(style, query_text=text)
+            # Vocabulary only: the few-shot pairs are whole desktop
+            # dictations, which a phone must not be able to read back.
+            return learner.build_prompt_augmentation(
+                style, query_text=text, include_examples=False)
         except Exception as e:
             _log.warning("learner augmentation failed: %s", e)
             return ""
@@ -252,7 +272,8 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
             sent = request.headers.get("X-Echo-Key", "")
             if not _key_matches(sent):
                 _log.warning("auth: failed key from ip=%s path=%s", ip, request.path)
-                _record_auth_failure(ip)
+                if _record_auth_failure(ip):
+                    return jsonify({"error": "rate_limited"}), 429
                 return jsonify({"error": "unauthorized"}), 401
             return fn(*a, **kw)
         return wrapped
@@ -339,6 +360,9 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         style = (body.get("style") or default_style or "default").strip()
         if not text:
             return jsonify({"text": "", "style": style})
+        if len(text) > MAX_CLEANUP_CHARS:
+            return jsonify({"error": "text too long",
+                            "max_chars": MAX_CLEANUP_CHARS}), 413
         augmentation = _augmentation_for(text, style)
         # C3: semaphore caps concurrent in-flight; lock timeout prevents DoS.
         if not request_semaphore.acquire(blocking=False):
@@ -512,7 +536,9 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
             limit = max(1, min(int(request.args.get("limit", "20")), 200))
         except ValueError:
             limit = 20
-        rows = app_ref.history.recent(limit)
+        # Phone rows only. The bridge may be reachable over the LAN on plain
+        # HTTP; desktop dictations (email, chat, code) must not ride along.
+        rows = app_ref.history.recent(limit, source="mobile")
         items = [
             {"ts": ts, "window_title": wt, "style": st, "cleaned": ct}
             for (ts, wt, st, ct) in rows
