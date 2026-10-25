@@ -243,10 +243,24 @@ def _ensure_patterns_table(conn: sqlite3.Connection) -> None:
     # patterns came from the user vs. the teacher LLM, and lets us
     # selectively wipe teacher-only patterns if they go sideways.
     cols = {row[1] for row in conn.execute("PRAGMA table_info(learned_patterns)").fetchall()}
-    if "user_count" not in cols:
-        conn.execute("ALTER TABLE learned_patterns ADD COLUMN user_count INTEGER NOT NULL DEFAULT 0")
-    if "teacher_count" not in cols:
-        conn.execute("ALTER TABLE learned_patterns ADD COLUMN teacher_count INTEGER NOT NULL DEFAULT 0")
+    for col in ("user_count", "teacher_count"):
+        if col not in cols:
+            _add_column(conn, "learned_patterns", col, "INTEGER NOT NULL DEFAULT 0")
+
+
+def _add_column(conn: sqlite3.Connection, table: str, col: str, decl: str) -> None:
+    """ALTER TABLE ADD COLUMN that tolerates losing a race to another writer.
+
+    Several connections (desktop dictation, the phone bridge, calibration)
+    each check the column list and then add what is missing. Two of them can
+    both see the column absent; the second ALTER then fails with "duplicate
+    column name" even though the schema is now exactly what it wanted.
+    """
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e).lower():
+            raise
 
 
 def _ensure_ngrams_table(conn: sqlite3.Connection) -> None:
