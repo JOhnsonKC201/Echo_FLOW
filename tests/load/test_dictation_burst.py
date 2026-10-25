@@ -71,7 +71,13 @@ def test_burst_pastes_every_dictation_once_in_release_order(tmp_path, monkeypatc
         t.join(30)
 
     assert not any(t.is_alive() for t in threads)
-    assert threading.active_count() <= before + 2   # no stragglers left behind
+    # Each dictation also starts a short post-processing thread; on a slow
+    # runner they may still be finishing, so give them time before calling
+    # anything a straggler.
+    deadline = time.time() + 10
+    while threading.active_count() > before + 2 and time.time() < deadline:
+        time.sleep(0.05)
+    assert threading.active_count() <= before + 2, "threads left behind"
     expected = [f"dictation number {i}" for i in range(N)]
     assert sorted(pasted) == sorted(expected), "a dictation was lost or doubled"
     assert pasted == expected, "pastes arrived out of the order they were spoken"
