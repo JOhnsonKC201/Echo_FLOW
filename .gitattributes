@@ -3,3 +3,7 @@
 *.sh  text eol=lf
 *.bat text eol=crlf
 *.vbs text eol=crlf
+
+# Vendored third-party files are kept byte-identical to the published release
+# so their hash can be checked against the CDN copy.
+src/dashboard/static/vendor/** -text
