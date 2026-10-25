@@ -58,6 +58,36 @@ All notable changes are documented here. Format roughly follows
 - **The test suite no longer writes into the running daemon's `wispr.log`.**
   Fixture errors there read as real failures.
 - A recording dropped as a likely Whisper hallucination is now logged.
+- **Dictations paste in the order you spoke them.** When one dictation was
+  slow between transcription and cleanup, a later one could overtake it and
+  paste first. Back-to-back pastes are also spaced 0.2 s apart so an app that
+  reads the clipboard late cannot receive the next dictation's text.
+- **Your clipboard survives two quick dictations.** The second one used to
+  save the first dictation as "your clipboard" and restore that instead.
+- **A learned correction is no longer lost when the phone and the desktop
+  first use an upgraded database at the same moment.**
+- Action Mode no longer mistakes `notes.mdx` for `notes.md` when it looks up
+  the document you are working on.
+
+### Security
+- **Network paths are refused in every spelling Windows accepts.** Action
+  targets written as `\/host/share`, `/\host\share` or `\??\UNC\host\share`
+  slipped past the check, and simply checking whether such a file exists sends
+  your Windows password hash to that host. Sound cue values now get the same
+  check before they are saved, previewed or played.
+- **The Graph page no longer loads D3 from the internet.** It is shipped with
+  Echo Flow and works offline; the standalone graph report inlines it. Every
+  dashboard page now also refuses to be framed by another site and allows
+  scripts only from the dashboard itself.
+- **The dashboard only ever listens on this computer.** A `dashboard.host` set
+  to a network address is ignored with a warning, because the dashboard has
+  no login.
+- **The phone bridge shares less.** `/v1/history` returns only phone
+  dictations, phone cleanups use your vocabulary but no desktop dictations as
+  examples, `/v1/cleanup` refuses text over 20,000 characters, and a burst of
+  wrong keys gets no more than 10 guesses before the lockout.
+- Dashboard requests are capped at 10 MB, and the humanizer and the hotkey
+  check run one at a time instead of piling up.
 
 ### Added
 - **Whisper runs on the Apple GPU.** faster-whisper has no Metal backend, so
