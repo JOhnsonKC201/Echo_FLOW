@@ -1043,16 +1043,20 @@ def render_graph(
         # dashboard/graph_obsidian.py.
         return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
 
-    out = (_HTML
-        .replace("__DICT_DATA__", _script_json(dict_graph))
-        .replace("__CONCEPT_DATA__", _script_json(concept_graph))
-        .replace("__NOTES_DATA__", _script_json(notes_graph))
-        .replace("__TAG_USAGE__", _script_json(tag_usage))
-        .replace("__TAGS_INDEX__", _script_json(tags_index))
-        .replace("__TS_MIN__", str(ts_min))
-        .replace("__TS_MAX__", str(ts_max))
-        # Last, so nothing inside the library can match a data placeholder.
-        .replace("__D3_JS__", _inline_d3()))
+    # One pass over the template: chained .replace() calls would also rewrite
+    # a placeholder that appears inside already-substituted dictation text
+    # (a note titled "__D3_JS__" pulled the whole library into a JSON string).
+    values = {
+        "__DICT_DATA__": _script_json(dict_graph),
+        "__CONCEPT_DATA__": _script_json(concept_graph),
+        "__NOTES_DATA__": _script_json(notes_graph),
+        "__TAG_USAGE__": _script_json(tag_usage),
+        "__TAGS_INDEX__": _script_json(tags_index),
+        "__TS_MIN__": str(ts_min),
+        "__TS_MAX__": str(ts_max),
+        "__D3_JS__": _inline_d3(),
+    }
+    out = re.sub("|".join(map(re.escape, values)), lambda m: values[m.group(0)], _HTML)
 
     if out_path is None:
         out_path = str(Path(db_path).parent / "graph.html")

@@ -40,3 +40,10 @@ def test_a_closing_script_tag_inside_the_library_is_neutralized(tmp_path, monkey
     out = graph._inline_d3()
     assert "</script" not in out.lower()
     assert out == 'var s = "<' + chr(92) + '/script><SCRIPT>";'
+
+
+@pytest.mark.parametrize("title", ["__D3_JS__", "__TS_MIN__ and __DICT_DATA__"])
+def test_placeholder_text_in_a_dictation_is_not_substituted(tmp_path, title):
+    html = _render(tmp_path, title)
+    assert html.count("// https://d3js.org v7.") == 1
+    assert title in html
