@@ -153,6 +153,8 @@
         That paste is over the {{ hz_max_chars }}-character limit. Try it in smaller pieces.
       {% elif hz_reason == 'provider_down' %}
         Couldn’t reach the local model. Is Ollama running? (<code>ollama serve</code>)
+      {% elif hz_reason == 'busy' %}
+        Echo Flow is already rewriting another paste. Try again when it finishes.
       {% elif hz_reason == 'empty' %}
         Paste some text first.
       {% else %}

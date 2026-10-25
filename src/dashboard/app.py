@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import html as _html
 import re as _re
+from threading import Semaphore as _Semaphore
 from pathlib import Path
 from urllib.parse import quote_plus as _qp
 
@@ -127,6 +128,10 @@ SECTIONS = [
 # loopback already constrains the network surface.
 _ALLOWED_HOSTS: set[str] = set()
 
+# Largest request body the dashboard reads. Imports (dictionary, snippets,
+# voice samples) are the biggest legitimate uploads and are far smaller.
+MAX_REQUEST_BYTES = 10 * 1024 * 1024
+
 # Everything the dashboard loads is served by the dashboard itself. Inline
 # script and style stay allowed because the templates use both; what the
 # policy removes is any third-party origin, plugins, <base> hijacking, form
@@ -203,6 +208,11 @@ def make_app(app_ref, bound_port: int | None = None):
         static_url_path="/static",
     )
     flask_app.config["DASHBOARD_APP_REF"] = app_ref
+    flask_app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
+    # Routes that hold a slow shared resource admit one request at a time and
+    # answer "busy" to the rest, so a burst cannot stack up handler threads.
+    humanize_slot = _Semaphore(1)
+    hotkey_probe_slot = _Semaphore(1)
 
     # DNS-rebinding defense. Compute the allowlist from current dashboard cfg.
     dcfg = (app_ref.cfg.get("dashboard", {}) or {})
@@ -950,30 +960,37 @@ def make_app(app_ref, bound_port: int | None = None):
             reason = "too_long"        # refused up front, never sent to the model
         elif cleaner is None or history is None:
             reason = "provider_down"
+        elif not humanize_slot.acquire(blocking=False):
+            # One rewrite at a time: each holds the local model for up to the
+            # humanize timeout, and queued requests would only wait behind it.
+            reason = "busy"
         else:
             try:
-                retriever = getattr(app_ref, "retriever", None)
-                # Only build the (expensive) voice profile when it's actually
-                # used — 'human' and 'tone' modes need no samples at all.
-                profile = _vp.build(history, retriever) if mode == "voice" else ""
-                use_cloud = (bool(exp.get("humanize_use_cloud")) and bool(
-                    (app_ref.cfg.get("cleanup", {}) or {}).get(
-                        "allow_cloud_cleanup")))
-                outcome = cleaner.humanize_text(
-                    text, voice_profile=profile, mode=mode, tone=effective_tone,
-                    strength=strength, use_cloud=use_cloud, retriever=retriever,
-                    min_sim=float(exp.get("humanize_text_min_sim", 0.65)),
-                    timeout_sec=float(exp.get("humanize_text_timeout_sec", 45.0)),
-                    max_chars=max_chars,
-                    model=str(exp.get("humanize_text_model", "") or ""),
-                    escalate_model=str(exp.get("humanize_text_escalate_model", "auto")),
-                    delete_first=bool(exp.get("humanize_text_delete_first", True)),
-                    protect_spans=bool(exp.get("humanize_text_protect_spans", True)),
-                )
-                reason = outcome.reason
-            except Exception as e:
-                _log.warning("myvoice humanize failed: %s", e)
-                reason = "provider_down"
+                try:
+                    retriever = getattr(app_ref, "retriever", None)
+                    # Only build the (expensive) voice profile when it's actually
+                    # used — 'human' and 'tone' modes need no samples at all.
+                    profile = _vp.build(history, retriever) if mode == "voice" else ""
+                    use_cloud = (bool(exp.get("humanize_use_cloud")) and bool(
+                        (app_ref.cfg.get("cleanup", {}) or {}).get(
+                            "allow_cloud_cleanup")))
+                    outcome = cleaner.humanize_text(
+                        text, voice_profile=profile, mode=mode, tone=effective_tone,
+                        strength=strength, use_cloud=use_cloud, retriever=retriever,
+                        min_sim=float(exp.get("humanize_text_min_sim", 0.65)),
+                        timeout_sec=float(exp.get("humanize_text_timeout_sec", 45.0)),
+                        max_chars=max_chars,
+                        model=str(exp.get("humanize_text_model", "") or ""),
+                        escalate_model=str(exp.get("humanize_text_escalate_model", "auto")),
+                        delete_first=bool(exp.get("humanize_text_delete_first", True)),
+                        protect_spans=bool(exp.get("humanize_text_protect_spans", True)),
+                    )
+                    reason = outcome.reason
+                except Exception as e:
+                    _log.warning("myvoice humanize failed: %s", e)
+                    reason = "provider_down"
+            finally:
+                humanize_slot.release()
 
         result = outcome.text if outcome else None
         warnings = outcome.warnings if outcome else []
@@ -1715,6 +1732,15 @@ def make_app(app_ref, bound_port: int | None = None):
                  or _req.form.get("combo") or "").strip()
         if not combo:
             return jsonify({"available": False, "reason": "empty"}), 400
+        if not hotkey_probe_slot.acquire(blocking=False):
+            return jsonify({"available": False, "reason": "busy"}), 429
+        try:
+            return _probe_hotkey(combo)
+        finally:
+            hotkey_probe_slot.release()
+
+    def _probe_hotkey(combo):
+        from flask import jsonify
         try:
             from pynput.keyboard import GlobalHotKeys
         except Exception as e:
