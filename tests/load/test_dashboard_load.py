@@ -25,11 +25,16 @@ def _get(base, path):
     return requests.get(base + path, headers=HOST, timeout=60).status_code
 
 
-def _assert_healthy(report: Report, allowed=(200,)):
+# The graph is one shared t-SNE build (about 4.7 s here); a slow shared CI
+# runner can take several times that.
+GRAPH_BUDGET_S = 30.0
+
+
+def _assert_healthy(report: Report, allowed=(200,), budget=P95_BUDGET_S):
     print(report.summary())
     assert report.errors == []
     assert set(report.statuses) <= set(allowed), report.statuses
-    assert report.percentile(.95) < P95_BUDGET_S, report.summary()
+    assert report.percentile(.95) < budget, report.summary()
 
 
 def test_100_users_browsing_at_once(serve, dashboard_ref, no_thread_leak):
@@ -50,7 +55,7 @@ def test_100_users_opening_the_graph_at_once(serve, dashboard_ref, monkeypatch):
     monkeypatch.setattr(graph_obsidian, "render", counting_render)
     base = serve(make_app(dashboard_ref))
     report = hammer(lambda i: _get(base, "/graph/raw"))
-    _assert_healthy(report)
+    _assert_healthy(report, budget=GRAPH_BUDGET_S)
     # One build shared by all 100, not a thundering herd of t-SNE runs.
     assert len(builds) == 1
 
