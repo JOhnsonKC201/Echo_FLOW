@@ -66,8 +66,14 @@ class Rig:
         self.clip = FakeClipboard(self.events)
 
         mp.setattr(inject, "pyperclip", self.clip)
+        self.now = 1000.0                 # fake clock, advanced by sleep()
+
+        def _sleep(s):
+            self.events.append(("sleep", s))
+            self.now += s
+
         mp.setattr(inject, "time", types.SimpleNamespace(
-            sleep=lambda s: self.events.append(("sleep", s))))
+            sleep=_sleep, monotonic=lambda: self.now))
         mp.setattr(inject, "own_keystrokes", self._window)
         mp.setattr(hostos, "paste_keys", lambda platform=None: self.chord)
         gui = types.ModuleType("pyautogui")
@@ -499,3 +505,40 @@ def test_lookup_never_raises_when_cwd_or_home_is_unavailable(
         m.setattr(Path, probe, gone)
         result = doc_path(monkeypatch, "plan.txt - Notepad")
     assert result is None
+
+
+
+# --- spacing between pastes ---------------------------------------------------
+
+def test_a_second_paste_waits_out_the_gap_before_touching_the_clipboard(rig):
+    """The target app reads the clipboard some time after Ctrl+V; copying the
+    next text a few ms later can land it in the previous paste."""
+    rig.capture_threads()
+    inj = inject.Injector()
+    inj.inject("first")
+    rig.events.clear()
+    inj.inject("second")
+    first_copy = next(i for i, e in enumerate(rig.events) if e[0] == "copy")
+    waited = sum(e[1] for e in rig.events[:first_copy] if e[0] == "sleep")
+    assert waited >= inject.PASTE_GAP_S - 0.01
+
+
+def test_no_gap_is_added_when_the_last_paste_was_long_ago(rig):
+    rig.capture_threads()
+    inj = inject.Injector()
+    inj.inject("first")
+    rig.now += 10
+    rig.events.clear()
+    inj.inject("second")
+    first_copy = next(i for i, e in enumerate(rig.events) if e[0] == "copy")
+    assert not any(e[0] == "sleep" for e in rig.events[:first_copy])
+
+
+def test_the_saved_clipboard_is_dropped_after_it_is_restored(rig):
+    """It may be a password; keep it in memory no longer than needed."""
+    rig.capture_threads()
+    inj = inject.Injector()
+    inj.inject("hello")
+    rig.threads[0].target()
+    assert rig.clip.value == "ORIGINAL"
+    assert inj._saved_clip is None
