@@ -239,10 +239,11 @@ def load_config() -> dict:
 
 
 # How long a finished dictation waits for an earlier, still-running one before
-# pasting anyway. Long enough for a slow polish (cleanup times out at 8 s on
-# top of transcription); short enough that one wedged dictation cannot hold
-# every later paste hostage.
-PASTE_ORDER_TIMEOUT_S = 30.0
+# pasting anyway. Above the slowest legitimate pipeline (a humanize rewrite
+# may take its full 45 s timeout on top of transcription), so a slow but
+# healthy dictation is never overtaken. When it does expire, the stuck
+# dictations ahead are given up on, so the wait is paid once, not per paste.
+PASTE_ORDER_TIMEOUT_S = 60.0
 
 
 class _PasteTurns:
@@ -269,8 +270,22 @@ class _PasteTurns:
             return ticket
 
     def wait(self, ticket: int, timeout: float) -> bool:
+        """Block until every ticket before this one has finished.
+
+        On timeout the unfinished tickets ahead are abandoned: _low jumps to
+        this ticket, so later waiters stop queueing behind a dictation that
+        may never finish, and that dictation's own late finish() is a no-op.
+        """
         with self._cv:
-            return self._cv.wait_for(lambda: self._low >= ticket, timeout)
+            if self._cv.wait_for(lambda: self._low >= ticket, timeout):
+                return True
+            self._finished = {t for t in self._finished if t >= ticket}
+            self._low = ticket
+            while self._low in self._finished:
+                self._finished.discard(self._low)
+                self._low += 1
+            self._cv.notify_all()
+            return False
 
     def finish(self, ticket: int) -> None:
         with self._cv:

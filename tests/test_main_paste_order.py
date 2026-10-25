@@ -101,3 +101,37 @@ def test_direct_do_dictation_calls_still_paste(app):
     """Callers that skip the worker (tests, re-paste paths) are unaffected."""
     app._do_dictation(_audio(7))
     assert app.pasted == ["dictation 7"]
+
+
+# --- _PasteTurns on its own -------------------------------------------------
+
+def test_turns_release_in_ticket_order_regardless_of_finish_order():
+    from src.main import _PasteTurns
+    turns = _PasteTurns()
+    t0, t1, t2 = turns.take(), turns.take(), turns.take()
+    turns.finish(t2)
+    turns.finish(t1)
+    assert not turns.wait(t1, 0.01)      # t0 still running
+    turns.finish(t0)
+    assert turns.wait(t2, 0.01)
+
+
+def test_a_timed_out_wait_abandons_the_stuck_tickets_ahead_of_it():
+    """One wedged dictation may delay the next paste by the timeout once, not
+    every later paste by the timeout each."""
+    from src.main import _PasteTurns
+    turns = _PasteTurns()
+    stuck, a, b = turns.take(), turns.take(), turns.take()
+    assert not turns.wait(a, 0.05)       # gives up on `stuck`
+    turns.finish(a)
+    t0 = time.perf_counter()
+    assert turns.wait(b, 5)
+    assert time.perf_counter() - t0 < 0.5
+    turns.finish(stuck)                  # a late finish is harmless
+    assert turns.wait(b, 0.01)
+
+
+def test_order_timeout_outlasts_the_slowest_legitimate_pipeline():
+    from src import main
+    # humanize_text_timeout_sec defaults to 45 s and runs inside the pipeline.
+    assert main.PASTE_ORDER_TIMEOUT_S > 45

@@ -1,7 +1,12 @@
 """Back-to-back dictations through the real _do_dictation pipeline with fake
 models. A long dictation followed quickly by short ones is the realistic
 burst: the later ones finish recording while the first is still being
-transcribed, and all of them queue on the shared model lock."""
+transcribed, and all of them queue on the shared model lock.
+
+This is a smoke test for loss, duplication and leftover threads under a
+burst. The order assertion only fails on an unlucky interleaving (about 1 in
+180 runs before the fix); the deterministic order guard is
+tests/test_main_paste_order.py."""
 from __future__ import annotations
 
 import threading
