@@ -272,6 +272,28 @@ class Transcriber:
         # unnoticed precisely because nothing ever reported the resolved device.
         _log.info("whisper: model=%s device=%s compute=%s", model, device, compute)
 
+    def warm(self) -> bool:
+        """One short encode so the next dictation runs on a warm model.
+
+        After a break the GPU drops to an idle power state and the first
+        encode costs about twice the warm one. main._maybe_prewarm calls this
+        while the user is still speaking. The VAD is off for the same reason
+        as in _probe_cuda: on noise it would drop every segment and the
+        encoder would never run. Never raises.
+        """
+        try:
+            rng = np.random.default_rng(0)
+            audio = (rng.standard_normal(4000) * 0.05).astype(np.float32)
+            kwargs = {"language": "en"}
+            if self.resolved_device != "mlx":   # mlx accepts neither option
+                kwargs.update(beam_size=1, vad_filter=False)
+            segments, _ = self.model.transcribe(audio, **kwargs)
+            list(segments)   # generator: the encode happens on iteration
+            return True
+        except Exception as e:
+            _log.debug("whisper warm-up failed: %s: %s", type(e).__name__, e)
+            return False
+
     def transcribe(self, audio: np.ndarray, sample_rate: int = 16000) -> tuple[str, str, dict]:
         """Returns (text, detected_language, meta).
 
