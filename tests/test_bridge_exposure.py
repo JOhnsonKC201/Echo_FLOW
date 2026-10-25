@@ -86,3 +86,37 @@ def test_learner_can_build_a_vocabulary_only_augmentation(tmp_path):
     assert "RAW:" in full
     assert "RAW:" not in vocab_only
     assert "private desk note" not in vocab_only
+
+
+def test_a_burst_of_wrong_keys_cannot_buy_extra_guesses(client_and_app, monkeypatch):
+    """Every request in the burst passes the lockout check before any of them
+    records its failure (forced with a barrier inside the key compare). Only
+    the threshold's worth may still be told 401; the rest are locked out."""
+    import threading
+    flask_app_client, _ = client_and_app
+    n = 20
+    barrier = threading.Barrier(n)
+    real_compare = bridge.hmac.compare_digest
+
+    def slow_compare(a, b):
+        barrier.wait(5)
+        return real_compare(a, b)
+
+    monkeypatch.setattr(bridge, "_auth_failures", {})
+    monkeypatch.setattr(bridge, "_auth_lockouts", {})
+    monkeypatch.setattr(bridge.hmac, "compare_digest", slow_compare)
+    app = flask_app_client.application
+    codes = []
+
+    def guess(i):
+        r = app.test_client().post("/v1/cleanup", json={"text": "x"},
+                                   headers={"X-Echo-Key": f"wrong-{i}"})
+        codes.append(r.status_code)
+
+    threads = [threading.Thread(target=guess, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert sorted(set(codes)) <= [401, 429]
+    assert codes.count(401) <= bridge._AUTH_FAIL_THRESHOLD

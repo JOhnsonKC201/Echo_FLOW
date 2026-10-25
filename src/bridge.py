@@ -192,10 +192,20 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
     def _too_busy_response():
         return jsonify({"error": "pipeline_busy"}), 503, {"Retry-After": "1"}
 
-    def _record_auth_failure(ip: str) -> None:
-        """M1: count failures per-IP and lock out abusive callers."""
+    def _record_auth_failure(ip: str) -> bool:
+        """M1: count failures per-IP and lock out abusive callers.
+
+        Returns True when this IP was already locked out, so the caller answers
+        429 instead of 401. The lockout check at the top of auth_required runs
+        before the key compare, so a burst of requests can all pass it before
+        any failure is recorded; checking again here, under the same lock that
+        counts, keeps the burst to the threshold's worth of guesses.
+        """
         now = time.time()
         with _auth_fail_lock:
+            exp = _auth_lockouts.get(ip)
+            if exp is not None and now < exp:
+                return True
             # Opportunistic GC so the per-IP maps don't grow without bound as
             # transient source IPs come and go: drop fully-aged-out failure
             # deques and expired lockouts. Cheap — these maps stay tiny.
@@ -217,6 +227,7 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
                     "auth: locking out ip=%s for %ds after %d failures",
                     ip, int(_AUTH_LOCKOUT_S), _AUTH_FAIL_THRESHOLD,
                 )
+            return False
 
     def _is_locked_out(ip: str) -> bool:
         with _auth_fail_lock:
@@ -261,7 +272,8 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
             sent = request.headers.get("X-Echo-Key", "")
             if not _key_matches(sent):
                 _log.warning("auth: failed key from ip=%s path=%s", ip, request.path)
-                _record_auth_failure(ip)
+                if _record_auth_failure(ip):
+                    return jsonify({"error": "rate_limited"}), 429
                 return jsonify({"error": "unauthorized"}), 401
             return fn(*a, **kw)
         return wrapped
