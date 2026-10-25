@@ -78,6 +78,22 @@ _MAC_CANDIDATES = (
 )
 
 
+def ollama_base(base_url: str | None) -> str:
+    """The Ollama base URL with a 'localhost' host pinned to 127.0.0.1.
+
+    On Windows 'localhost' resolves to ::1 first and Ollama listens on IPv4
+    only, so every new connection waited for the ::1 attempt to fail: 2,045 ms
+    measured, against 1 ms for 127.0.0.1. Any other host is left alone.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+    text = (base_url or "").strip().rstrip("/") or "http://127.0.0.1:11434"
+    parts = urlsplit(text)
+    if (parts.hostname or "").lower() != "localhost":
+        return text
+    netloc = "127.0.0.1" + (f":{parts.port}" if parts.port else "")
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
 def is_alive(base_url: str, timeout: float = 1.0) -> bool:
     """True when an Ollama server answers at `base_url`.
 
@@ -86,7 +102,7 @@ def is_alive(base_url: str, timeout: float = 1.0) -> bool:
     module's private helper to ask it.
     """
     try:
-        r = requests.get(f"{base_url.rstrip('/')}/api/tags", timeout=timeout)
+        r = requests.get(f"{ollama_base(base_url)}/api/tags", timeout=timeout)
         return r.status_code == 200
     except requests.exceptions.RequestException as e:
         # Unreachable is the answer this function exists to return, not a fault.
