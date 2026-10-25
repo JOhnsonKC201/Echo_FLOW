@@ -69,9 +69,42 @@ def _system_sound_dirs() -> list[str]:
     return []
 
 
+# Longest cue value accepted; Windows' classic MAX_PATH. Real aliases and
+# sound file paths are far shorter.
+_MAX_SPEC_CHARS = 260
+
+
+def is_safe_spec(spec: str) -> bool:
+    """True when a sound cue value may be stat'ed and played.
+
+    Cue values come from config.yaml and the Settings form, and playback
+    resolves them as paths. Merely checking a network path with
+    os.path.exists sends the user's NetNTLM hash to that host, so this runs
+    before anything touches the value: at settings save, in the Test button
+    route, and again right before playback.
+    """
+    s = (spec or "").strip()
+    if not s:
+        return True     # blank means "use the built-in cue"
+    if len(s) > _MAX_SPEC_CHARS or any(ord(c) < 0x20 for c in s):
+        return False
+    # The one network-path rule, shared with the action targets, so every
+    # spelling Windows resolves over SMB ('\\\\host', '\\/host', '\\??\\UNC')
+    # is refused here too.
+    from .voice_actions import _is_unc
+    if _is_unc(s):
+        return False
+    # A relative name is joined onto the OS sound folder by _resolve_wav;
+    # '..' would walk out of it to an arbitrary file.
+    return ".." not in s.replace("\\", "/").split("/")
+
+
 def _play_alias_or_file(spec: str) -> bool:
     """Play a system sound alias OR a sound file (path or bare name)."""
     if not spec:
+        return False
+    if not is_safe_spec(spec):
+        _log.warning("sound cue refused (network path or bad characters): %r", spec)
         return False
     if hostos.IS_MAC:
         return _play_mac(spec)
