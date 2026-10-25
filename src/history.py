@@ -855,9 +855,22 @@ class History:
             return {}
         return {w or "tie": n for w, n in rows}
 
-    def recent(self, n: int = 20):
-        cur = self.conn.execute(
-            "SELECT ts, window_title, style, cleaned_text FROM dictations ORDER BY ts DESC LIMIT ?",
-            (n,),
-        )
+    def recent(self, n: int = 20, *, source: str | None = None):
+        """Newest dictations as (ts, window_title, style, cleaned_text).
+
+        Pass source ("mobile", "desktop") to keep one origin only; the phone
+        bridge uses it so a phone never receives what was dictated at the desk.
+        """
+        if source is None:
+            cur = self.conn.execute(
+                "SELECT ts, window_title, style, cleaned_text FROM dictations "
+                "ORDER BY ts DESC LIMIT ?",
+                (n,),
+            )
+        else:
+            cur = self.conn.execute(
+                "SELECT ts, window_title, style, cleaned_text FROM dictations "
+                "WHERE source = ? ORDER BY ts DESC LIMIT ?",
+                (source, n),
+            )
         return cur.fetchall()

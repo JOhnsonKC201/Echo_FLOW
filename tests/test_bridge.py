@@ -436,7 +436,7 @@ def test_history_endpoint_returns_recent_rows(client_and_app):
     client, app_ref = client_and_app
     app_ref.history.log(
         window_title="Mobile:iOS", style="casual", language="en",
-        duration_ms=1000, raw_text="hi", cleaned_text="Hi.",
+        duration_ms=1000, raw_text="hi", cleaned_text="Hi.", source="mobile",
     )
     r = client.get("/v1/history?limit=5",
                    headers={"X-Echo-Key": "test-key"})
