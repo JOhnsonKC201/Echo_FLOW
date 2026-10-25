@@ -1,0 +1,9 @@
+[run]
+source = src
+branch = false
+
+[report]
+skip_empty = true
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
