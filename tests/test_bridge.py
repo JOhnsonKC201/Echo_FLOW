@@ -86,7 +86,7 @@ class _StubLearner:
     def invalidate_cache(self):
         self.invalidations += 1
 
-    def build_prompt_augmentation(self, style: str, query_text: str = "") -> str:
+    def build_prompt_augmentation(self, style: str, query_text: str = "", **kwargs) -> str:
         self.augmentation_calls.append((style, query_text))
         return self.augmentation
 

@@ -163,12 +163,17 @@ class Learner:
             _vocab_cache_ts = time.time()
         return ranked[:limit]
 
-    def build_prompt_augmentation(self, style: str, query_text: str = "") -> str:
+    def build_prompt_augmentation(self, style: str, query_text: str = "", *,
+                                  include_examples: bool = True) -> str:
         """Returns a string to append to the base system prompt.
 
         If a retriever is attached and query_text is provided, examples are
         chosen by SEMANTIC SIMILARITY to the current dictation (RAG).
         Otherwise falls back to most-recent examples.
+
+        include_examples=False keeps only the vocabulary block. The phone
+        bridge uses it: the RAW/CLEANED pairs are whole desktop dictations,
+        and a caller who can steer the model could have them repeated back.
         """
         if not self.cfg.enabled:
             return ""
@@ -183,6 +188,8 @@ class Learner:
 
         examples: list[tuple[str, str]] = []
         used_retrieval = False
+        if not include_examples:
+            return "\n\n---\n\n" + "\n\n".join(parts) if parts else ""
         if self.retriever and query_text:
             results = self.retriever.search(query_text, style=style)
             if results:

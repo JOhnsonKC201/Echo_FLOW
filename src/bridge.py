@@ -234,7 +234,10 @@ def _make_app(app_ref, shared_key: str, default_style: str, allow_history_write:
         if learner is None or len(text) < 25:
             return ""
         try:
-            return learner.build_prompt_augmentation(style, query_text=text)
+            # Vocabulary only: the few-shot pairs are whole desktop
+            # dictations, which a phone must not be able to read back.
+            return learner.build_prompt_augmentation(
+                style, query_text=text, include_examples=False)
         except Exception as e:
             _log.warning("learner augmentation failed: %s", e)
             return ""
