@@ -5,10 +5,9 @@ emits a minimal black-canvas D3 force layout. Hovering a node highlights its
 1-hop neighborhood in purple and dims the rest — the Obsidian interaction.
 
 The output is a single HTML document, suitable for serving directly from Flask
-or saving as a file. It is NOT self-contained: the page pulls D3 from
-https://d3js.org at render time, which is the one place the otherwise
-zero-CDN dashboard reaches the public internet. Vendoring d3.v7.min.js next to
-this module would close that hole and make the graph work offline.
+or saving as a file. D3 is served by the dashboard from
+static/vendor/d3.v7.min.js, so the page works offline and never loads a
+third-party script into the dashboard's origin.
 """
 from __future__ import annotations
 
@@ -314,7 +313,7 @@ _HTML = r"""<!doctype html>
 </div>
 
 <script id="__graph_data" type="application/json">__DATA_JSON__</script>
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="/static/vendor/d3.v7.min.js"></script>
 <script>
 const DATA = JSON.parse(document.getElementById('__graph_data').textContent);
 

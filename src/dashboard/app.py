@@ -127,6 +127,23 @@ SECTIONS = [
 # loopback already constrains the network surface.
 _ALLOWED_HOSTS: set[str] = set()
 
+# Everything the dashboard loads is served by the dashboard itself. Inline
+# script and style stay allowed because the templates use both; what the
+# policy removes is any third-party origin, plugins, <base> hijacking, form
+# posts to elsewhere, and framing by another site.
+_CSP = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+])
+
 
 def _allowed_hosts_for(host: str, port: int) -> set[str]:
     """Build the Host: header allowlist for a given bind config."""
@@ -231,6 +248,17 @@ def make_app(app_ref, bound_port: int | None = None):
         if _is_cross_site(request.headers, allowed_origins):
             abort(403, description="cross-site request blocked")
         return None
+
+    @flask_app.after_request
+    def _security_headers(resp):
+        # A framed page sends our own Origin, so the cross-site check above
+        # cannot stop clickjacking; refusing foreign frames does. SAMEORIGIN
+        # because /graph embeds /graph/raw in an iframe.
+        resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        resp.headers.setdefault("Content-Security-Policy", _CSP)
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "same-origin")
+        return resp
 
     # --- Section routes --------------------------------------------------
     @flask_app.get("/")
@@ -1746,7 +1774,7 @@ def make_app(app_ref, bound_port: int | None = None):
 
     # --- Knowledge graph -------------------------------------------------
     # /graph     — dashboard-wrapped view (iframe shell, preserves sidebar)
-    # /graph/raw - D3 HTML from graph_obsidian.render (pulls D3 from d3js.org)
+    # /graph/raw - D3 HTML from graph_obsidian.render (D3 from static/vendor)
     # Cached by db mtime; lock prevents duplicate expensive renders under
     # concurrent first-page-loads on the threaded Werkzeug server.
     import threading as _threading
