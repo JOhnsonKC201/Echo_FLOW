@@ -265,11 +265,6 @@ def test_clipboard_write_failure_propagates_and_no_keys_are_sent(rig):
     assert rig.threads == []
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: _paste restores the clipboard it saw, not the user's original. Two "
-    "injections closer together than the 0.2 s restore delay make the second "
-    "one save the first dictation as 'previous', so the user's real clipboard "
-    "is lost and the first timer can also restore before the second paste is read."))
 def test_overlapping_pastes_leave_the_users_original_clipboard(rig):
     rig.capture_threads()
     inj = inject.Injector()
@@ -484,10 +479,6 @@ def test_an_unreadable_folder_is_skipped_not_fatal(folders, monkeypatch):
     assert same_file(result, target)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: _DOC_TOKEN has no boundary after the extension, so 'notes.mdx' or "
-    "'budget.docm' match as 'notes.md' / 'budget.doc' and resolve to a different "
-    "file that happens to exist in the same folder."))
 @pytest.mark.parametrize("title,other", [
     ("notes.mdx - Code", "notes.md"),
     ("budget.docm - Word", "budget.doc"),
@@ -498,10 +489,6 @@ def test_longer_extension_does_not_resolve_to_a_shorter_sibling(
     assert doc_path(monkeypatch, title) is None
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: _focused_document_path documents 'Never raises', but Path.cwd() and "
-    "Path.home() are called outside the try block, so a deleted cwd or an "
-    "unresolvable home directory raises out of it."))
 @pytest.mark.parametrize("probe", ["cwd", "home"])
 def test_lookup_never_raises_when_cwd_or_home_is_unavailable(
         folders, monkeypatch, probe):
