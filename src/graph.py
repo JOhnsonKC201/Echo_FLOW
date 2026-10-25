@@ -696,7 +696,7 @@ _HTML = r"""<!doctype html>
   <h3 id="panel-title"></h3>
   <div id="panel-body"></div>
 </div>
-<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>__D3_JS__</script>
 <script>
 const DICT = __DICT_DATA__;
 const CONCEPT = __CONCEPT_DATA__;
@@ -1000,6 +1000,21 @@ render();
 """
 
 
+_D3_PATH = Path(__file__).resolve().parent / "dashboard" / "static" / "vendor" / "d3.v7.min.js"
+
+
+def _inline_d3() -> str:
+    """The vendored D3, ready to sit inside an inline <script> block.
+
+    The report embeds the user's dictation text, so it must not load a script
+    from a CDN that could read the page. Inlined rather than linked because
+    the file is opened from disk, where a relative path to the package would
+    not resolve.
+    """
+    js = _D3_PATH.read_text(encoding="utf-8")
+    return re.sub(r"</(script)", r"<\/\1", js, flags=re.IGNORECASE)
+
+
 def render_graph(
     db_path: str,
     out_path: str | None = None,
@@ -1035,7 +1050,9 @@ def render_graph(
         .replace("__TAG_USAGE__", _script_json(tag_usage))
         .replace("__TAGS_INDEX__", _script_json(tags_index))
         .replace("__TS_MIN__", str(ts_min))
-        .replace("__TS_MAX__", str(ts_max)))
+        .replace("__TS_MAX__", str(ts_max))
+        # Last, so nothing inside the library can match a data placeholder.
+        .replace("__D3_JS__", _inline_d3()))
 
     if out_path is None:
         out_path = str(Path(db_path).parent / "graph.html")
