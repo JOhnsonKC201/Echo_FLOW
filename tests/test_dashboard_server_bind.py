@@ -10,13 +10,16 @@ from src.dashboard import server
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "localhost", "::1"])
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "localhost"])
 def test_loopback_hosts_are_kept(host):
     assert server.loopback_only(host) == host
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.168.1.20", "10.0.0.5",
-                                  "my-laptop.local", "", None, "8.8.8.8"])
+                                  "my-laptop.local", "", None, "8.8.8.8",
+                                  # IPv6 loopback: pick_port binds AF_INET only,
+                                  # so these would crash the server thread.
+                                  "::1", "::ffff:127.0.0.1"])
 def test_anything_else_falls_back_to_127_0_0_1(host):
     assert server.loopback_only(host) == "127.0.0.1"
 
@@ -40,3 +43,15 @@ def test_serve_binds_loopback_even_when_config_says_all_interfaces(monkeypatch, 
 
     server.serve(app_ref=object(), host="0.0.0.0", port=8766, log_fn=lambda m: None)
     assert bound["host"] == "127.0.0.1"
+
+
+@pytest.mark.parametrize("cfg_host", ["0.0.0.0", "192.168.1.20"])
+def test_host_header_allowlist_follows_the_address_actually_bound(cfg_host, tmp_path):
+    from tests.test_dashboard_actions_view import _client
+    client, app_ref = _client(tmp_path)
+    # Rebuild with a non-loopback dashboard.host in config.
+    app_ref.cfg["dashboard"]["host"] = cfg_host
+    from src.dashboard.app import make_app
+    c = make_app(app_ref).test_client()
+    assert c.get("/healthz", headers={"Host": f"{cfg_host}:8766"}).status_code == 400
+    assert c.get("/healthz", headers={"Host": "127.0.0.1:8766"}).status_code == 200

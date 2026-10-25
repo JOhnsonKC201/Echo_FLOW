@@ -78,7 +78,10 @@ def loopback_only(host: str | None) -> str:
     if text == "localhost":
         return text
     try:
-        if ipaddress.ip_address(text).is_loopback:
+        addr = ipaddress.ip_address(text)
+        # IPv4 only: pick_port and the port file assume AF_INET, so '::1'
+        # would crash the server thread instead of serving.
+        if addr.version == 4 and addr.is_loopback:
             return text
     except ValueError:
         pass

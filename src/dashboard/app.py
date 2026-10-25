@@ -216,7 +216,10 @@ def make_app(app_ref, bound_port: int | None = None):
 
     # DNS-rebinding defense. Compute the allowlist from current dashboard cfg.
     dcfg = (app_ref.cfg.get("dashboard", {}) or {})
-    host = dcfg.get("host", "127.0.0.1")
+    # The address serve() will really bind (it refuses non-loopback values),
+    # so a rejected 0.0.0.0 or LAN host never ends up in the Host allowlist.
+    from .server import loopback_only
+    host = loopback_only(dcfg.get("host", "127.0.0.1"))
     port_pref = int(dcfg.get("port", 8766))
     # The allowlist must cover the actually-bound port. pick_port() scans the
     # preferred port plus 4 fallbacks, so include all five; also include the
