@@ -245,6 +245,13 @@ def load_config() -> dict:
 # dictations ahead are given up on, so the wait is paid once, not per paste.
 PASTE_ORDER_TIMEOUT_S = 60.0
 
+# Idle time after which a hotkey press warms the models before the user has
+# finished speaking. Below cleanup.ollama.keep_alive (30m) on purpose: the GPU
+# also drops to an idle power state, and the first encode after a 10+ minute
+# break was measured at about twice the warm cost. A warm-up on an already
+# loaded model is a one-token request, so firing a little early is cheap.
+PREWARM_IDLE_S = 10 * 60
+
 
 class _PasteTurns:
     """Lets dictations paste in the order they were released.
@@ -301,6 +308,7 @@ class _PasteTurns:
 # The ticket of the dictation running on this thread, as (turns, ticket).
 _paste_ticket = threading.local()
 _PASTE_TURNS_INIT = threading.Lock()
+_PREWARM_LOCK = threading.Lock()
 
 
 class App:
@@ -418,6 +426,7 @@ class App:
             self._watch_for_ollama(self._pending_ollama_watch)
         # Preload the cleanup model in the background so the first dictation
         # doesn't pay the cold-start cost (5-15s for qwen2.5:3b).
+        self._last_model_use = time.monotonic()
         threading.Thread(target=self.cleaner.warmup, daemon=True).start()
         ic = cfg["inject"]
         self.injector = Injector(
@@ -859,6 +868,54 @@ class App:
         finally:
             _paste_ticket.value = None
             turns.finish(ticket)
+            self._last_model_use = time.monotonic()
+
+    def _maybe_prewarm(self) -> None:
+        """On a hotkey press after a break, warm the models while the user talks.
+
+        The cleanup model unloads after cleanup.ollama.keep_alive and the GPU
+        idles down, so the first dictation after a break used to pay a ~2 s
+        load after the key was released. Starting the warm-up on press hides
+        it behind the speech. Never blocks and never raises: it runs on its
+        own thread and a failure only means the dictation pays the load as
+        before.
+        """
+        if getattr(self, "cleaner", None) is None:
+            return
+        last = getattr(self, "_last_model_use", None)
+        if last is not None and time.monotonic() - last < PREWARM_IDLE_S:
+            return
+        with _PREWARM_LOCK:
+            if getattr(self, "_prewarm_running", False):
+                return
+            self._prewarm_running = True
+            self._last_model_use = time.monotonic()
+        threading.Thread(target=self._prewarm, daemon=True,
+                         name="prewarm").start()
+
+    def _prewarm(self) -> None:
+        try:
+            t0 = time.perf_counter()
+            try:
+                self.cleaner.warmup()
+            except Exception as e:
+                _log.debug("prewarm: cleanup model warm-up failed: %s", e)
+            # Whisper shares the GPU with the real pipeline; never queue a
+            # warm encode in front of a dictation that is already running.
+            transcriber = getattr(self, "transcriber", None)
+            lock = getattr(self, "_pipeline_lock", None)
+            if transcriber is not None and lock is not None and lock.acquire(blocking=False):
+                try:
+                    transcriber.warm()
+                except Exception as e:
+                    _log.debug("prewarm: whisper warm-up failed: %s", e)
+                finally:
+                    lock.release()
+            _log.info("prewarm: models warmed in %.0fms",
+                      (time.perf_counter() - t0) * 1000)
+        finally:
+            with _PREWARM_LOCK:
+                self._prewarm_running = False
 
     def _paste_turns(self) -> _PasteTurns:
         turns = getattr(self, "_paste_turns_obj", None)
@@ -1654,6 +1711,7 @@ class App:
         console.print("[bold red]● REC[/bold red]")
         if self.tray: self.tray.set_state("rec")
         self.recorder.start()
+        self._maybe_prewarm()
 
     def on_release_hold(self):
         with self._state_lock:
@@ -1710,6 +1768,7 @@ class App:
         wsound.play("start", self.cfg.get("sound"))
         console.print("[bold red]● REC (auto-stop on silence)[/bold red]")
         if self.tray: self.tray.set_state("rec")
+        self._maybe_prewarm()
 
         def _run():
             audio = None

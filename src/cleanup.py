@@ -11,6 +11,7 @@ from . import log as wlog
 from . import fillers
 from . import notify
 from . import spoken_format
+from .ollama_supervisor import ollama_base as _ollama_base
 _log = wlog.get("cleanup")
 
 
@@ -1284,7 +1285,7 @@ class Cleaner:
                     no_think: bool = False,
                     temperature: float | None = None) -> str:
         oc = self.cfg.get("ollama", {})
-        url = f"{oc.get('base_url', 'http://localhost:11434').rstrip('/')}/api/chat"
+        url = f"{_ollama_base(oc.get('base_url'))}/api/chat"
         # 0.2 is the tight dictation default; the humanizer passes a
         # strength-derived temperature (higher = more variety in the rewrite).
         options: dict = {"temperature": 0.2 if temperature is None else float(temperature)}
@@ -2021,7 +2022,7 @@ class Cleaner:
         result = None
         try:
             oc = self.cfg.get("ollama", {}) or {}
-            url = (oc.get("base_url", "http://localhost:11434").rstrip("/")
+            url = (_ollama_base(oc.get("base_url"))
                    + "/api/tags")
             r = self._session.get(url, timeout=3.0)
             r.raise_for_status()
@@ -2299,7 +2300,7 @@ class Cleaner:
         if self.provider != "ollama":
             return
         oc = self.cfg.get("ollama", {})
-        url = f"{oc.get('base_url', 'http://localhost:11434').rstrip('/')}/api/chat"
+        url = f"{_ollama_base(oc.get('base_url'))}/api/chat"
         try:
             r = self._session.post(url, json={
                 "model": oc.get("model", "qwen2.5:7b-instruct"),
@@ -2307,7 +2308,9 @@ class Cleaner:
                 "keep_alive": oc.get("keep_alive", "10m"),
                 "messages": [{"role": "user", "content": "."}],
                 "options": {"num_predict": 1, "temperature": 0.0},
-            }, timeout=30.0)
+            # Short connect, long read: a cold model load can take seconds,
+            # but a handshake to a local server never should.
+            }, timeout=(float(oc.get("connect_timeout_sec", 0.5)), 30.0))
             r.raise_for_status()
             _log.info("ollama warmup: model %s loaded", oc.get("model"))
         except Exception as e:
