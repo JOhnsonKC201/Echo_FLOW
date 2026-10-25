@@ -22,6 +22,10 @@ UNC_SPELLINGS = [
     r"\\?\UNC\host\share\evil.exe",
     r"\\.\pipe\evil",
     "//?/UNC/host/share",
+    # NT object-manager prefix: Windows resolves these over SMB as well.
+    r"\??\UNC\host\share\evil.exe",
+    r"\??\GLOBALROOT\Device\Mup\host\share\evil.exe",
+    "/??/UNC/host/share/evil.exe",
     # Leading whitespace is not trimmed by every caller.
     r"  \\host\share\evil.exe",
     "\t//host/share",

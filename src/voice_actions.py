@@ -357,11 +357,13 @@ def _is_unc(path: str) -> bool:
 
     Windows treats '/' and '\\' alike here, so the mixed spellings '\\/host'
     and '/\\host' are network paths too, as are the '\\\\?\\UNC\\' and
-    '\\\\.\\' prefixes. Leading whitespace is skipped because not every
-    caller strips it.
+    '\\\\.\\' prefixes. The NT object-manager prefix '\\??\\' reaches shares
+    too ('\\??\\UNC\\host', '\\??\\GLOBALROOT\\Device\\Mup\\host') and has
+    no legitimate use in a target, so it is refused outright. Leading
+    whitespace is skipped because not every caller strips it.
     """
-    head = (path or "").lstrip()[:2]
-    return len(head) == 2 and all(c in "\\/" for c in head)
+    p = (path or "").lstrip().replace("/", "\\")
+    return p.startswith("\\\\") or p.startswith("\\??\\")
 
 
 def _h_open_app(args: dict, ctx: ActionContext) -> tuple[bool, str]:
