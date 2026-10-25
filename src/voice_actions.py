@@ -354,8 +354,14 @@ def _is_unc(path: str) -> bool:
     On Windows, merely touching one (os.path.isfile, shutil.which, Popen,
     os.startfile) opens an outbound SMB session that sends the user's NetNTLM
     hash, and launching it runs a remote binary. Check before any of those.
+
+    Windows treats '/' and '\\' alike here, so the mixed spellings '\\/host'
+    and '/\\host' are network paths too, as are the '\\\\?\\UNC\\' and
+    '\\\\.\\' prefixes. Leading whitespace is skipped because not every
+    caller strips it.
     """
-    return path[:2] in ("\\\\", "//")
+    head = (path or "").lstrip()[:2]
+    return len(head) == 2 and all(c in "\\/" for c in head)
 
 
 def _h_open_app(args: dict, ctx: ActionContext) -> tuple[bool, str]:
