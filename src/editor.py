@@ -17,6 +17,7 @@ import sqlite3
 import threading
 from contextlib import closing
 
+from . import dbconn
 from . import log as wlog
 
 _log = wlog.get("editor")
@@ -28,7 +29,7 @@ def _re_embed_if_possible(db_path: str, row_id: int, raw_text: str):
         try:
             from .retrieval import embed, to_blob
             vec = embed(raw_text)
-            with closing(sqlite3.connect(db_path)) as conn:
+            with closing(dbconn.connect(db_path)) as conn:
                 conn.execute(
                     "UPDATE dictations SET embedding = ? WHERE id = ?",
                     (to_blob(vec), row_id),
@@ -52,7 +53,7 @@ def review_queue(db_path: str, n: int = 20) -> list[tuple]:
     list rather than crashing.
     """
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             return conn.execute(
                 "SELECT id, ts, quality_score, raw_text, cleaned_text "
                 "FROM dictations "
@@ -88,7 +89,7 @@ def open_editor(db_path: str, row_id: int | None = None,
     import tkinter as tk
     from tkinter import ttk, messagebox
 
-    conn = sqlite3.connect(db_path)
+    conn = dbconn.connect(db_path)
     if row_id is None:
         row = conn.execute(
             "SELECT id, raw_text, cleaned_text, language, style FROM dictations "
@@ -365,7 +366,7 @@ def pin_last_dialog(db_path: str) -> None:
     from tkinter import ttk, messagebox, simpledialog
     from .notes import _auto_title
 
-    conn = sqlite3.connect(db_path)
+    conn = dbconn.connect(db_path)
     row = conn.execute(
         "SELECT id, cleaned_text FROM dictations ORDER BY ts DESC LIMIT 1"
     ).fetchone()

@@ -26,6 +26,8 @@ from collections import Counter
 from contextlib import closing
 from dataclasses import dataclass
 
+from . import dbconn
+
 
 # Cache vocabulary so we don't recount on every dictation. The cache holds the
 # FULL ranked list (callers slice [:limit]); a lock guards reads/writes since
@@ -75,7 +77,7 @@ class Learner:
         self.retriever = retriever   # optional Retriever for semantic search
 
     def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        return dbconn.connect(self.db_path)
 
     def recent_examples(self, style: str, limit: int) -> list[tuple[str, str]]:
         """Pull (raw, cleaned) pairs that differ enough to be instructive."""
@@ -444,7 +446,7 @@ class PatternMiner:
         self.db_path = db_path
 
     def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        return dbconn.connect(self.db_path)
 
     def record(self, raw: str, cleaned: str, source: str = "user", *,
                drop_number_format: bool = False, weight: int = 1) -> int:

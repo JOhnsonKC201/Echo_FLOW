@@ -20,6 +20,8 @@ import html
 import json
 import re
 import sqlite3
+
+from . import dbconn
 import webbrowser
 from collections import Counter, defaultdict
 from contextlib import closing
@@ -93,7 +95,7 @@ def _load_rows(db_path: str, limit: int = 1500, min_quality: float = 30.0) -> li
     if not Path(db_path).exists():
         return []
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             rows = conn.execute(
                 "SELECT id, ts, style, raw_text, cleaned_text, embedding, quality_score "
                 "FROM dictations WHERE raw_text IS NOT NULL AND raw_text != '' "
@@ -495,7 +497,7 @@ def build_notes_graph(db_path: str, rows: list[dict]) -> dict[str, Any]:
         return {"nodes": [], "links": [], "kind": "notes"}
     tags_by_dict: dict[int, list[str]] = {}
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             notes = conn.execute(
                 "SELECT id, dictation_id, title, description, created_at, updated_at "
                 "FROM notes ORDER BY updated_at DESC"
@@ -572,7 +574,7 @@ def build_notes_graph(db_path: str, rows: list[dict]) -> dict[str, Any]:
 def _all_confirmed_tags(db_path: str) -> list[tuple[str, int]]:
     """Returns [(tag_name, usage_count), ...] for all confirmed tags."""
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             rows = conn.execute(
                 "SELECT t.name, COUNT(*) AS n FROM tags t "
                 "JOIN dictation_tags dt ON dt.tag_id = t.id "
@@ -586,7 +588,7 @@ def _all_confirmed_tags(db_path: str) -> list[tuple[str, int]]:
 def _tags_index(db_path: str) -> dict[int, list[str]]:
     """Returns {dictation_id: [confirmed_tag_names...]}"""
     try:
-        with closing(sqlite3.connect(db_path)) as conn:
+        with closing(dbconn.connect(db_path)) as conn:
             rows = conn.execute(
                 "SELECT dt.dictation_id, t.name FROM dictation_tags dt "
                 "JOIN tags t ON t.id = dt.tag_id WHERE dt.confirmed = 1"
