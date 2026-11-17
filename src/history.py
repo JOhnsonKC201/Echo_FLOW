@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 import time
 from pathlib import Path
+
+from . import dbconn
 
 
 class _SafeCursor:
@@ -125,7 +126,7 @@ POST_MIGRATION_INDEXES = (
 class History:
     def __init__(self, db_path: str):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(db_path, check_same_thread=False, timeout=30.0)  # see dbconn.DB_TIMEOUT_S
+        self.conn = dbconn.connect(db_path, check_same_thread=False)
         # WAL mode: readers (dashboard) never block writers (dictation daemon)
         # and vice versa. Important now that the dashboard reads dictations
         # live while the daemon is logging new rows.
