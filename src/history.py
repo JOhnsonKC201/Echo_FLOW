@@ -413,16 +413,17 @@ class History:
             quality_breakdown: str | None = None,
             source: str = "desktop",
             latency_ms: int | None = None) -> int:
-        cur = self.conn.execute(
-            "INSERT INTO dictations(ts, window_title, style, language, duration_ms, "
-            "raw_text, cleaned_text, embedding, embedding_model, "
-            "quality_score, quality_breakdown, original_cleaned, source, latency_ms) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (time.time(), window_title, style, language, duration_ms,
-             raw_text, cleaned_text, embedding, embedding_model,
-             quality_score, quality_breakdown, cleaned_text, source, latency_ms),
-        )
-        self.conn.commit()
+        with dbconn.write_gate():
+            cur = self.conn.execute(
+                "INSERT INTO dictations(ts, window_title, style, language, duration_ms, "
+                "raw_text, cleaned_text, embedding, embedding_model, "
+                "quality_score, quality_breakdown, original_cleaned, source, latency_ms) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (time.time(), window_title, style, language, duration_ms,
+                 raw_text, cleaned_text, embedding, embedding_model,
+                 quality_score, quality_breakdown, cleaned_text, source, latency_ms),
+            )
+            self.conn.commit()
         return cur.lastrowid or 0
 
     def rate_dictation(self, dictation_id: int, rating: int | None) -> bool:
@@ -440,12 +441,13 @@ class History:
     def log_command(self, *, body: str, action_type: str, action_value: str,
                     label: str | None = None, ok: bool = True) -> int:
         """Append a row to command_log. Best-effort — caller swallows errors."""
-        cur = self.conn.execute(
-            "INSERT INTO command_log(ts, body, action_type, action_value, label, ok) "
-            "VALUES (?,?,?,?,?,?)",
-            (time.time(), body or "", action_type, action_value, label, 1 if ok else 0),
-        )
-        self.conn.commit()
+        with dbconn.write_gate():
+            cur = self.conn.execute(
+                "INSERT INTO command_log(ts, body, action_type, action_value, label, ok) "
+                "VALUES (?,?,?,?,?,?)",
+                (time.time(), body or "", action_type, action_value, label, 1 if ok else 0),
+            )
+            self.conn.commit()
         return cur.lastrowid or 0
 
     def log_action(self, *, body: str, handler: str, args_json: str | None = None,
@@ -455,13 +457,14 @@ class History:
         """Append a row to voice_actions (Phase 14). Best-effort — caller
         swallows errors, mirroring log_command. ``model_pred`` is the intent
         model's JSON record for this utterance (MODEL-SHADOW), or None."""
-        cur = self.conn.execute(
-            "INSERT INTO voice_actions(ts, body, handler, args, label, ok, error, "
-            "model_pred) VALUES (?,?,?,?,?,?,?,?)",
-            (time.time(), body or "", handler, args_json, label,
-             1 if ok else 0, error, model_pred),
-        )
-        self.conn.commit()
+        with dbconn.write_gate():
+            cur = self.conn.execute(
+                "INSERT INTO voice_actions(ts, body, handler, args, label, ok, error, "
+                "model_pred) VALUES (?,?,?,?,?,?,?,?)",
+                (time.time(), body or "", handler, args_json, label,
+                 1 if ok else 0, error, model_pred),
+            )
+            self.conn.commit()
         return cur.lastrowid or 0
 
     def recent_actions(self, limit: int = 50) -> list[dict]:

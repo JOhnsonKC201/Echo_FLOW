@@ -23,7 +23,8 @@ import re
 import sqlite3
 import threading
 from collections import Counter
-from contextlib import closing
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 
 from . import dbconn
@@ -448,6 +449,13 @@ class PatternMiner:
     def _conn(self) -> sqlite3.Connection:
         return dbconn.connect(self.db_path)
 
+    @contextmanager
+    def _writing(self) -> Iterator[sqlite3.Connection]:
+        """A connection for one write transaction, taken in turn with the
+        daemon's other writers (see dbconn.write_gate)."""
+        with dbconn.write_gate(), closing(self._conn()) as conn:
+            yield conn
+
     def record(self, raw: str, cleaned: str, source: str = "user", *,
                drop_number_format: bool = False, weight: int = 1) -> int:
         """Increment success/total counts for every 1↔1 substitution observed.
@@ -491,7 +499,7 @@ class PatternMiner:
             return 0
         import time as _t
         now = _t.time()
-        with closing(self._conn()) as conn:
+        with self._writing() as conn:
             _ensure_patterns_table(conn)
             is_teacher = (source == "teacher")
             user_inc = 0 if is_teacher else weight
@@ -620,7 +628,7 @@ class PatternMiner:
             return 0
         import time as _t
         now = _t.time()
-        with closing(self._conn()) as conn:
+        with self._writing() as conn:
             _ensure_casing_table(conn)
             for _a, b in pairs:
                 conn.execute(
@@ -661,7 +669,7 @@ class PatternMiner:
             return None
         import time as _t
         now = _t.time()
-        with closing(self._conn()) as conn:
+        with self._writing() as conn:
             _ensure_casing_table(conn)
             conn.execute(
                 """
@@ -729,7 +737,7 @@ class PatternMiner:
         if not key:
             return False
         try:
-            with closing(self._conn()) as conn:
+            with self._writing() as conn:
                 _ensure_casing_table(conn)
                 cur = conn.execute("DELETE FROM casing_canon WHERE word_lc = ?", (key,))
                 conn.commit()
@@ -751,7 +759,7 @@ class PatternMiner:
         Returns (rows_decayed, rows_deleted).
         """
         try:
-            with closing(self._conn()) as conn:
+            with self._writing() as conn:
                 _ensure_patterns_table(conn)
                 import time as _t
                 now = _t.time()
@@ -836,7 +844,7 @@ class PatternMiner:
             n += self.record_casing(before or "", after or "")
         # Mark done regardless of count so we never re-scan on later startups.
         try:
-            with closing(self._conn()) as conn:
+            with self._writing() as conn:
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)"
                 )
