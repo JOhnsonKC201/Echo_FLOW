@@ -38,6 +38,14 @@ All notable changes are documented here. Format roughly follows
   zoomed-out view is structure rather than a hairball.
 
 ### Fixed
+- **Writes to history.db take turns instead of racing.** When several
+  writers wanted the database at once, sqlite's busy handler let whichever
+  happened to retry first have it, and a writer could lose that race until
+  its 30 s timeout ran out, dropping a dictation row or a learned
+  correction. The history log, the voice-action logs and every learned
+  pattern and casing write now queue on one lock in `src/dbconn.py`
+  (`write_gate()`), so none of them waits inside sqlite at all. This is what
+  turned `main` red after #32: the 100-writer soak test lost 4 writes on CI.
 - **A dead default microphone no longer costs you the dictation.** Windows
   makes any newly plugged USB audio device the default input, whether or not
   its microphone hears anything, and Echo Flow recorded from the default

@@ -35,6 +35,24 @@ def test_dbconn_waits_well_past_the_sqlite_default():
     assert dbconn.DB_TIMEOUT_S >= 30
 
 
+@pytest.mark.unit
+def test_a_gated_writer_can_call_another_gated_writer(tmp_path):
+    """History.log and the miner's writes take dbconn.write_gate(); a caller
+    that already holds it must not deadlock against itself."""
+    from src.history import History
+    h = History(str(tmp_path / "history.db"))
+    finished = threading.Event()
+
+    def nested():
+        with dbconn.write_gate():
+            h.log(window_title="w", style="medium", language="en", duration_ms=1,
+                  raw_text="nested", cleaned_text="Nested.")
+        finished.set()
+
+    threading.Thread(target=nested, daemon=True).start()
+    assert finished.wait(10), "write_gate deadlocked on a nested writer"
+
+
 @pytest.mark.load
 def test_a_learned_pattern_write_waits_out_a_long_writer(tmp_path):
     from src.history import History
