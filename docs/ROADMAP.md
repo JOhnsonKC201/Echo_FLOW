@@ -103,26 +103,6 @@ Recorded so they are not re-proposed.
 | Spoken "send", "post", "submit", deletion, shell timers, arbitrary-path open | CAT-REJECT in `ACTION_LAYER_ROADMAP.md`. "submit" and "send it" were tried and removed for false positives. |
 | Shipping per-app styles differentiated by default | Tried. On 2026-07-26 every profile was set to `medium` on purpose because `polished` rewrote too hard and `default` was too light (see the comment above `cleanup.profiles` in `config.yaml`). The README should describe profiles as available, not as the default. |
 
-## Doc drift found during the audit
-
-Claims that no longer match the code. Fix in a docs PR.
-
-- `docs/index.html`, `PRODUCT_OVERVIEW.md`, `.claude/campaigns/echo-flow-launch/positioning.md`:
-  "raw Whisper text without Ollama". The code now does rules-only cleanup
-  (fillers, casing, punctuation) via `src/fillers.py`. README is correct.
-- `docs/index.html`, `positioning.md`: "Windows 10/11 only". macOS runs from
-  source (no installer yet).
-- `README.md` badge "audio 100% on-device" and the iOS blurb, `ios/README.md`:
-  the iOS keyboard defaults to Groq cloud transcription and polish
-  (`ios/EchoFlowCore/SharedConfig.swift`). Either flip the default to
-  bridge-first or scope the badge to the desktop.
-- `README.md` features: "casual punctuation in Slack, full sentences in
-  Gmail" describes profiles that ship as all `medium`. Soften to "can".
-- `config.yaml` and `packaging/default/config.yaml`: the comment above
-  `experimental:` says toggling "has no runtime effect yet". The flags are
-  wired in `src/main.py`.
-- `PRODUCT_OVERVIEW.md`: version 0.3.0 and "1502 tests" are stale.
-
 ## Already there (do not re-propose)
 
 Checked against Wispr Flow's feature list on 2026-10-10. Echo Flow already
