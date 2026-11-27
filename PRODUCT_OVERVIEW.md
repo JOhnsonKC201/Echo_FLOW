@@ -162,7 +162,7 @@ phase, and which optional features are wired, without exposing keys.
 - **Current line:** `0.3.1`. See [CHANGELOG.md](CHANGELOG.md) for
   what shipped; `src/__init__.py` holds the version the release workflow checks
   the tag against, so that file is the one to trust.
-- **Tests:** 1900+ passing, covering dictation, cleanup/casing fallback paths,
+- **Tests:** 2,500+ passing, covering dictation, cleanup/casing fallback paths,
   actions, tags, notes, grading, snippet expansion, A/B logging, veto behavior,
   and the action-layer security model.
 - **Cost:** nothing when run fully local. Groq is free at single-human speaking
